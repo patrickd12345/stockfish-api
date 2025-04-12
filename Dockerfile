@@ -2,11 +2,9 @@ FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y curl wget unzip git build-essential
 
-# Download Stockfish
-RUN curl -LO https://stockfishchess.org/files/stockfish-ubuntu-x86-64-modern.zip && \
-    unzip stockfish-ubuntu-x86-64-modern.zip && \
-    mv stockfish/* /usr/local/bin/ && \
-    chmod +x /usr/local/bin/stockfish
+# Download Stockfish from GitHub Releases instead of stockfishchess.org
+RUN curl -L -o /usr/local/bin/stockfish https://github.com/official-stockfish/Stockfish/releases/download/sf_15/stockfish-ubuntu-x86-64 \
+    && chmod +x /usr/local/bin/stockfish
 
 WORKDIR /app
 COPY . .
