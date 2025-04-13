@@ -17,12 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-RUN apt-get update && apt-get install -y unzip wget && \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq unzip wget && \
     wget --content-disposition https://github.com/official-stockfish/Stockfish/releases/download/sf_16/stockfish-ubuntu-x86-64-avx2.zip -O stockfish.zip && \
     unzip stockfish.zip -d stockfish-dir && \
     mv stockfish-dir/stockfish* stockfish && \
     chmod +x stockfish && \
     rm -rf stockfish.zip stockfish-dir
+
 
 
 
