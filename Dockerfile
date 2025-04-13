@@ -30,6 +30,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq unzip w
 
 
 
+
 # Expose port for FastAPI
 EXPOSE 8000
 
