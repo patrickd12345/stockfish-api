@@ -1,4 +1,4 @@
-# Stage 1: Base with Stockfish installed
+# Stage 1: Base with Stockfish installed 
 FROM officialstockfish/stockfish:latest AS stockfish
 
 # Stage 2: Your Python API
