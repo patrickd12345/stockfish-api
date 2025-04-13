@@ -17,12 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Download and unzip the official 64-bit Linux Stockfish binary (modern generic build)
-RUN curl -L -o stockfish.zip https://stockfishchess.org/files/stockfish-ubuntu-x86-64-modern.zip && \
+# Download Stockfish 16 Linux generic binary from official GitHub releases
+RUN curl -L -o stockfish.zip https://github.com/official-stockfish/Stockfish/releases/download/sf_16/stockfish-ubuntu-x86-64-modern.zip && \
     unzip stockfish.zip && \
     mv stockfish/* stockfish && \
     chmod +x stockfish && \
-    rm -rf stockfish.zip stockfish/*/
+    rm -rf stockfish.zip stockfish/*
+
 
 # Expose port for FastAPI
 EXPOSE 8000
