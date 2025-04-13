@@ -1,16 +1,31 @@
-FROM python:3.10-slim
+# Use official Python base image
+FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y curl wget unzip git build-essential
-
-# Download Stockfish
-RUN curl -LO https://stockfishchess.org/files/stockfish-ubuntu-x86-64-modern.zip && \
-    unzip stockfish-ubuntu-x86-64-modern.zip && \
-    mv stockfish/* /usr/local/bin/ && \
-    chmod +x /usr/local/bin/stockfish
-
+# Set work directory
 WORKDIR /app
-COPY . .
 
+# Install dependencies (curl + unzip for downloading stockfish)
+RUN apt-get update && apt-get install -y curl unzip && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirement file first to leverage Docker cache
+COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application code
+COPY . .
+
+# Download and unzip the official 64-bit Linux Stockfish binary (modern generic build)
+RUN curl -L -o stockfish.zip https://stockfishchess.org/files/stockfish-ubuntu-x86-64-modern.zip && \
+    unzip stockfish.zip && \
+    mv stockfish/* stockfish && \
+    chmod +x stockfish && \
+    rm -rf stockfish.zip stockfish/*/
+
+# Expose port for FastAPI
+EXPOSE 8000
+
+# Launch FastAPI using uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
