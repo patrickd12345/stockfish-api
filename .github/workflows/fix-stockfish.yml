@@ -2,8 +2,7 @@ name: Make Stockfish Executable
 
 on:
   push:
-    paths:
-      - stockfish
+
 
 jobs:
   fix-permissions:
