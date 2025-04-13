@@ -1,0 +1,22 @@
+name: Make Stockfish Executable
+
+on:
+  push:
+    paths:
+      - stockfish
+
+jobs:
+  fix-permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Make stockfish executable
+        run: chmod +x stockfish
+
+      - name: Commit back executable permission
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git commit -am "Make Stockfish executable on Linux"
+          git push || echo "No changes to commit"
