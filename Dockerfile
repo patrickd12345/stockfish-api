@@ -17,12 +17,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Download Stockfish 16 Linux generic binary from official GitHub releases
-RUN curl -L -o stockfish.zip https://github.com/official-stockfish/Stockfish/releases/download/sf_16/stockfish-ubuntu-x86-64-modern.zip && \
+# Download Stockfish from the actual GitHub release asset CDN
+RUN apt-get update && apt-get install -y wget unzip && \
+    wget -O stockfish.zip https://github.com/official-stockfish/Stockfish/releases/download/sf_16/stockfish-ubuntu-x86-64-modern.zip && \
     unzip stockfish.zip && \
     mv stockfish/* stockfish && \
     chmod +x stockfish && \
     rm -rf stockfish.zip stockfish/*
+
 
 
 # Expose port for FastAPI
