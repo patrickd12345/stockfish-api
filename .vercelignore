@@ -1,0 +1,12 @@
+node_modules
+.next
+.env.local
+*.db
+data/
+__pycache__/
+*.pyc
+stockfish
+app.py
+src/
+requirements.txt
+dockerfile

@@ -1,0 +1,130 @@
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import ChessBoard from './ChessBoard'
+
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+  boardSvg?: string
+}
+
+export default function ChatTab() {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return
+
+    const userMessage: Message = { role: 'user', content: input }
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setLoading(true)
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to get response')
+      }
+
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: data.content || data.response || 'No response',
+        boardSvg: data.boardSvg,
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+    } catch (error: any) {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: `Error: ${error.message}` },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 style={{ marginBottom: '20px' }}>Coach Chat</h2>
+
+      <div
+        style={{
+          height: '600px',
+          overflowY: 'auto',
+          marginBottom: '20px',
+          padding: '20px',
+          background: '#f9fafb',
+          borderRadius: '8px',
+        }}
+      >
+        {messages.length === 0 && (
+          <div style={{ color: '#6b7280', textAlign: 'center', marginTop: '50px' }}>
+            Start a conversation with your chess coach
+          </div>
+        )}
+
+        {messages.map((msg, idx) => (
+          <div
+            key={idx}
+            style={{
+              marginBottom: '20px',
+              padding: '15px',
+              background: msg.role === 'user' ? '#dbeafe' : 'white',
+              borderRadius: '8px',
+              borderLeft: `4px solid ${msg.role === 'user' ? '#2563eb' : '#10b981'}`,
+            }}
+          >
+            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#374151' }}>
+              {msg.role === 'user' ? 'You' : 'Coach'}
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap', color: '#1f2937' }}>{msg.content}</div>
+            {msg.boardSvg && (
+              <div style={{ marginTop: '15px' }}>
+                <ChessBoard svg={msg.boardSvg} />
+              </div>
+            )}
+          </div>
+        ))}
+
+        {loading && (
+          <div style={{ color: '#6b7280', fontStyle: 'italic' }}>Coach is thinking...</div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="Ask your coach"
+          className="input"
+          disabled={loading}
+        />
+        <button onClick={handleSend} disabled={loading || !input.trim()} className="button">
+          Send
+        </button>
+      </div>
+    </div>
+  )
+}
