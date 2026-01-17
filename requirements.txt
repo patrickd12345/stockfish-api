@@ -1,2 +1,7 @@
-fastapi 
-uvicorn 
+streamlit
+python-chess
+langchain
+langchain-community
+langchain-openai
+pandas
+matplotlib
