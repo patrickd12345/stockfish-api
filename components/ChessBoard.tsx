@@ -6,9 +6,10 @@ import { Chess } from 'chess.js'
 interface ChessBoardProps {
   fen?: string
   svg?: string
+  size?: number | string
 }
 
-export default function ChessBoard({ fen, svg }: ChessBoardProps) {
+export default function ChessBoard({ fen, svg, size }: ChessBoardProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function ChessBoard({ fen, svg }: ChessBoardProps) {
     <div
       ref={containerRef}
       style={{
-        maxWidth: '400px',
+        maxWidth: size || '400px',
         width: '100%',
         margin: '0 auto',
       }}
@@ -39,7 +40,7 @@ function generateBoardSvg(game: Chess): string {
   // In production, you'd want to use a proper chess board library
   const size = 400
   const squareSize = size / 8
-  let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+  let svg = `<svg width="100%" height="100%" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">`
   
   // Draw board squares
   for (let rank = 0; rank < 8; rank++) {

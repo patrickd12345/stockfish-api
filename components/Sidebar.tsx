@@ -117,7 +117,7 @@ export default function Sidebar({ onGamesProcessed }: SidebarProps) {
       <div style={{ marginTop: '40px', borderTop: '1px solid #4b5563', paddingTop: '20px' }}>
         <h2 style={{ marginBottom: '20px', fontSize: '18px' }}>Demo Board</h2>
         <div style={{ marginBottom: '15px', background: '#374151', padding: '10px', borderRadius: '8px' }}>
-          <ChessBoard fen={demoFen} />
+          <ChessBoard fen={demoFen} size="200px" />
         </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
