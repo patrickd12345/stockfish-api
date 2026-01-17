@@ -1,4 +1,5 @@
 import { getSql } from '@/lib/database'
+import { embedGame, toVectorString } from '@/lib/embeddings'
 
 export interface IMove {
   move_number: number
@@ -81,8 +82,19 @@ export async function getGameSummaries(limit = 10) {
 
 export async function createGame(data: CreateGameInput): Promise<void> {
   const sql = getSql()
+  const embedding = await embedGame({
+    date: data.date,
+    white: data.white,
+    black: data.black,
+    result: data.result,
+    opening_name: data.opening_name,
+    my_accuracy: data.my_accuracy,
+    blunders: data.blunders,
+    pgn_text: data.pgn_text,
+  })
+  const embeddingValue = embedding ? toVectorString(embedding) : null
   await sql`
-    INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves)
+    INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
     VALUES (
       ${data.date ?? null},
       ${data.white ?? null},
@@ -92,7 +104,8 @@ export async function createGame(data: CreateGameInput): Promise<void> {
       ${data.my_accuracy ?? null},
       ${data.blunders ?? 0},
       ${data.pgn_text},
-      ${data.moves}::jsonb
+      ${data.moves}::jsonb,
+      ${embeddingValue}::vector
     )
   `
 }
@@ -103,6 +116,37 @@ export async function getGamePgn(id: string): Promise<string | null> {
     SELECT pgn_text FROM games WHERE id = ${id}
   `) as DbRow[]
   return (rows[0]?.pgn_text as string) ?? null
+}
+
+export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
+  const sql = getSql()
+  const embeddingValue = toVectorString(embedding)
+  const rows = (await sql`
+    SELECT id,
+      date,
+      white,
+      black,
+      result,
+      opening_name,
+      my_accuracy,
+      blunders,
+      (1 - (embedding <=> ${embeddingValue}::vector)) AS similarity
+    FROM games
+    WHERE embedding IS NOT NULL
+    ORDER BY embedding <=> ${embeddingValue}::vector
+    LIMIT ${limit}
+  `) as DbRow[]
+  return rows.map((r: DbRow) => ({
+    id: String(r.id),
+    date: r.date ?? undefined,
+    white: r.white ?? undefined,
+    black: r.black ?? undefined,
+    result: r.result ?? undefined,
+    opening_name: r.opening_name ?? undefined,
+    my_accuracy: r.my_accuracy ?? undefined,
+    blunders: r.blunders ?? 0,
+    similarity: r.similarity ?? null,
+  }))
 }
 
 export async function gameExists(

@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
-import { connectToDb } from '@/lib/database'
-import { getGameSummaries } from '@/lib/models'
+import { connectToDb, isDbConfigured } from '@/lib/database'
+import { embedQuery } from '@/lib/embeddings'
+import { getGameSummaries, searchGamesByEmbedding } from '@/lib/models'
 
 const BOARD_SVG_MARKER = 'BOARD_SVG::'
 
@@ -22,10 +23,20 @@ export async function buildAgent(conn: any) {
       // Get context from database
       let context = ''
       try {
-        await connectToDb()
-        const games = await getGameSummaries(10)
-        if (games.length > 0) {
-          context = `\n\nRecent games in database:\n${JSON.stringify(games, null, 2)}`
+        if (isDbConfigured()) {
+          await connectToDb()
+          const games = await getGameSummaries(10)
+          if (games.length > 0) {
+            context = `\n\nRecent games in database:\n${JSON.stringify(games, null, 2)}`
+          }
+
+          const queryEmbedding = await embedQuery(input)
+          if (queryEmbedding) {
+            const relevantGames = await searchGamesByEmbedding(queryEmbedding, 5)
+            if (relevantGames.length > 0) {
+              context += `\n\nRelevant games from semantic search:\n${JSON.stringify(relevantGames, null, 2)}`
+            }
+          }
         }
       } catch (e) {
         console.log('Database query failed:', e)
