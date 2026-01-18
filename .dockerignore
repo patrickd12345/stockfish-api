@@ -1,7 +1,7 @@
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-.venv/
+node_modules
+.next
+.git
+.vercel
+test-results
+tmp
+coverage
