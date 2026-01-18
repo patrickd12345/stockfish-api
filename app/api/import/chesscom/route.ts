@@ -5,6 +5,8 @@ import { analyzePgn, parsePgnWithoutEngine } from '@/lib/analysis'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame, gameExists, gameExistsByPgnText } from '@/lib/models'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
+import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
+import { storeEngineAnalysis } from '@/lib/engineStorage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -40,6 +42,7 @@ export async function POST(request: NextRequest) {
 
     let savedCount = 0
     let processedCount = 0
+    const newlySaved: Array<{ id: string; pgnText: string }> = []
 
     // Chess.com game arrays are not guaranteed to be ordered oldest→newest.
     // Always process the most recent games first.
@@ -75,10 +78,11 @@ export async function POST(request: NextRequest) {
               ? await gameExistsByPgnText(pgnText)
               : await gameExists(entry.game.date, entry.game.white, entry.game.black)
             if (!exists) {
-              await createGame({
+                    const id = await createGame({
                 ...entry.game,
                 moves: entry.moves,
               })
+                    newlySaved.push({ id, pgnText: entry.game.pgn_text })
               savedCount++
             }
           }
@@ -91,6 +95,30 @@ export async function POST(request: NextRequest) {
 
     // Trigger batch analysis if any games were saved
     if (savedCount > 0) {
+      // Immediately analyze a few newly-imported games with Stockfish so blunders/mistakes/etc are real.
+      const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false'
+      if (analyzeNow && newlySaved.length > 0) {
+        const envPlayerNames =
+          process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
+        const playerNames = Array.from(new Set([username, ...envPlayerNames].filter(Boolean)))
+        const depth = Math.max(8, Math.min(25, Number(process.env.ANALYSIS_DEPTH ?? 15)))
+        const stockfishPathResolved =
+          process.env.STOCKFISH_PATH?.trim() ||
+          (process.platform === 'win32'
+            ? path.join(process.cwd(), 'stockfish.exe')
+            : path.join(process.cwd(), 'stockfish'))
+        const maxToAnalyze = Math.min(5, newlySaved.length)
+
+        for (let i = 0; i < maxToAnalyze; i++) {
+          try {
+            const result = await analyzeGameWithEngine(newlySaved[i].pgnText, stockfishPathResolved, playerNames, depth)
+            await storeEngineAnalysis(newlySaved[i].id, result, 'stockfish')
+          } catch (e) {
+            console.warn('Immediate engine analysis failed:', e)
+          }
+        }
+      }
+
       console.log('🔄 Triggering batch analysis after Chess.com import...')
       try {
         await runBatchAnalysis()

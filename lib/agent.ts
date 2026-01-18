@@ -189,11 +189,16 @@ Then rebuild summary: npm run rebuild:engine-summary
               const wins = gamesInWindow.filter(g => g.result === '1-0').length
               const losses = gamesInWindow.filter(g => g.result === '0-1').length
               const draws = gamesInWindow.filter(g => g.result === '1/2-1/2').length
-              const totalBlunders = gamesInWindow.reduce((sum, g) => sum + (g.blunders || 0), 0)
+
+              // IMPORTANT: games.blunders may be a sentinel (-1) when engine analysis hasn't been run yet.
+              // Never treat missing engine data as "0 blunders".
+              const blundersWithData = gamesInWindow.filter(g => typeof g.blunders === 'number' && g.blunders >= 0)
+              const totalBlunders = blundersWithData.reduce((sum, g) => sum + g.blunders, 0)
+              const gamesWithBlunderData = blundersWithData.length
               
               // Use a very compact format - CSV-like for efficiency
               const gamesCompact = gamesInWindow.map((g, i) => 
-                `${i + 1}. ${g.date || 'N/A'} | ${g.white || 'N/A'} vs ${g.black || 'N/A'} | ${g.result || 'N/A'} | ${g.blunders || 0} blunders | ${g.my_accuracy ? g.my_accuracy.toFixed(1) + '%' : 'N/A'}`
+                `${i + 1}. ${g.date || 'N/A'} | ${g.white || 'N/A'} vs ${g.black || 'N/A'} | ${g.result || 'N/A'} | ${typeof g.blunders === 'number' && g.blunders >= 0 ? `${g.blunders} blunders` : 'blunders: pending analysis'} | ${g.my_accuracy ? g.my_accuracy.toFixed(1) + '%' : 'N/A'}`
               ).join('\n')
               
               context += `\n\n╔══════════════════════════════════════════════════════════════╗
@@ -209,7 +214,7 @@ Then rebuild summary: npm run rebuild:engine-summary
 ║  - Wins: ${wins}                                             ║
 ║  - Losses: ${losses}                                         ║
 ║  - Draws: ${draws}                                           ║
-║  - Total Blunders: ${totalBlunders}                          ║
+║  - Total Blunders (engine-derived, games with data: ${gamesWithBlunderData}/${gamesInWindow.length}): ${totalBlunders} ║
 ║  - Win Rate: ${gamesInWindow.length > 0 ? ((wins / gamesInWindow.length) * 100).toFixed(1) : 0}%                    ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  ALL ${gamesInWindow.length} GAMES IN THIS PERIOD:                    ║

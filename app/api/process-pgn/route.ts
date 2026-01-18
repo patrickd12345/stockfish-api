@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     let count = 0
-    const createdGameIds: string[] = []
+    const created: Array<{ id: string; pgnText: string }> = []
     for (const entry of results) {
       let embedding: number[] | null = null
       try {
@@ -70,25 +70,25 @@ export async function POST(request: NextRequest) {
         moves: entry.moves,
         embedding,
       })
-      createdGameIds.push(id)
+      created.push({ id, pgnText: entry.game.pgn_text })
       count++
     }
 
     // Run engine analysis for a small subset immediately so blunders are real, not defaults.
     // Keep this bounded for serverless/dev responsiveness; the full backlog can be analyzed via /api/engine/analyze or scripts/run-engine-analysis.ts.
     const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false'
-    if (analyzeNow && createdGameIds.length > 0) {
-      const playerNames =
+    if (analyzeNow && created.length > 0) {
+      const envPlayerNames =
         process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
-      const stockfishPathResolved =
-        process.env.STOCKFISH_PATH?.trim() || stockfishPath
+      const playerNames = Array.from(new Set([username, ...envPlayerNames].filter(Boolean)))
+      const stockfishPathResolved = process.env.STOCKFISH_PATH?.trim() || stockfishPath
       const depth = Math.max(8, Math.min(25, Number(process.env.ANALYSIS_DEPTH ?? 15)))
-      const maxToAnalyze = Math.min(5, createdGameIds.length)
+      const maxToAnalyze = Math.min(5, created.length)
 
       for (let i = 0; i < maxToAnalyze; i++) {
         try {
-          const result = await analyzeGameWithEngine(pgn, stockfishPathResolved, playerNames, depth)
-          await storeEngineAnalysis(createdGameIds[i], result, 'stockfish')
+          const result = await analyzeGameWithEngine(created[i].pgnText, stockfishPathResolved, playerNames, depth)
+          await storeEngineAnalysis(created[i].id, result, 'stockfish')
         } catch (e) {
           // Non-fatal: game is imported; engine analysis can be re-run later.
           console.warn('Immediate engine analysis failed:', e)

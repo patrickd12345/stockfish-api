@@ -102,8 +102,8 @@ describe('lib/models', () => {
   })
 
   it('createGame inserts without embedding when embedding is null', async () => {
-    sql.mockResolvedValueOnce([])
-    await createGame({
+    sql.mockResolvedValueOnce([{ id: 'g1' }])
+    const id = await createGame({
       date: '2026-01-01',
       white: 'Alice',
       black: 'Bob',
@@ -118,11 +118,12 @@ describe('lib/models', () => {
 
     expect(lastSqlText()).toContain('INSERT INTO games')
     expect(lastSqlText().toLowerCase()).not.toContain('embedding)')
+    expect(id).toBe('g1')
   })
 
   it('createGame inserts with embedding when provided', async () => {
-    sql.mockResolvedValueOnce([])
-    await createGame({
+    sql.mockResolvedValueOnce([{ id: 'g2' }])
+    const id = await createGame({
       date: '2026-01-01',
       white: 'Alice',
       black: 'Bob',
@@ -138,6 +139,7 @@ describe('lib/models', () => {
     expect(lastSqlText()).toContain('embedding')
     // The vector literal is passed as a parameter value.
     expect(lastSqlValues()).toContain('[1,2]')
+    expect(id).toBe('g2')
   })
 
   it('searchGamesByEmbedding orders by vector distance and returns distance', async () => {

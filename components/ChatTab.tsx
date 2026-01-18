@@ -11,9 +11,10 @@ interface Message {
 
 interface ChatTabProps {
   selectedGameId?: string | null
+  fill?: boolean
 }
 
-export default function ChatTab({ selectedGameId }: ChatTabProps) {
+export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -69,7 +70,19 @@ export default function ChatTab({ selectedGameId }: ChatTabProps) {
   }
 
   return (
-    <div className="card">
+    <div
+      className="card"
+      style={
+        fill
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              minHeight: 0,
+            }
+          : undefined
+      }
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>Coach Chat</h2>
         {selectedGameId && (
@@ -81,7 +94,9 @@ export default function ChatTab({ selectedGameId }: ChatTabProps) {
 
       <div
         style={{
-          height: '600px',
+          height: fill ? undefined : '600px',
+          flex: fill ? 1 : undefined,
+          minHeight: fill ? 0 : undefined,
           overflowY: 'auto',
           marginBottom: '20px',
           padding: '20px',
@@ -130,7 +145,7 @@ export default function ChatTab({ selectedGameId }: ChatTabProps) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Ask your coach"
           className="input"
           disabled={loading}
