@@ -27,9 +27,12 @@ vercel login
 
 In Vercel Dashboard → Your Project → Settings → Environment Variables:
 
-- `OPENAI_API_KEY`: Your OpenAI API key
 - `POSTGRES_URL`: Your Postgres connection string (auto-set if using Vercel Postgres; otherwise from Neon or your provider)
 - `OPENAI_MODEL`: (Optional) Model to use, default is `gpt-4o-mini`
+- `OPENAI_EMBEDDING_MODEL`: (Optional) Embedding model, default is `text-embedding-3-small`
+- `STOCKFISH_TIME_LIMIT_MS`: (Optional) Stockfish time per eval in ms, default is `100`
+- `VERCEL_AI_GATEWAY_ID`: Your Vercel AI Gateway ID
+- `VERCEL_VIRTUAL_KEY`: Your Vercel AI Gateway virtual key
 
 ## Step 6: Deploy to Vercel
 
@@ -58,10 +61,11 @@ vercel --prod
 ### Database Connection Issues
 - Verify POSTGRES_URL is set correctly
 - Check that the database schema is initialized
+- Ensure `pgvector` is enabled (`CREATE EXTENSION vector;`)
 - Ensure the database is in the same region as your deployment
 
-### OpenAI API Issues
-- Verify OPENAI_API_KEY is set
+### Gateway Issues
+- Verify VERCEL_AI_GATEWAY_ID and VERCEL_VIRTUAL_KEY are set
 - Check your OpenAI account has credits
 - Verify the model name is correct
 

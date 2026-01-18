@@ -3,7 +3,7 @@
 ## Prerequisites
 - Node.js 18+ installed
 - Vercel account
-- OpenAI API key
+- Vercel AI Gateway + Virtual Key
 
 ## Quick Deployment Steps
 
@@ -28,10 +28,11 @@
 
 4. **Configure Environment Variables in Vercel Dashboard:**
    - Go to Project → Settings → Environment Variables
-   - Add:
-     - `OPENAI_API_KEY` = your OpenAI API key
-     - `POSTGRES_URL` = your Postgres connection string (Vercel Postgres or Neon)
-     - `OPENAI_MODEL` = `gpt-4o-mini` (optional)
+    - Add:
+      - `POSTGRES_URL` = your Postgres connection string (Vercel Postgres or Neon)
+      - `OPENAI_MODEL` = `gpt-4o-mini` (optional)
+      - `VERCEL_AI_GATEWAY_ID` = your Vercel AI Gateway ID
+      - `VERCEL_VIRTUAL_KEY` = your Vercel AI Gateway virtual key
 
 5. **Initialize Database:**
    - Go to Vercel Dashboard → Your Postgres Database → SQL Editor
@@ -60,7 +61,7 @@ Test:
 
 - **Build fails**: Check Vercel build logs
 - **Database errors**: Verify schema is initialized
-- **OpenAI errors**: Check API key and credits
+- **Gateway errors**: Check gateway ID, virtual key, and credits
 - **Domain not working**: Verify DNS records (may take up to 48 hours)
 
 For detailed instructions, see `DEPLOYMENT.md`

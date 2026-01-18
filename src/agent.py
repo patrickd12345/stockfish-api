@@ -40,9 +40,19 @@ SYSTEM_PROMPT = (
 
 def build_agent(db_path: str) -> Any:
     db = SQLDatabase.from_uri(f"sqlite:///{db_path}")
+    gateway_id = os.environ.get("VERCEL_AI_GATEWAY_ID", "").strip()
+    virtual_key = os.environ.get("VERCEL_VIRTUAL_KEY", "").strip()
+
+    if not gateway_id or not virtual_key:
+        raise ValueError("VERCEL_AI_GATEWAY_ID and VERCEL_VIRTUAL_KEY must be set")
+
+    base_url = "https://ai-gateway.vercel.sh/v1"
+
     llm = ChatOpenAI(
         temperature=0,
-        model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip(),
+        openai_api_key=virtual_key,
+        base_url=base_url,
     )
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 

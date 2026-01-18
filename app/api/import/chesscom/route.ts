@@ -3,7 +3,9 @@ import { fetchPlayerGames } from '@/lib/chesscom'
 import { analyzePgn } from '@/lib/analysis'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame, gameExists } from '@/lib/models'
+import { runBatchAnalysis } from '@/lib/batchAnalysis'
 
+export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
@@ -56,11 +58,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Trigger batch analysis if any games were saved
+    if (savedCount > 0) {
+      console.log('🔄 Triggering batch analysis after Chess.com import...')
+      try {
+        await runBatchAnalysis()
+        console.log('✅ Batch analysis completed')
+      } catch (batchError) {
+        console.error('❌ Batch analysis failed:', batchError)
+        // Don't fail the entire request if batch analysis fails
+      }
+    }
+
     return NextResponse.json({
       count: processedCount,
       saved: savedCount,
       totalFound: rawGames.length,
-      message: `Processed ${processedCount} games (saved ${savedCount}) out of ${rawGames.length} found. (Limited to last 100)`
+      message: `Processed ${processedCount} games (saved ${savedCount}) out of ${rawGames.length} found. (Limited to last 100)${savedCount > 0 ? ' - Progression analysis updated' : ''}`
     })
 
   } catch (error: any) {

@@ -7,7 +7,8 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 - **PGN Analysis**: Upload and analyze chess games from PGN files
 - **AI Coach**: Interactive chat with an AI chess coach powered by LangChain and OpenAI
 - **Game Inspector**: Replay and analyze games move by move
-- **Stockfish Integration**: Chess engine analysis (configured for serverless deployment)
+- **Stockfish Integration**: Chess engine analysis with centipawn loss and blunder detection
+- **Semantic Game Search**: Vector embeddings for game retrieval
 
 ## Deployment to Vercel
 
@@ -15,7 +16,7 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 
 1. A Vercel account
 2. A Vercel Postgres database
-3. An OpenAI API key
+3. A Vercel AI Gateway + Virtual Key
 
 ### Setup Steps
 
@@ -30,9 +31,12 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
    - Set `POSTGRES_URL` to your connection string
 
 3. **Set Environment Variables in Vercel**
-   - `OPENAI_API_KEY`: Your OpenAI API key
-   - `POSTGRES_URL`: Your Vercel Postgres connection string
-   - `OPENAI_MODEL`: (Optional) OpenAI model to use (default: gpt-4o-mini)
+  - `POSTGRES_URL`: Your Vercel Postgres connection string
+  - `OPENAI_MODEL`: (Optional) OpenAI model to use (default: gpt-4o-mini)
+  - `OPENAI_EMBEDDING_MODEL`: (Optional) Embedding model (default: text-embedding-3-small)
+  - `STOCKFISH_TIME_LIMIT_MS`: (Optional) Stockfish time per eval in ms (default: 100)
+  - `VERCEL_AI_GATEWAY_ID`: Your Vercel AI Gateway ID
+  - `VERCEL_VIRTUAL_KEY`: Your Vercel AI Gateway virtual key
 
 4. **Initialize Database**
    - Run the SQL from `lib/sql/schema.sql` in your Postgres database (Vercel Postgres SQL Editor, Neon SQL Editor, or `psql`)
@@ -57,10 +61,13 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 2. **Set Environment Variables**
    Create a `.env.local` file:
    ```
-   OPENAI_API_KEY=your_key_here
-   POSTGRES_URL=postgresql://...   # Neon, Vercel Postgres, or any Postgres
-   OPENAI_MODEL=gpt-4o-mini
-   ```
+  POSTGRES_URL=postgresql://...   # Neon, Vercel Postgres, or any Postgres
+  OPENAI_MODEL=gpt-4o-mini
+  OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+  STOCKFISH_TIME_LIMIT_MS=100
+  VERCEL_AI_GATEWAY_ID=your_gateway_id
+  VERCEL_VIRTUAL_KEY=your_virtual_key
+  ```
 
 3. **Run Development Server**
    ```bash
@@ -88,7 +95,8 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 
 ## Notes
 
-- **Stockfish**: For serverless deployment, Stockfish analysis is simplified. For full analysis, consider using a Stockfish API service or a separate analysis service.
+- **Stockfish**: Runs the bundled Stockfish binary for engine evaluation. Increase `STOCKFISH_TIME_LIMIT_MS` for deeper analysis.
+- **Vector Search**: Requires `pgvector` (`CREATE EXTENSION vector;`). See `lib/sql/schema.sql`.
 - **Database**: PostgreSQL via `POSTGRES_URL` (Neon, Vercel Postgres, or any Postgres). Use `@neondatabase/serverless` for serverless.
 - **Chess Engine**: The app uses `chess.js` for move validation and board representation.
 

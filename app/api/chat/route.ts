@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { buildAgent } from '@/lib/agent'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
-    const { message } = await request.json()
+    const { message, gameId } = await request.json()
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
     const agent = await buildAgent(null)
-    const response = await agent.invoke({ input: message })
+    const response = await agent.invoke({ input: message, gameId })
 
     // Extract board SVG if present
     const content = typeof response === 'string' 
@@ -25,8 +27,19 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('Error in chat:', error)
+    
+    // Provide user-friendly error messages
+    let errorMessage = 'Failed to get response from coach'
+    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+      errorMessage = 'Connection error. Please check your network connection and try again.'
+    } else if (error.message) {
+      errorMessage = error.message
+    }
+    
     return NextResponse.json(
-      { error: error.message || 'Failed to get response from coach' },
+      { 
+        error: errorMessage
+      },
       { status: 500 }
     )
   }

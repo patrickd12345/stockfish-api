@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { analyzePgn } from '@/lib/analysis'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame } from '@/lib/models'
+import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
+import { runBatchAnalysis } from '@/lib/batchAnalysis'
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,14 +45,35 @@ export async function POST(request: NextRequest) {
 
     let count = 0
     for (const entry of results) {
+      let embedding: number[] | null = null
+      try {
+        const embeddingText = buildEmbeddingText(entry.game)
+        embedding = await getEmbedding(embeddingText)
+      } catch (e) {
+        console.warn('Embedding generation failed:', e)
+      }
       await createGame({
         ...entry.game,
         moves: entry.moves,
+        embedding,
       })
       count++
     }
 
-    return NextResponse.json({ count, message: `Processed ${count} game(s)` })
+    // Trigger batch analysis after successful import
+    console.log('🔄 Triggering batch analysis after PGN import...')
+    try {
+      await runBatchAnalysis()
+      console.log('✅ Batch analysis completed')
+    } catch (batchError) {
+      console.error('❌ Batch analysis failed:', batchError)
+      // Don't fail the entire request if batch analysis fails
+    }
+
+    return NextResponse.json({ 
+      count, 
+      message: `Processed ${count} game(s) and updated progression analysis` 
+    })
   } catch (error: any) {
     console.error('Error processing PGN:', error)
     return NextResponse.json(

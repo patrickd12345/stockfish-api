@@ -9,6 +9,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'chat' | 'replay'>('chat')
   const [refreshKey, setRefreshKey] = useState(0)
   const [importStatus, setImportStatus] = useState<string>('')
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
   
   // Use a ref to prevent double-firing in React 18 strict mode
   const hasStartedImport = useRef(false)
@@ -66,7 +67,15 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar onGamesProcessed={handleGamesProcessed} />
+      <Sidebar 
+        onGamesProcessed={handleGamesProcessed} 
+        onGameSelect={(id) => {
+          setSelectedGameId(id)
+          setActiveTab('chat')
+        }}
+        selectedGameId={selectedGameId}
+        refreshKey={refreshKey}
+      />
       <main style={{ flex: 1, padding: '20px', marginLeft: '300px' }}>
         <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -105,7 +114,7 @@ export default function Home() {
           )}
         </div>
 
-        {activeTab === 'chat' && <ChatTab />}
+        {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} />}
         {activeTab === 'replay' && <GameInspector key={refreshKey} />}
       </main>
     </div>

@@ -9,7 +9,11 @@ interface Message {
   boardSvg?: string
 }
 
-export default function ChatTab() {
+interface ChatTabProps {
+  selectedGameId?: string | null
+}
+
+export default function ChatTab({ selectedGameId }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -35,7 +39,10 @@ export default function ChatTab() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: input,
+          gameId: selectedGameId 
+        }),
       })
 
       const data = await response.json()
@@ -63,7 +70,14 @@ export default function ChatTab() {
 
   return (
     <div className="card">
-      <h2 style={{ marginBottom: '20px' }}>Coach Chat</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h2 style={{ margin: 0 }}>Coach Chat</h2>
+        {selectedGameId && (
+          <div style={{ fontSize: '12px', color: '#2563eb', background: '#dbeafe', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
+            Context: Game {selectedGameId.substring(0, 8)}...
+          </div>
+        )}
+      </div>
 
       <div
         style={{

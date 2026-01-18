@@ -1,10 +1,8 @@
 import { Chess } from 'chess.js'
-
-// For serverless deployment, we'll use a simplified analysis
-// that doesn't require Stockfish locally
-// You can integrate with a Stockfish API service if needed
+import { resolveStockfishPath, StockfishEngine } from '@/lib/stockfish'
 
 const BLUNDER_THRESHOLD = 200
+const DEFAULT_MOVE_TIME_MS = 100
 
 export interface GameData {
   game: {
@@ -27,65 +25,6 @@ export interface GameData {
   }>
 }
 
-// Simple PGN parser
-function parsePgn(pgnText: string): Array<{ headers: Record<string, string>, moves: string[] }> {
-  const games: Array<{ headers: Record<string, string>, moves: string[] }> = []
-  const lines = pgnText.split('\n')
-  
-  let currentGame: { headers: Record<string, string>, moves: string[] } | null = null
-  let moveText = ''
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    
-    // Parse headers
-    const headerMatch = trimmed.match(/^\[(\w+)\s+"([^"]+)"\]$/)
-    if (headerMatch) {
-      if (!currentGame) {
-        currentGame = { headers: {}, moves: [] }
-      }
-      currentGame.headers[headerMatch[1]] = headerMatch[2]
-      continue
-    }
-
-    // Parse moves
-    if (trimmed && !trimmed.startsWith('[') && currentGame) {
-      moveText += ' ' + trimmed
-    }
-
-    // End of game
-    if (trimmed === '' && currentGame && moveText.trim()) {
-      // Parse moves from move text
-      const moveRegex = /\d+\.\s*([^\s]+(?:\s+[^\s]+)?)/g
-      const moves: string[] = []
-      let match
-      while ((match = moveRegex.exec(moveText)) !== null) {
-        const movePair = match[1].trim().split(/\s+/)
-        moves.push(...movePair.filter(m => m && !m.match(/^0-1|1-0|1\/2-1\/2|\*$/)))
-      }
-      currentGame.moves = moves
-      games.push(currentGame)
-      currentGame = null
-      moveText = ''
-    }
-  }
-
-  // Handle last game if no blank line at end
-  if (currentGame && moveText.trim()) {
-    const moveRegex = /\d+\.\s*([^\s]+(?:\s+[^\s]+)?)/g
-    const moves: string[] = []
-    let match
-    while ((match = moveRegex.exec(moveText)) !== null) {
-      const movePair = match[1].trim().split(/\s+/)
-      moves.push(...movePair.filter(m => m && !m.match(/^0-1|1-0|1\/2-1\/2|\*$/)))
-    }
-    currentGame.moves = moves
-    games.push(currentGame)
-  }
-
-  return games
-}
-
 export async function analyzePgn(
   pgnText: string,
   stockfishPath: string,
@@ -96,78 +35,116 @@ export async function analyzePgn(
   }
 
   try {
-    const games = parsePgn(pgnText)
+    const enginePath = resolveStockfishPath(stockfishPath)
+    const moveTimeMs = parseInt(
+      process.env.STOCKFISH_TIME_LIMIT_MS || '',
+      10
+    ) || DEFAULT_MOVE_TIME_MS
+    const engine = new StockfishEngine(enginePath, moveTimeMs)
+    await engine.start()
+
+    const gameStrings = pgnText.split(/(\[Event\s+"[^"]+"\])/g).filter(s => s.trim())
     const results: GameData[] = []
-
-    for (const game of games) {
-      const chess = new Chess()
-      const moves: GameData['moves'] = []
-      let blunders = 0
-      let ply = 0
-
-      // Identify user color
-      const normalizedUsername = username.trim().toLowerCase()
-      const isWhite = game.headers.White?.toLowerCase() === normalizedUsername
-      const isBlack = game.headers.Black?.toLowerCase() === normalizedUsername
-      const userColor = isWhite ? 'white' : isBlack ? 'black' : null
-
-      for (const moveStr of game.moves) {
-        try {
-          const moveObj = chess.move(moveStr)
-          if (!moveObj) continue
-
-          ply++
-          const moveNumber = Math.ceil(ply / 2)
-
-          const isUserMove = userColor
-            ? (userColor === 'white' && ply % 2 === 1) ||
-              (userColor === 'black' && ply % 2 === 0)
-            : false
-
-          // Simplified analysis - in production, you'd call a Stockfish API
-          // For now, we'll just track the moves without engine evaluation
-          const isBlunder = false // Would be determined by Stockfish analysis
-
-          moves.push({
-            move_number: moveNumber,
-            ply,
-            fen: chess.fen(),
-            move_san: moveObj.san,
-            engine_eval: undefined,
-            is_blunder: isBlunder,
-          })
-
-          if (isBlunder) {
-            blunders++
-          }
-        } catch (e) {
-          // Skip invalid moves
-          console.warn('Invalid move:', moveStr, e)
-        }
+    
+    const games: string[] = []
+    for (let i = 0; i < gameStrings.length; i++) {
+      if (gameStrings[i].startsWith('[Event')) {
+        games.push(gameStrings[i] + (gameStrings[i+1] || ''))
+        i++
+      } else {
+        games.push(gameStrings[i])
       }
+    }
 
-      // Calculate accuracy (simplified)
-      const userMoves = moves.filter((m) => m.is_blunder !== undefined)
-      const accuracy = userMoves.length > 0
-        ? Math.max(0, Math.min(100, 100 - (blunders / userMoves.length) * 10))
-        : undefined
+    try {
+      for (const gamePgn of games) {
+        const chess = new Chess()
+        try {
+          chess.loadPgn(gamePgn)
+        } catch (e) {
+          console.warn('Failed to load PGN:', e)
+          continue
+        }
 
-      // Reconstruct PGN
-      const reconstructedPgn = formatPgn(game)
+        const history = chess.history({ verbose: true })
+        const moves: GameData['moves'] = []
+        const losses: number[] = []
+        let blunders = 0
+        
+        const tempChess = new Chess()
+        let ply = 0
 
-      results.push({
-        game: {
-          date: game.headers.Date,
-          white: game.headers.White,
-          black: game.headers.Black,
-          result: game.headers.Result,
-          opening_name: game.headers.Opening,
-          my_accuracy: accuracy,
-          blunders,
-          pgn_text: reconstructedPgn,
-        },
-        moves,
-      })
+        const headers = chess.header()
+        const normalizedUsername = username.trim().toLowerCase()
+        const isWhite = headers.White?.toLowerCase() === normalizedUsername
+        const isBlack = headers.Black?.toLowerCase() === normalizedUsername
+        const userColor = isWhite ? 'white' : isBlack ? 'black' : null
+
+        for (const move of history) {
+          try {
+            const isUserMove = userColor
+              ? (userColor === 'white' && ply % 2 === 0) ||
+                (userColor === 'black' && ply % 2 === 1)
+              : false
+
+            let engineEval: number | undefined
+            let isBlunder = false
+
+            if (isUserMove) {
+              const evalBefore = await engine.evaluate(
+                tempChess.fen(),
+                tempChess.turn()
+              )
+              tempChess.move(move.san)
+              const evalAfter = await engine.evaluate(
+                tempChess.fen(),
+                tempChess.turn()
+              )
+              engineEval = evalAfter
+              const loss = centipawnLoss(evalBefore, evalAfter, userColor)
+              losses.push(loss)
+              if (loss > BLUNDER_THRESHOLD) {
+                isBlunder = true
+                blunders++
+              }
+            } else {
+              tempChess.move(move.san)
+            }
+
+            ply++
+            const moveNumber = Math.ceil(ply / 2)
+
+            moves.push({
+              move_number: moveNumber,
+              ply,
+              fen: tempChess.fen(),
+              move_san: move.san,
+              engine_eval: engineEval,
+              is_blunder: isBlunder,
+            })
+          } catch (e) {
+            console.warn('Failed move in game:', e)
+          }
+        }
+
+        const accuracy = accuracyFromLosses(losses)
+
+        results.push({
+          game: {
+            date: headers.Date ?? undefined,
+            white: headers.White ?? undefined,
+            black: headers.Black ?? undefined,
+            result: headers.Result ?? undefined,
+            opening_name: headers.Opening ?? undefined,
+            my_accuracy: accuracy,
+            blunders,
+            pgn_text: gamePgn,
+          },
+          moves,
+        })
+      }
+    } finally {
+      await engine.stop()
     }
 
     return results
@@ -177,12 +154,21 @@ export async function analyzePgn(
   }
 }
 
-function formatPgn(game: { headers: Record<string, string>, moves: string[] }): string {
-  let pgn = ''
-  for (const [key, value] of Object.entries(game.headers)) {
-    pgn += `[${key} "${value}"]\n`
-  }
-  pgn += '\n'
-  pgn += game.moves.join(' ')
-  return pgn
+function centipawnLoss(
+  beforeCp: number,
+  afterCp: number,
+  myColor: 'white' | 'black' | null
+): number {
+  if (!myColor) return 0
+  const beforePov = myColor === 'white' ? beforeCp : -beforeCp
+  const afterPov = myColor === 'white' ? afterCp : -afterCp
+  const loss = beforePov - afterPov
+  return Math.max(0, Math.round(loss))
+}
+
+function accuracyFromLosses(losses: number[]): number | undefined {
+  if (losses.length === 0) return undefined
+  const avgLoss = losses.reduce((sum, loss) => sum + loss, 0) / losses.length
+  const accuracy = 100 - avgLoss / 2
+  return Math.max(0, Math.min(100, accuracy))
 }
