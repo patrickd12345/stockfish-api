@@ -38,20 +38,21 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   const model = (process.env.OPENAI_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL).trim()
   
   const maxRetries = 3
-  let lastError: any = null
+  const input = typeof text === 'string' ? text.trim() : ''
+  if (!input) return null
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await openai.embeddings.create({
         model,
-        input: text,
+        // Vercel AI Gateway (Azure-backed) rejects string input; send array form.
+        input: [input],
       }, {
         timeout: 20000,
       })
       const embedding = response.data?.[0]?.embedding
       return Array.isArray(embedding) ? embedding : null
     } catch (error: any) {
-      lastError = error
       const isRetryable = 
         error.code === 'ECONNRESET' ||
         error.code === 'ETIMEDOUT' ||

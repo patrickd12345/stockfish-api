@@ -24,11 +24,33 @@ export function resolveStockfishPath(stockfishPath: string): string {
 
   for (const candidate of candidates) {
     if (!candidate) continue
-    if (fs.existsSync(candidate)) {
-      return candidate
+
+    // Prefer PATH resolution for command-like inputs (e.g. "stockfish"), so we
+    // don't accidentally pick up a local folder named "stockfish".
+    const isPathLike =
+      candidate.startsWith('.') ||
+      candidate.includes('/') ||
+      candidate.includes('\\') ||
+      path.isAbsolute(candidate)
+
+    if (!isPathLike) {
+      const resolved = resolveFromPath(candidate)
+      if (resolved) return resolved
     }
-    const resolved = resolveFromPath(candidate)
-    if (resolved) return resolved
+
+    if (fs.existsSync(candidate)) {
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate
+      } catch {
+        // ignore
+      }
+    }
+
+    // For path-like inputs (absolute/relative), allow a PATH fallback too.
+    if (isPathLike) {
+      const resolved = resolveFromPath(candidate)
+      if (resolved) return resolved
+    }
   }
 
   throw new Error('Stockfish binary not found. Provide a valid path.')
@@ -38,9 +60,14 @@ function resolveFromPath(command: string): string | null {
   const pathEntries = (process.env.PATH || '').split(path.delimiter)
   for (const entry of pathEntries) {
     const full = path.join(entry, command)
-    if (fs.existsSync(full)) return full
-    if (process.platform === 'win32' && fs.existsSync(`${full}.exe`)) {
-      return `${full}.exe`
+    try {
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) return full
+      const winExe = `${full}.exe`
+      if (process.platform === 'win32' && fs.existsSync(winExe) && fs.statSync(winExe).isFile()) {
+        return winExe
+      }
+    } catch {
+      // ignore and continue
     }
   }
   return null
