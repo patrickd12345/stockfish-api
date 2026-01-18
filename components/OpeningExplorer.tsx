@@ -10,6 +10,14 @@ interface OpeningStat {
   draws: number
 }
 
+const COLUMN_LABELS: Record<keyof OpeningStat, string> = {
+  openingName: 'Opening',
+  games: 'Games',
+  wins: 'Wins',
+  losses: 'Losses',
+  draws: 'Draws',
+}
+
 export default function OpeningExplorer() {
   const [openings, setOpenings] = useState<OpeningStat[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,8 +75,10 @@ export default function OpeningExplorer() {
         const result = aValue.localeCompare(bValue)
         return sortDir === 'asc' ? result : -result
       }
-      const aNumber = showPercent ? Number(aValue) / a.games : Number(aValue)
-      const bNumber = showPercent ? Number(bValue) / b.games : Number(bValue)
+      const aNumber =
+        showPercent && sortKey !== 'games' ? Number(aValue) / Math.max(1, a.games) : Number(aValue)
+      const bNumber =
+        showPercent && sortKey !== 'games' ? Number(bValue) / Math.max(1, b.games) : Number(bValue)
       const result = aNumber - bNumber
       return sortDir === 'asc' ? result : -result
     })
@@ -176,11 +186,21 @@ export default function OpeningExplorer() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-              <th style={{ padding: '8px 4px' }}>Opening</th>
-              <th style={{ padding: '8px 4px' }}>Games</th>
-              <th style={{ padding: '8px 4px' }}>Wins</th>
-              <th style={{ padding: '8px 4px' }}>Losses</th>
-              <th style={{ padding: '8px 4px' }}>Draws</th>
+              {(Object.keys(COLUMN_LABELS) as Array<keyof OpeningStat>).map((key) => (
+                <th key={key} style={{ padding: '8px 4px' }}>
+                  {COLUMN_LABELS[key]}
+                  <span
+                    style={{
+                      marginLeft: '6px',
+                      fontSize: '12px',
+                      color: '#6b7280',
+                      visibility: sortKey === key ? 'visible' : 'hidden',
+                    }}
+                  >
+                    {sortDir === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
