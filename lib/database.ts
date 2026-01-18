@@ -1,4 +1,4 @@
-import { neon } from '@neondatabase/serverless'
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
 /**
  * Resolve database connection string from multiple possible environment variable names.
@@ -19,14 +19,16 @@ if (!CONNECTION_STRING) {
   console.warn('No database connection string found. Please define one of: POSTGRES_URL, DATABASE_URL, or POSTGRES_PRISMA_URL in .env.local')
 }
 
-let _sql: ReturnType<typeof neon> | null = null
+type SqlClient = NeonQueryFunction<false, false>
 
-export function getSql(): ReturnType<typeof neon> {
+let _sql: SqlClient | null = null
+
+export function getSql(): SqlClient {
   const connectionString = getConnectionString()
   if (!connectionString) {
     throw new Error('No database connection string found. Please set one of: POSTGRES_URL, DATABASE_URL, or POSTGRES_PRISMA_URL')
   }
-  if (!_sql) _sql = neon(connectionString)
+  if (!_sql) _sql = neon<false, false>(connectionString)
   return _sql
 }
 
