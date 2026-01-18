@@ -35,7 +35,8 @@ export function isDbConfigured(): boolean {
 }
 
 export async function connectToDb(): Promise<void> {
-  // No-op: Neon serverless uses HTTP, no persistent connection to open
+  // Initialize the cached client for serverless reuse.
+  getSql()
 }
 
 export async function initDb(): Promise<void> {

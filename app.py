@@ -1,4 +1,5 @@
 import io
+import os
 from typing import Any, Dict
 
 import chess.pgn
@@ -10,12 +11,14 @@ from src.visualizer import DEFAULT_BOARD_SIZE, render_board
 
 
 DB_PATH = database.DEFAULT_DB_PATH
+DEFAULT_STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "./stockfish")
+ALLOW_STOCKFISH_PATH_INPUT = os.environ.get("ALLOW_STOCKFISH_PATH_INPUT", "").lower() == "true"
 
 
 def ensure_session_state() -> None:
     st.session_state.setdefault("chat_history", [])
     st.session_state.setdefault("current_pgn", None)
-    st.session_state.setdefault("stockfish_path", "./stockfish")
+    st.session_state.setdefault("stockfish_path", DEFAULT_STOCKFISH_PATH)
     st.session_state.setdefault("username", "")
 
 
@@ -176,9 +179,18 @@ def main() -> None:
     with st.sidebar:
         st.header("Upload & Settings")
         uploaded_pgn = st.file_uploader("Upload PGN", type=["pgn"])
-        stockfish_path = st.text_input(
-            "Stockfish Path", value=st.session_state.stockfish_path
-        )
+        if ALLOW_STOCKFISH_PATH_INPUT:
+            stockfish_path = st.text_input(
+                "Stockfish Path", value=st.session_state.stockfish_path
+            )
+        else:
+            stockfish_path = DEFAULT_STOCKFISH_PATH
+            st.text_input(
+                "Stockfish Path",
+                value=DEFAULT_STOCKFISH_PATH,
+                disabled=True,
+                help="Set STOCKFISH_PATH in the environment to change this path.",
+            )
         username = st.text_input("My Username", value=st.session_state.username)
         process_clicked = st.button("Process Games")
 

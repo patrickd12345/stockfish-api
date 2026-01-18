@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
 import { isDbConfigured, connectToDb } from '@/lib/database'
 import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
-import { getGamesNeedingAnalysis, storeEngineAnalysis, markAnalysisFailed, getAnalysisCoverage } from '@/lib/engineStorage'
+import { storeEngineAnalysis, markAnalysisFailed } from '@/lib/engineStorage'
 import { computeEngineSummary } from '@/lib/engineSummaryAnalysis'
 import { storeEngineSummary } from '@/lib/engineSummaryStorage'
-import { enqueueEngineAnalysisJobs } from '@/lib/engineQueue'
+import {
+  claimEngineAnalysisJobs,
+  markEngineAnalysisJobDone,
+  markEngineAnalysisJobFailed,
+  fetchQueuedGamePgn,
+} from '@/lib/engineQueue'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -16,9 +21,8 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({} as any))
-  const limit = Math.max(1, Math.min(25, Number(body?.limit ?? 5)))
+  const limit = Math.max(1, Math.min(10, Number(body?.limit ?? 3)))
   const analysisDepth = Math.max(8, Math.min(25, Number(body?.analysisDepth ?? process.env.ANALYSIS_DEPTH ?? 15)))
-  const mode = (body?.mode ?? 'enqueue') as 'enqueue' | 'inline'
 
   // Player names for POV + blunder assignment
   const playerNames =
@@ -38,41 +42,29 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDb()
 
-    if (mode === 'enqueue') {
-      const before = await getAnalysisCoverage('stockfish', analysisDepth)
-      const { enqueued, skipped } = await enqueueEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
-      const after = await getAnalysisCoverage('stockfish', analysisDepth)
-
-      return NextResponse.json(
-        {
-          ok: true,
-          mode,
-          queuedRequested: limit,
-          enqueued,
-          skipped,
-          analysisDepth,
-          coverage: {
-            before,
-            after,
-          },
-        },
-        { status: 202 }
-      )
+    const jobs = await claimEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
+    if (jobs.length === 0) {
+      return NextResponse.json({ ok: true, processed: 0 })
     }
-
-    const before = await getAnalysisCoverage('stockfish', analysisDepth)
-    const games = await getGamesNeedingAnalysis(limit, 'stockfish', analysisDepth)
 
     let succeeded = 0
     let failed = 0
 
-    for (const g of games) {
+    for (const job of jobs) {
       try {
-        const result = await analyzeGameWithEngine(g.pgn_text, stockfishPath, playerNames, analysisDepth)
-        await storeEngineAnalysis(g.id, result, 'stockfish')
+        const pgnText = await fetchQueuedGamePgn(job.gameId)
+        if (!pgnText) {
+          throw new Error('Missing PGN for queued game')
+        }
+
+        const result = await analyzeGameWithEngine(pgnText, stockfishPath, playerNames, analysisDepth)
+        await storeEngineAnalysis(job.gameId, result, 'stockfish')
+        await markEngineAnalysisJobDone(job.id)
         succeeded++
       } catch (e: any) {
-        await markAnalysisFailed(g.id, e?.message || 'Unknown engine analysis error', 'stockfish', null, analysisDepth)
+        const reason = e?.message || 'Unknown engine analysis error'
+        await markAnalysisFailed(job.gameId, reason, 'stockfish', null, analysisDepth)
+        await markEngineAnalysisJobFailed(job.id, reason)
         failed++
       }
     }
@@ -86,23 +78,15 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to rebuild engine summary:', e)
     }
 
-    const after = await getAnalysisCoverage('stockfish', analysisDepth)
-
     return NextResponse.json({
       ok: true,
-      mode,
-      analyzedRequested: limit,
-      analyzedReturned: games.length,
+      processed: jobs.length,
       succeeded,
       failed,
       analysisDepth,
-      coverage: {
-        before,
-        after,
-      },
     })
   } catch (error: any) {
-    console.error('Engine analyze API failed:', error)
-    return NextResponse.json({ error: error.message || 'Engine analysis failed' }, { status: 500 })
+    console.error('Engine analyze worker failed:', error)
+    return NextResponse.json({ error: error.message || 'Engine analysis worker failed' }, { status: 500 })
   }
 }

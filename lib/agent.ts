@@ -10,6 +10,9 @@ import { formatProgressionSummaryForPrompt, formatEngineSummaryForPrompt } from 
 const DEBUG_ENGINE_MARKER = '=== DEBUG: ENGINE SUMMARY PRESENT ==='
 const DEBUG_PROGRESSION_MARKER = '=== DEBUG: PROGRESSION SUMMARY PRESENT ==='
 const FINAL_SYSTEM_PROMPT_MARKER = '=== DEBUG: FINAL SYSTEM PROMPT ==='
+const CONTEXT_CHAR_LIMIT = Math.max(2000, Number(process.env.AGENT_CONTEXT_CHAR_LIMIT ?? 12000))
+const RECENT_GAMES_CHAR_LIMIT = Math.max(1000, Number(process.env.AGENT_RECENT_GAMES_CHAR_LIMIT ?? 4000))
+const RELEVANT_GAMES_CHAR_LIMIT = Math.max(1000, Number(process.env.AGENT_RELEVANT_GAMES_CHAR_LIMIT ?? 4000))
 
 export const SYSTEM_PROMPT = `You are a chess coach. You can help users analyze their games, answer chess questions, and provide coaching advice.
 If the user asks to see a board position, you can describe it, but board rendering is handled separately.
@@ -237,7 +240,8 @@ ${gamesCompact}
         if (!timeWindow) {
           const recentGames = await getGameSummaries(5) // Fewer games since we have progression summary
           if (recentGames.length > 0) {
-            context += `\n\nRecent games:\n${JSON.stringify(recentGames, null, 2)}`
+            const recentSection = formatGamesForContext(recentGames, RECENT_GAMES_CHAR_LIMIT)
+            context = appendContext(context, `\n\nRecent games:\n${recentSection.text}`, RECENT_GAMES_CHAR_LIMIT)
           }
         }
 
@@ -258,7 +262,12 @@ ${gamesCompact}
                   blunders: game.blunders,
                   pgn_excerpt: truncate(game.pgn_text, 2000),
                 }))
-                context += `\n\nMost relevant games from the database:\n${JSON.stringify(simplified, null, 2)}`
+                const relevantSection = formatGamesForContext(simplified, RELEVANT_GAMES_CHAR_LIMIT)
+                context = appendContext(
+                  context,
+                  `\n\nMost relevant games from the database:\n${relevantSection.text}`,
+                  RELEVANT_GAMES_CHAR_LIMIT
+                )
               }
             }
           } catch (embedError) {
@@ -462,4 +471,50 @@ function truncate(value: string, maxLength: number): string {
   if (!value) return value
   if (value.length <= maxLength) return value
   return `${value.slice(0, maxLength)}...`
+}
+
+function appendContext(base: string, section: string, sectionLimit: number): string {
+  const available = Math.max(0, CONTEXT_CHAR_LIMIT - base.length)
+  const maxSectionLength = Math.min(sectionLimit, available)
+  if (maxSectionLength <= 0) return base
+  if (section.length <= maxSectionLength) {
+    return base + section
+  }
+  const suffix = '\n[Context truncated to fit token budget]'
+  const trimmedLength = Math.max(0, maxSectionLength - suffix.length)
+  return base + section.slice(0, trimmedLength).trimEnd() + suffix
+}
+
+function formatGamesForContext(
+  games: Array<Record<string, any>>,
+  maxChars: number
+): { text: string; truncated: boolean } {
+  const lines: string[] = []
+  let truncated = false
+
+  for (const game of games) {
+    const lineParts = [
+      game.date || 'N/A',
+      `${game.white || 'N/A'} vs ${game.black || 'N/A'}`,
+      `Result: ${game.result || 'N/A'}`,
+      game.opening_name ? `Opening: ${game.opening_name}` : null,
+      typeof game.my_accuracy === 'number' ? `Accuracy: ${game.my_accuracy.toFixed(1)}%` : null,
+      typeof game.blunders === 'number' ? `Blunders: ${game.blunders}` : null,
+      game.pgn_excerpt ? `PGN: ${truncate(String(game.pgn_excerpt), 400)}` : null,
+    ].filter(Boolean)
+
+    const line = `- ${lineParts.join(' | ')}`
+    if (lines.join('\n').length + line.length + 1 > maxChars) {
+      truncated = true
+      break
+    }
+    lines.push(line)
+  }
+
+  if (lines.length === 0 && games.length > 0) {
+    return { text: '- [Context truncated: insufficient space for even one game]', truncated: true }
+  }
+
+  const text = truncated ? `${lines.join('\n')}\n- [Context truncated: more games omitted]` : lines.join('\n')
+  return { text, truncated }
 }
