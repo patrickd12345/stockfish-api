@@ -36,6 +36,12 @@ export interface CreateGameInput {
   moves: IMove[]
 }
 
+export interface SummaryPayload {
+  summary: unknown
+  summaryText: string
+  coveragePercent: number
+}
+
 type DbRow = Record<string, unknown>
 
 export async function getGames(limit = 100) {
@@ -161,4 +167,116 @@ export async function gameExists(
     LIMIT 1
   `) as DbRow[]
   return rows.length > 0
+}
+
+const SUMMARY_FALLBACK_KEYS = [
+  'summary',
+  'summary_json',
+  'summary_text',
+  'engine_summary',
+  'progression_summary',
+  'data',
+  'payload',
+]
+
+const COVERAGE_KEYS = [
+  'coverage_percent',
+  'coveragePercent',
+  'coverage_pct',
+  'coverage',
+  'coverage_rate',
+  'coverageRate',
+]
+
+function pickValue(source: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) {
+      return source[key]
+    }
+  }
+  return undefined
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value
+  }
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) {
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+  }
+  return null
+}
+
+function formatSummaryText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return ''
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  try {
+    const serialized = JSON.stringify(value, null, 2)
+    return serialized ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function extractCoveragePercent(row: DbRow, summary: unknown): number {
+  const summaryCoverage =
+    summary && typeof summary === 'object'
+      ? pickValue(summary as Record<string, unknown>, COVERAGE_KEYS)
+      : undefined
+  const rowCoverage = pickValue(row, COVERAGE_KEYS)
+  const coverage = summaryCoverage ?? rowCoverage
+  return toNumber(coverage) ?? 0
+}
+
+function buildSummaryPayload(
+  row: DbRow,
+  summaryKeys: string[]
+): SummaryPayload {
+  const rawSummary = pickValue(row, summaryKeys) ?? pickValue(row, SUMMARY_FALLBACK_KEYS)
+  const parsedSummary = parseMaybeJson(rawSummary)
+  const summaryValue = parsedSummary ?? rawSummary ?? row
+  return {
+    summary: summaryValue,
+    summaryText: formatSummaryText(summaryValue),
+    coveragePercent: extractCoveragePercent(row, summaryValue),
+  }
+}
+
+export async function getLatestEngineSummary(): Promise<SummaryPayload | null> {
+  const sql = getSql()
+  const rows = (await sql`SELECT * FROM engine_summaries LIMIT 1`) as DbRow[]
+  if (!rows.length) {
+    return null
+  }
+  return buildSummaryPayload(rows[0], ['engine_summary', 'summary', 'summary_json', 'summary_text'])
+}
+
+export async function getLatestProgressionSummary(): Promise<SummaryPayload | null> {
+  const sql = getSql()
+  const rows = (await sql`SELECT * FROM progression_summaries LIMIT 1`) as DbRow[]
+  if (!rows.length) {
+    return null
+  }
+  return buildSummaryPayload(rows[0], ['progression_summary', 'summary', 'summary_json', 'summary_text'])
 }
