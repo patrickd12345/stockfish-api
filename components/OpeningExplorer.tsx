@@ -67,13 +67,13 @@ export default function OpeningExplorer() {
         const result = aValue.localeCompare(bValue)
         return sortDir === 'asc' ? result : -result
       }
-      const aNumber = Number(aValue)
-      const bNumber = Number(bValue)
+      const aNumber = showPercent ? Number(aValue) / a.games : Number(aValue)
+      const bNumber = showPercent ? Number(bValue) / b.games : Number(bValue)
       const result = aNumber - bNumber
       return sortDir === 'asc' ? result : -result
     })
     return list
-  }, [filtered, sortDir, sortKey])
+  }, [filtered, sortDir, sortKey, showPercent])
 
   const formatValue = (value: number, total: number) => {
     if (!showPercent) {
