@@ -103,10 +103,11 @@ export function isDateInWindow(dateStr: string, window: TimeWindow): boolean {
   }
   
   const start = new Date(window.start + 'T00:00:00Z')
-  const end = new Date(window.end + 'T23:59:59Z') // Include the entire end date
+  // End is exclusive: [start, end)
+  const end = new Date(window.end + 'T00:00:00Z')
   
-  // Include both start and end dates (inclusive range)
-  return date >= start && date <= end
+  // Include start date, exclude end date.
+  return date >= start && date < end
 }
 
 /**

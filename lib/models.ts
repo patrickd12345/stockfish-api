@@ -49,6 +49,15 @@ export interface GameAnalysisPayload {
   pvSnapshots: any[]
   engineVersion: string | null
   analysisDepth: number | null
+  avgCentipawnLoss: number | null
+  blunders: number | null
+  mistakes: number | null
+  inaccuracies: number | null
+  evalSwingMax: number | null
+  openingCpl: number | null
+  middlegameCpl: number | null
+  endgameCpl: number | null
+  gameLength: number | null
 }
 
 export interface OpeningStatsRow {
@@ -277,7 +286,19 @@ export async function getGameAnalysisData(id: string): Promise<GameAnalysisPaylo
   }
 
   const analysisRows = (await sql`
-    SELECT pv_snapshots, engine_version, analysis_depth
+    SELECT
+      pv_snapshots,
+      engine_version,
+      analysis_depth,
+      avg_centipawn_loss,
+      blunders,
+      mistakes,
+      inaccuracies,
+      eval_swing_max,
+      opening_cpl,
+      middlegame_cpl,
+      endgame_cpl,
+      game_length
     FROM engine_analysis
     WHERE game_id = ${id}
       AND analysis_failed = false
@@ -307,6 +328,26 @@ export async function getGameAnalysisData(id: string): Promise<GameAnalysisPaylo
     pvSnapshots: (analysis.pv_snapshots as any[]) ?? [],
     engineVersion: analysis.engine_version ? String(analysis.engine_version) : null,
     analysisDepth: analysis.analysis_depth ? Number(analysis.analysis_depth) : null,
+    avgCentipawnLoss:
+      analysis.avg_centipawn_loss === null || analysis.avg_centipawn_loss === undefined
+        ? null
+        : Number(analysis.avg_centipawn_loss),
+    blunders: analysis.blunders === undefined ? null : Number(analysis.blunders),
+    mistakes: analysis.mistakes === undefined ? null : Number(analysis.mistakes),
+    inaccuracies: analysis.inaccuracies === undefined ? null : Number(analysis.inaccuracies),
+    evalSwingMax:
+      analysis.eval_swing_max === null || analysis.eval_swing_max === undefined
+        ? null
+        : Number(analysis.eval_swing_max),
+    openingCpl:
+      analysis.opening_cpl === null || analysis.opening_cpl === undefined ? null : Number(analysis.opening_cpl),
+    middlegameCpl:
+      analysis.middlegame_cpl === null || analysis.middlegame_cpl === undefined
+        ? null
+        : Number(analysis.middlegame_cpl),
+    endgameCpl:
+      analysis.endgame_cpl === null || analysis.endgame_cpl === undefined ? null : Number(analysis.endgame_cpl),
+    gameLength: analysis.game_length === undefined ? null : Number(analysis.game_length),
   }
 }
 

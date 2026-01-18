@@ -18,6 +18,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /mobile\.spec\.ts/,
+    },
+    {
+      name: 'mobile',
+      // Use a chromium-based mobile device profile to avoid requiring WebKit downloads.
+      use: { ...devices['Pixel 5'] },
+      testMatch: /mobile\.spec\.ts/,
     },
   ],
   webServer: {

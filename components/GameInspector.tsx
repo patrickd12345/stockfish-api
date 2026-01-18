@@ -19,6 +19,17 @@ export default function GameInspector() {
     engineVersion: string | null
     analysisDepth: number | null
   } | null>(null)
+  const [engineStats, setEngineStats] = useState<{
+    avgCentipawnLoss: number | null
+    blunders: number | null
+    mistakes: number | null
+    inaccuracies: number | null
+    evalSwingMax: number | null
+    openingCpl: number | null
+    middlegameCpl: number | null
+    endgameCpl: number | null
+    gameLength: number | null
+  } | null>(null)
 
   useEffect(() => {
     fetchGames()
@@ -74,6 +85,17 @@ export default function GameInspector() {
       setAnalysisMeta({
         engineVersion: data.engineVersion || null,
         analysisDepth: data.analysisDepth ?? null,
+      })
+      setEngineStats({
+        avgCentipawnLoss: data.avgCentipawnLoss ?? null,
+        blunders: data.blunders ?? null,
+        mistakes: data.mistakes ?? null,
+        inaccuracies: data.inaccuracies ?? null,
+        evalSwingMax: data.evalSwingMax ?? null,
+        openingCpl: data.openingCpl ?? null,
+        middlegameCpl: data.middlegameCpl ?? null,
+        endgameCpl: data.endgameCpl ?? null,
+        gameLength: data.gameLength ?? null,
       })
     } catch (error) {
       console.error('Failed to fetch game analysis:', error)
@@ -144,17 +166,66 @@ export default function GameInspector() {
           </div>
 
           <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ marginBottom: '10px' }}>Stockfish Summary</h3>
+            {analysisLoading ? (
+              <div style={{ color: '#6b7280' }}>Loading engine summary…</div>
+            ) : engineStats ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Avg CPL</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.avgCentipawnLoss === null ? '—' : engineStats.avgCentipawnLoss.toFixed(1)}
+                  </div>
+                </div>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Blunders</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.blunders === null ? '—' : engineStats.blunders}
+                  </div>
+                </div>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Mistakes</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.mistakes === null ? '—' : engineStats.mistakes}
+                  </div>
+                </div>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Inaccuracies</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.inaccuracies === null ? '—' : engineStats.inaccuracies}
+                  </div>
+                </div>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Max eval swing</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.evalSwingMax === null ? '—' : engineStats.evalSwingMax.toFixed(0)}
+                  </div>
+                </div>
+                <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ color: '#6b7280', fontSize: '12px' }}>Moves</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {engineStats.gameLength === null ? '—' : engineStats.gameLength}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: '#6b7280' }}>
+                No engine summary available yet. Trigger analysis via the Stockfish pipeline.
+              </div>
+            )}
+            {analysisMeta && (analysisMeta.engineVersion || analysisMeta.analysisDepth) && (
+              <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '12px' }}>
+                Engine {analysisMeta.engineVersion || 'Stockfish'} · Depth {analysisMeta.analysisDepth ?? 'n/a'}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
             <h3 style={{ marginBottom: '10px' }}>Evaluation Trend</h3>
             {analysisLoading ? (
               <div style={{ color: '#6b7280' }}>Loading engine evaluation...</div>
             ) : (
               renderEvalGraph(evalSeries, moveIndex)
-            )}
-            {analysisMeta && (analysisMeta.engineVersion || analysisMeta.analysisDepth) && (
-              <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '12px' }}>
-                Engine {analysisMeta.engineVersion || 'Stockfish'} · Depth{' '}
-                {analysisMeta.analysisDepth ?? 'n/a'}
-              </div>
             )}
           </div>
 

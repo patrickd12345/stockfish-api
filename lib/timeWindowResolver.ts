@@ -1,6 +1,6 @@
-import OpenAI from 'openai'
 import { parseTimeExpression } from '@/lib/timeWindows'
 import type { TimeWindow } from '@/types/ProgressionSummary'
+import { getOpenAIClient } from '@/lib/openaiClient'
 
 export type TimeWindowResolution =
   | {
@@ -15,11 +15,12 @@ export type TimeWindowResolution =
     }
   | null
 
-function getOpenAIClient(): OpenAI | null {
-  const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
-  const apiKey = process.env.VERCEL_VIRTUAL_KEY?.replace(/[\n\r]/g, '').trim()
-  if (!gatewayId || !apiKey) return null
-  return new OpenAI({ apiKey, baseURL: 'https://ai-gateway.vercel.sh/v1' })
+function getResolverClient() {
+  try {
+    return getOpenAIClient()
+  } catch {
+    return null
+  }
 }
 
 function toIsoDate(d: Date): string {
@@ -57,7 +58,7 @@ export async function resolveTimeWindowFromMessage(
   }
 
   // 2) LLM-assisted fuzzy resolution.
-  const openai = getOpenAIClient()
+  const openai = getResolverClient()
   if (!openai) return null
 
   const nowIso = toIsoDate(now)

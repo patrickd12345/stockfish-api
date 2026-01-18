@@ -23,7 +23,7 @@ test('has title and tabs', async ({ page }) => {
 
   // If we saw the loading state, wait for it to resolve
   if (await loadingText.isVisible().catch(() => false)) {
-    await expect(loadingText).toBeHidden();
+    await expect(loadingText).toBeHidden({ timeout: 30_000 });
   }
 
   await expect(gameInspectorHeading.or(noGamesText)).toBeVisible();

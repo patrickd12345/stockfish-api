@@ -1,19 +1,27 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Sidebar from '@/components/Sidebar'
-import ChatTab from '@/components/ChatTab'
-import GameInspector from '@/components/GameInspector'
-import OpeningExplorer from '@/components/OpeningExplorer'
+import DesktopHome, { type HomeTab } from '@/components/DesktopHome'
+import MobileHome from '@/components/MobileHome'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'replay' | 'openings'>('chat')
+  const [activeTab, setActiveTab] = useState<HomeTab>('chat')
   const [refreshKey, setRefreshKey] = useState(0)
   const [importStatus, setImportStatus] = useState<string>('')
+  const [engineStatus, setEngineStatus] = useState<string>('')
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
+  const [isMobile, setIsMobile] = useState<boolean | null>(null)
   
   // Use a ref to prevent double-firing in React 18 strict mode
   const hasStartedImport = useRef(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)')
+    const update = () => setIsMobile(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const autoImport = async () => {
@@ -57,6 +65,30 @@ export default function Home() {
       setImportStatus('')
       // Refresh games list
       setRefreshKey(prev => prev + 1)
+
+      // Kick off a small Stockfish analysis batch so newly imported games get real engine stats
+      // (blunders/mistakes/inaccuracies/CPL/etc). This runs in small chunks to stay responsive.
+      try {
+        setEngineStatus('Analyzing new games with Stockfish…')
+        const res = await fetch('/api/engine/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: 5 }),
+        })
+        const data = await res.json()
+        if (res.ok) {
+          setEngineStatus(`Stockfish analysis: +${data.succeeded ?? 0} analyzed (${data.failed ?? 0} failed)`)
+        } else {
+          setEngineStatus('')
+          console.warn('Engine analyze failed:', data)
+        }
+      } catch (e) {
+        setEngineStatus('')
+        console.warn('Engine analyze request failed:', e)
+      } finally {
+        // Clear after a short delay to avoid permanent banner noise.
+        setTimeout(() => setEngineStatus(''), 5000)
+      }
     }
 
     autoImport()
@@ -66,73 +98,44 @@ export default function Home() {
     setRefreshKey(prev => prev + 1)
   }
 
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar 
-        onGamesProcessed={handleGamesProcessed} 
+  if (isMobile === null) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#6b7280' }}>
+        Loading…
+      </div>
+    )
+  }
+
+  if (isMobile) {
+    return (
+      <MobileHome
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        refreshKey={refreshKey}
+        importStatus={importStatus}
+        engineStatus={engineStatus}
+        selectedGameId={selectedGameId}
         onGameSelect={(id) => {
           setSelectedGameId(id)
           setActiveTab('chat')
         }}
-        selectedGameId={selectedGameId}
-        refreshKey={refreshKey}
       />
-      <main style={{ flex: 1, padding: '20px', marginLeft: '300px' }}>
-        <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <button
-              onClick={() => setActiveTab('chat')}
-              style={{
-                padding: '10px 20px',
-                marginRight: '10px',
-                background: activeTab === 'chat' ? '#2563eb' : '#e5e7eb',
-                color: activeTab === 'chat' ? 'white' : '#374151',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            >
-              Dashboard & Chat
-            </button>
-            <button
-              onClick={() => setActiveTab('replay')}
-              style={{
-                padding: '10px 20px',
-                background: activeTab === 'replay' ? '#2563eb' : '#e5e7eb',
-                color: activeTab === 'replay' ? 'white' : '#374151',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            >
-              Game Inspector (Replay)
-            </button>
-            <button
-              onClick={() => setActiveTab('openings')}
-              style={{
-                padding: '10px 20px',
-                marginLeft: '10px',
-                background: activeTab === 'openings' ? '#2563eb' : '#e5e7eb',
-                color: activeTab === 'openings' ? 'white' : '#374151',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            >
-              Opening Explorer
-            </button>
-          </div>
-          {importStatus && (
-            <div style={{ color: '#059669', fontSize: '14px' }}>
-              {importStatus}
-            </div>
-          )}
-        </div>
+    )
+  }
 
-        {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} />}
-        {activeTab === 'replay' && <GameInspector key={refreshKey} />}
-        {activeTab === 'openings' && <OpeningExplorer />}
-      </main>
-    </div>
+  return (
+    <DesktopHome
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      refreshKey={refreshKey}
+      importStatus={importStatus}
+      engineStatus={engineStatus}
+      selectedGameId={selectedGameId}
+      onGamesProcessed={handleGamesProcessed}
+      onGameSelect={(id) => {
+        setSelectedGameId(id)
+        setActiveTab('chat')
+      }}
+    />
   )
 }

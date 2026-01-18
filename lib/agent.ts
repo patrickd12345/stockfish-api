@@ -1,4 +1,4 @@
-import OpenAI from 'openai'
+import { getOpenAIClient, getOpenAIConfig } from '@/lib/openaiClient'
 import { connectToDb } from '@/lib/database'
 import { getGameSummaries, getGamePgn, searchGamesByEmbedding } from '@/lib/models'
 import { getEmbedding } from '@/lib/embeddings'
@@ -46,27 +46,19 @@ If the time window was based on a fuzzy phrase (e.g., "around christmas"), you M
 Do not ask for more data - work with what is provided. If the game count seems low, check if the date range is correct or if games might be missing from the database.`
 
 export async function buildAgent(conn: any) {
-  const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
-  const apiKey = process.env.VERCEL_VIRTUAL_KEY?.replace(/[\n\r]/g, '').trim()
-
-  if (!gatewayId || !apiKey) {
-    throw new Error('VERCEL_AI_GATEWAY_ID and VERCEL_VIRTUAL_KEY must be set')
+  const cfg = getOpenAIConfig()
+  if (!cfg) {
+    throw new Error('Missing OpenAI credentials. Set (VERCEL_AI_GATEWAY_ID + VERCEL_VIRTUAL_KEY) or OPENAI_API_KEY.')
   }
 
-  const baseURL = 'https://ai-gateway.vercel.sh/v1'
-
   console.log('Building agent with:', {
-    hasApiKey: !!apiKey,
-    apiKeyLength: apiKey.length,
-    hasGatewayId: !!gatewayId,
-    baseURL,
+    hasApiKey: !!cfg.apiKey,
+    apiKeyLength: cfg.apiKey.length,
+    baseURL: cfg.baseURL ?? '(direct)',
     model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
   })
 
-  const openai = new OpenAI({
-    apiKey,
-    baseURL,
-  })
+  const openai = getOpenAIClient()
 
   return {
     async invoke({ input, gameId, timeWindow }: { 

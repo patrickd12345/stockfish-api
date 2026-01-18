@@ -53,10 +53,7 @@ export async function POST(request: NextRequest) {
     
     // Always return valid JSON, even on error
     return NextResponse.json(
-      { 
-        error: errorMessage,
-        content: `I encountered an error: ${errorMessage}. Please try rephrasing your question.`
-      },
+      { error: errorMessage },
       { status: 500 }
     )
   }

@@ -1,4 +1,4 @@
-import OpenAI from 'openai'
+import { getOpenAIClient } from '@/lib/openaiClient'
 
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
 const MAX_EMBED_CHARS = 6000
@@ -27,14 +27,12 @@ export function buildEmbeddingText(input: {
 }
 
 export async function getEmbedding(text: string): Promise<number[] | null> {
-  const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
-  const apiKey = process.env.VERCEL_VIRTUAL_KEY?.trim()
-
-  if (!gatewayId || !apiKey) return null
-
-  const baseURL = 'https://ai-gateway.vercel.sh/v1'
-
-  const openai = new OpenAI({ apiKey, baseURL })
+  let openai
+  try {
+    openai = getOpenAIClient()
+  } catch {
+    return null
+  }
   const model = (process.env.OPENAI_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL).trim()
   
   const maxRetries = 3
