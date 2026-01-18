@@ -14,6 +14,28 @@ type Waiter = {
   timeoutId: NodeJS.Timeout
 }
 
+const activeEngines = new Set<StockfishEngine>()
+let shutdownHandlersRegistered = false
+
+function registerShutdownHandlers(): void {
+  if (shutdownHandlersRegistered) return
+  shutdownHandlersRegistered = true
+
+  const shutdown = (signal: string) => {
+    if (activeEngines.size === 0) return
+    console.warn(`⚠️  Shutting down ${activeEngines.size} Stockfish engine(s) due to ${signal}`)
+    for (const engine of Array.from(activeEngines)) {
+      engine.stop().catch(err => {
+        console.warn('Failed to stop Stockfish engine during shutdown:', err)
+      })
+    }
+  }
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'))
+  process.once('SIGINT', () => shutdown('SIGINT'))
+  process.once('beforeExit', () => shutdown('beforeExit'))
+}
+
 export function resolveStockfishPath(stockfishPath: string): string {
   const candidates = [
     stockfishPath,
@@ -87,11 +109,16 @@ export class StockfishEngine {
   }
 
   async start(): Promise<void> {
+    registerShutdownHandlers()
     this.proc = spawn(this.enginePath, [], { stdio: 'pipe' })
     this.rl = readline.createInterface({ input: this.proc.stdout })
     this.rl.on('line', line => this.handleLine(line))
     this.proc.on('error', err => this.rejectWaiter(err))
-    this.proc.on('exit', () => this.rejectWaiter(new Error('Stockfish exited')))
+    this.proc.on('exit', () => {
+      this.rejectWaiter(new Error('Stockfish exited'))
+      activeEngines.delete(this)
+    })
+    activeEngines.add(this)
 
     await this.sendAndWait('uci', line => line === 'uciok', 5000)
     await this.isReady()
@@ -108,6 +135,7 @@ export class StockfishEngine {
     this.proc = null
     this.rl = null
     this.waiter = null
+    activeEngines.delete(this)
   }
 
   async evaluate(fen: string, sideToMove: 'w' | 'b'): Promise<number> {

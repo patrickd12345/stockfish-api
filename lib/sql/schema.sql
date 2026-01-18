@@ -82,6 +82,20 @@ CREATE INDEX IF NOT EXISTS idx_engine_analysis_game_id ON engine_analysis (game_
 CREATE INDEX IF NOT EXISTS idx_engine_analysis_analyzed_at ON engine_analysis (analyzed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_engine_analysis_failed ON engine_analysis (analysis_failed) WHERE analysis_failed = false;
 
+-- Queue for background engine analysis jobs
+CREATE TABLE IF NOT EXISTS engine_analysis_queue (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL,
+  engine_name TEXT NOT NULL,
+  analysis_depth INT NOT NULL DEFAULT 15,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INT NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (game_id, engine_name, analysis_depth)
+);
+
 -- Engine summaries table for batch analysis results
 CREATE TABLE IF NOT EXISTS engine_summaries (
   id TEXT PRIMARY KEY DEFAULT 'default',

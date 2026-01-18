@@ -69,15 +69,16 @@ export default function Home() {
       // Kick off a small Stockfish analysis batch so newly imported games get real engine stats
       // (blunders/mistakes/inaccuracies/CPL/etc). This runs in small chunks to stay responsive.
       try {
-        setEngineStatus('Analyzing new games with Stockfish…')
+        setEngineStatus('Queueing Stockfish analysis…')
         const res = await fetch('/api/engine/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 5 }),
+          body: JSON.stringify({ limit: 5, mode: 'enqueue' }),
         })
         const data = await res.json()
         if (res.ok) {
-          setEngineStatus(`Stockfish analysis: +${data.succeeded ?? 0} analyzed (${data.failed ?? 0} failed)`)
+          const queued = data.enqueued ?? 0
+          setEngineStatus(`Stockfish analysis queued: ${queued} game${queued === 1 ? '' : 's'}`)
         } else {
           setEngineStatus('')
           console.warn('Engine analyze failed:', data)
