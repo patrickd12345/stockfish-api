@@ -43,7 +43,7 @@ export async function enqueueEngineAnalysisJobs(
   let skipped = 0
 
   for (const game of games) {
-    const result = await sql`
+    const result = (await sql`
       INSERT INTO engine_analysis_queue (
         game_id,
         engine_name,
@@ -57,7 +57,7 @@ export async function enqueueEngineAnalysisJobs(
       )
       ON CONFLICT (game_id, engine_name, analysis_depth) DO NOTHING
       RETURNING id
-    `
+    `) as Array<{ id: number }>
     if (result.length > 0) {
       enqueued += 1
     } else {
@@ -75,7 +75,7 @@ export async function claimEngineAnalysisJobs(
 ): Promise<EngineAnalysisJob[]> {
   await ensureQueueTable()
   const sql = getSql()
-  const rows = await sql`
+  const rows = (await sql`
     WITH next_jobs AS (
       SELECT id
       FROM engine_analysis_queue
@@ -94,7 +94,7 @@ export async function claimEngineAnalysisJobs(
     FROM next_jobs
     WHERE q.id = next_jobs.id
     RETURNING q.id, q.game_id, q.engine_name, q.analysis_depth
-  `
+  `) as Array<{ id: number; game_id: string; engine_name: string; analysis_depth: number }>
 
   return rows.map((row: any) => ({
     id: String(row.id),
@@ -127,12 +127,12 @@ export async function markEngineAnalysisJobFailed(jobId: string, reason: string)
 export async function fetchQueuedGamePgn(gameId: string): Promise<string | null> {
   await ensureQueueTable()
   const sql = getSql()
-  const rows = await sql`
+  const rows = (await sql`
     SELECT pgn_text
     FROM games
     WHERE id = ${gameId}::uuid
     LIMIT 1
-  `
+  `) as Array<{ pgn_text: string | null }>
   const row = rows[0]
   if (!row?.pgn_text) return null
   return String(row.pgn_text)
