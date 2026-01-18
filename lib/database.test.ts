@@ -1,7 +1,7 @@
-const fakeSql = vi.fn(async () => []) as unknown as ReturnType<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (...args: any[]) => any
->
+const fakeSql = vi.fn(async () => []) as unknown as (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => Promise<unknown[]>
 
 vi.mock('@neondatabase/serverless', () => {
   return {

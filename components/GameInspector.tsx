@@ -11,6 +11,14 @@ export default function GameInspector() {
   const [moveIndex, setMoveIndex] = useState(0)
   const [board, setBoard] = useState<Chess | null>(null)
   const [loading, setLoading] = useState(true)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [fullHistory, setFullHistory] = useState<string[]>([])
+  const [movesData, setMovesData] = useState<any[]>([])
+  const [pvSnapshots, setPvSnapshots] = useState<any[]>([])
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    engineVersion: string | null
+    analysisDepth: number | null
+  } | null>(null)
 
   useEffect(() => {
     fetchGames()
@@ -18,7 +26,7 @@ export default function GameInspector() {
 
   useEffect(() => {
     if (selectedGameId) {
-      fetchGamePgn(selectedGameId)
+      fetchGameAnalysis(selectedGameId)
     }
   }, [selectedGameId])
 
@@ -29,9 +37,14 @@ export default function GameInspector() {
         game.loadPgn(pgn)
         setBoard(game)
         setMoveIndex(0)
+        setFullHistory(game.history())
       } catch (e) {
         console.error('Failed to load PGN:', e)
       }
+    } else {
+      setBoard(null)
+      setMoveIndex(0)
+      setFullHistory([])
     }
   }, [pgn])
 
@@ -50,14 +63,22 @@ export default function GameInspector() {
     }
   }
 
-  const fetchGamePgn = async (gameId: string) => {
+  const fetchGameAnalysis = async (gameId: string) => {
+    setAnalysisLoading(true)
     try {
-      const response = await fetch(`/api/games/${gameId}/pgn`)
+      const response = await fetch(`/api/games/${gameId}/analysis`)
       const data = await response.json()
       setPgn(data.pgn || '')
+      setMovesData(Array.isArray(data.moves) ? data.moves : [])
+      setPvSnapshots(Array.isArray(data.pvSnapshots) ? data.pvSnapshots : [])
+      setAnalysisMeta({
+        engineVersion: data.engineVersion || null,
+        analysisDepth: data.analysisDepth ?? null,
+      })
     } catch (error) {
-      console.error('Failed to fetch PGN:', error)
+      console.error('Failed to fetch game analysis:', error)
     }
+    setAnalysisLoading(false)
   }
 
   const navigateMove = (direction: 'prev' | 'next') => {
@@ -92,7 +113,10 @@ export default function GameInspector() {
     return <div className="card">No games processed yet.</div>
   }
 
-  const moves = board ? board.history() : []
+  const moves = fullHistory
+  const evalSeries = movesData.map((move) =>
+    typeof move.engine_eval === 'number' ? move.engine_eval : null
+  )
 
   return (
     <div className="card">
@@ -117,6 +141,21 @@ export default function GameInspector() {
         <>
           <div style={{ marginBottom: '20px', textAlign: 'center' }}>
             <ChessBoard fen={board.fen()} />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <h3 style={{ marginBottom: '10px' }}>Evaluation Trend</h3>
+            {analysisLoading ? (
+              <div style={{ color: '#6b7280' }}>Loading engine evaluation...</div>
+            ) : (
+              renderEvalGraph(evalSeries, moveIndex)
+            )}
+            {analysisMeta && (analysisMeta.engineVersion || analysisMeta.analysisDepth) && (
+              <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '12px' }}>
+                Engine {analysisMeta.engineVersion || 'Stockfish'} · Depth{' '}
+                {analysisMeta.analysisDepth ?? 'n/a'}
+              </div>
+            )}
           </div>
 
           <div style={{ marginBottom: '20px' }}>
@@ -157,8 +196,101 @@ export default function GameInspector() {
               Next
             </button>
           </div>
+
+          <div style={{ marginTop: '30px' }}>
+            <h3 style={{ marginBottom: '10px' }}>Best Line vs Played Move</h3>
+            {pvSnapshots.length === 0 ? (
+              <div style={{ color: '#6b7280' }}>
+                No principal variations available yet. Run engine analysis to populate.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '12px' }}>
+                {pvSnapshots.map((snapshot, index) => {
+                  const playedMove = moves[snapshot.ply] || null
+                  return (
+                    <div
+                      key={`${snapshot.ply}-${index}`}
+                      style={{
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        background: '#f9fafb',
+                      }}
+                    >
+                      <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
+                        Move {snapshot.moveNumber}
+                      </div>
+                      <div style={{ color: '#374151', marginBottom: '4px' }}>
+                        Played: {playedMove || 'n/a'}
+                      </div>
+                      <div style={{ color: '#1f2937' }}>
+                        Best line: {Array.isArray(snapshot.principalVariation)
+                          ? snapshot.principalVariation.join(' ')
+                          : 'n/a'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
+  )
+}
+
+function renderEvalGraph(values: Array<number | null>, activeIndex: number) {
+  const sanitized = values.map((value) => (typeof value === 'number' ? value : 0))
+  if (sanitized.length === 0) {
+    return <div style={{ color: '#6b7280' }}>No evaluation data available.</div>
+  }
+
+  const maxAbs = Math.max(200, ...sanitized.map((value) => Math.abs(value)))
+  const width = 640
+  const height = 140
+  const padding = 16
+  const innerWidth = width - padding * 2
+  const innerHeight = height - padding * 2
+
+  const points = sanitized.map((value, index) => {
+    const x = padding + (innerWidth * index) / Math.max(1, sanitized.length - 1)
+    const normalized = Math.max(-maxAbs, Math.min(maxAbs, value)) / maxAbs
+    const y = padding + innerHeight / 2 - normalized * (innerHeight / 2)
+    return `${x},${y}`
+  })
+
+  const pathData = points.length > 1 ? `M${points[0]} L${points.slice(1).join(' ')}` : ''
+  const activeX =
+    sanitized.length > 1
+      ? padding + (innerWidth * activeIndex) / Math.max(1, sanitized.length - 1)
+      : padding
+
+  return (
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+    >
+      <line
+        x1={padding}
+        y1={padding + innerHeight / 2}
+        x2={padding + innerWidth}
+        y2={padding + innerHeight / 2}
+        stroke="#d1d5db"
+        strokeDasharray="4 4"
+      />
+      <path d={pathData} fill="none" stroke="#2563eb" strokeWidth="2" />
+      <line
+        x1={activeX}
+        y1={padding}
+        x2={activeX}
+        y2={padding + innerHeight}
+        stroke="#f97316"
+        strokeWidth="2"
+      />
+    </svg>
   )
 }

@@ -22,7 +22,28 @@ You MUST NOT say "I do not have access" if that section is present.
 IMPORTANT: If an "ENGINE ANALYSIS SUMMARY (AUTHORITATIVE)" section appears below, it contains precomputed engine-derived metrics from Stockfish analysis.
 You MUST use those exact numbers when answering questions about centipawn loss, blunders, mistakes, inaccuracies, or engine trends.
 You MUST NOT say "I don't have engine data" or "I do not have access" if that section is present.
-If coveragePercent is 0, explicitly state that engine analysis data is unavailable.`
+If coveragePercent is 0, explicitly state that engine analysis data is unavailable.
+
+When a time window is provided (e.g., "last week", "last 7 days"), you will receive:
+- A TIME WINDOW section with the date range and game count
+- A list of ALL games in that period with their results, dates, opponents, openings, accuracy, and blunders
+
+CRITICAL: You MUST count and analyze ALL games in the list, not just a sample. The list contains every single game in the time period.
+
+You should:
+- Count ALL games in the list (the total number will be shown in the TIME WINDOW section)
+- Calculate win/loss/draw statistics from ALL games
+- Calculate win rate percentage from ALL games
+- Sum total blunders from ALL games
+- Identify trends, patterns, or notable games
+- Provide insights based on ALL the data provided
+
+If the user asks "how many games did I play", you MUST use the exact count from the TIME WINDOW section, not estimate or sample.
+
+When answering a time-window question, you MUST restate the exact date range you used in your first sentence.
+If the time window was based on a fuzzy phrase (e.g., "around christmas"), you MUST clearly state the assumption you made about what dates that refers to.
+
+Do not ask for more data - work with what is provided. If the game count seems low, check if the date range is correct or if games might be missing from the database.`
 
 export async function buildAgent(conn: any) {
   const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
@@ -119,26 +140,98 @@ Then rebuild summary: npm run rebuild:engine-summary
 ================================`
         }
 
-        // Handle time window requests
-        if (timeWindow && progressionSummary) {
-          const window = parseTimeExpression(timeWindow)
+        // Handle time window requests - provide data, let agent do the analysis
+        if (timeWindow) {
+          // timeWindow can be either:
+          // 1. A time expression like "last week" -> parse it
+          // 2. A date range string like "2026-01-11 to 2026-01-18" -> extract dates
+          let window = parseTimeExpression(timeWindow)
+          
+          if (!window && timeWindow.includes(' to ')) {
+            // Parse date range string format: "YYYY-MM-DD to YYYY-MM-DD"
+            const parts = timeWindow.split(' to ')
+            if (parts.length === 2) {
+              const start = parts[0].trim()
+              const end = parts[1].trim()
+              window = {
+                start,
+                end,
+                label: `Custom period (${start} to ${end})`,
+                gameCount: 0
+              }
+            }
+          }
+          
           if (window) {
-            // Get games in the time window (for counting only, not full analysis)
-            const recentGames = await getGameSummaries(1000) // Get more games to filter
-            // Convert the game summaries to the expected format for filtering
-            const gamesForFiltering = recentGames.map(game => ({
-              date: game.date,
-              created_at: game.createdAt
-            }))
-            const gamesInWindow = filterGamesInWindow(gamesForFiltering, window)
+            console.log(`🔍 Time window detected: ${window.start} to ${window.end}`)
+            
+            // Use database-level date filtering for efficiency and accuracy
+            const { getGameSummariesByDateRange } = await import('@/lib/models')
+            console.log(`🔍 Calling getGameSummariesByDateRange(${window.start}, ${window.end})`)
+            const gamesInWindow = await getGameSummariesByDateRange(window.start, window.end, 5000)
             window.gameCount = gamesInWindow.length
             
+            console.log(`📊 Found ${gamesInWindow.length} games in time window`)
+            console.log(`📋 Sample game dates:`, gamesInWindow.slice(0, 5).map(g => g.date))
+            console.log(`📋 Last game dates:`, gamesInWindow.slice(-5).map(g => g.date))
+            
+            // CRITICAL CHECK: Verify we have the expected number of games
+            if (gamesInWindow.length < 50) {
+              console.error(`⚠️  WARNING: Only ${gamesInWindow.length} games found for last week. Expected ~105 (15/day * 7 days)`)
+              console.error(`   This might indicate a date filtering issue.`)
+            }
+            
+            // Provide the time window and games data - let the agent calculate stats
             context += `\n\n${formatTimeWindowForPrompt(window)}`
             
             if (gamesInWindow.length > 0) {
-              // Show summary of games in window (not full analysis)
-              const windowSummary = gamesInWindow.slice(0, 5) // Just top 5 for context
-              context += `\nRecent games in this window:\n${JSON.stringify(windowSummary, null, 2)}`
+              // Calculate summary stats upfront
+              const wins = gamesInWindow.filter(g => g.result === '1-0').length
+              const losses = gamesInWindow.filter(g => g.result === '0-1').length
+              const draws = gamesInWindow.filter(g => g.result === '1/2-1/2').length
+              const totalBlunders = gamesInWindow.reduce((sum, g) => sum + (g.blunders || 0), 0)
+              
+              // Use a very compact format - CSV-like for efficiency
+              const gamesCompact = gamesInWindow.map((g, i) => 
+                `${i + 1}. ${g.date || 'N/A'} | ${g.white || 'N/A'} vs ${g.black || 'N/A'} | ${g.result || 'N/A'} | ${g.blunders || 0} blunders | ${g.my_accuracy ? g.my_accuracy.toFixed(1) + '%' : 'N/A'}`
+              ).join('\n')
+              
+              context += `\n\n╔══════════════════════════════════════════════════════════════╗
+║  TIME WINDOW ANALYSIS: ${window.label || 'Custom Period'}          ║
+╠══════════════════════════════════════════════════════════════╣
+║  DATE RANGE: ${window.start} to ${window.end}                ║
+║  TOTAL GAMES: ${gamesInWindow.length}                         ║
+║                                                               ║
+║  ⚠️  CRITICAL: You MUST use the exact count above: ${gamesInWindow.length} games ║
+║  ⚠️  Do NOT estimate, sample, or summarize - count ALL games ║
+╠══════════════════════════════════════════════════════════════╣
+║  PRE-CALCULATED STATISTICS (for verification):              ║
+║  - Wins: ${wins}                                             ║
+║  - Losses: ${losses}                                         ║
+║  - Draws: ${draws}                                           ║
+║  - Total Blunders: ${totalBlunders}                          ║
+║  - Win Rate: ${gamesInWindow.length > 0 ? ((wins / gamesInWindow.length) * 100).toFixed(1) : 0}%                    ║
+╠══════════════════════════════════════════════════════════════╣
+║  ALL ${gamesInWindow.length} GAMES IN THIS PERIOD:                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+${gamesCompact}
+
+╔══════════════════════════════════════════════════════════════╗
+║  REMINDER: You received ${gamesInWindow.length} games. Count them all! ║
+╚══════════════════════════════════════════════════════════════╝`
+              
+              // Critical: Verify all games are included
+              console.log(`📦 Sending ${gamesInWindow.length} games to agent`)
+              console.log(`📏 Context length: ${context.length} characters`)
+              console.log(`📏 Games compact format length: ${gamesCompact.length} characters`)
+              console.log(`📋 First 3 games:`, gamesInWindow.slice(0, 3).map(g => `${g.white} vs ${g.black}`))
+              console.log(`📋 Last 3 games:`, gamesInWindow.slice(-3).map(g => `${g.white} vs ${g.black}`))
+              console.log(`📊 Pre-calculated stats: ${wins}W/${losses}L/${draws}D, ${totalBlunders} blunders`)
+              console.log(`✅ Verified: All ${gamesInWindow.length} games included in context`)
+            } else {
+              context += `\n\nNo games found in this time period (${window.start} to ${window.end}).`
+              context += `\nThis could mean:\n- No games were played in this period\n- Games might have different date formats\n- Check if games exist in the database with different date ranges`
             }
           }
         }

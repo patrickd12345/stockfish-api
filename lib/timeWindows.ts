@@ -83,12 +83,30 @@ export function getCommonTimeWindows(now: Date = new Date()): TimeWindow[] {
  * Check if a date string falls within a time window
  */
 export function isDateInWindow(dateStr: string, window: TimeWindow): boolean {
-  const date = new Date(dateStr)
-  const start = new Date(window.start)
-  const end = new Date(window.end)
+  if (!dateStr) return false
   
-  // Include start date, exclude end date (end is "up to but not including")
-  return date >= start && date < end
+  // Normalize date string - handle Chess.com format (YYYY.MM.DD) and other formats
+  let normalizedDate = dateStr.trim()
+  
+  // Convert Chess.com format (YYYY.MM.DD) to ISO format (YYYY-MM-DD)
+  if (normalizedDate.includes('.')) {
+    normalizedDate = normalizedDate.replace(/\./g, '-')
+  }
+  
+  // Extract just the date part (YYYY-MM-DD) if there's time info
+  const dateOnly = normalizedDate.split('T')[0].split(' ')[0]
+  
+  // Parse the date
+  const date = new Date(dateOnly + 'T00:00:00Z')
+  if (isNaN(date.getTime())) {
+    return false
+  }
+  
+  const start = new Date(window.start + 'T00:00:00Z')
+  const end = new Date(window.end + 'T23:59:59Z') // Include the entire end date
+  
+  // Include both start and end dates (inclusive range)
+  return date >= start && date <= end
 }
 
 /**
@@ -118,7 +136,91 @@ export function filterGamesInWindow<T extends { date?: string; created_at?: Date
  * Parse natural language time expressions into time windows
  */
 export function parseTimeExpression(expression: string, now: Date = new Date()): TimeWindow | null {
-  const expr = expression.toLowerCase().trim()
+  // Normalize spelled-out numbers to digits
+  const normalizeExpr = (expr: string) => {
+    return expr
+      .replace(/\bsix\b/gi, '6')
+      .replace(/\bthree\b/gi, '3')
+      .replace(/\bone\b/gi, '1')
+      .replace(/\btwo\b/gi, '2')
+      .replace(/\bfour\b/gi, '4')
+      .replace(/\bfive\b/gi, '5')
+      .replace(/\bseven\b/gi, '7')
+      .replace(/\beight\b/gi, '8')
+      .replace(/\bnine\b/gi, '9')
+      .replace(/\bten\b/gi, '10')
+  }
+  
+  const expr = normalizeExpr(expression.toLowerCase().trim())
+
+  const toIsoDate = (d: Date): string => d.toISOString().split('T')[0]
+
+  const parseDateLoose = (raw: string): string | null => {
+    const token = raw.trim()
+    if (!token) return null
+
+    // Numeric formats: YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD
+    const m = token.match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/)
+    if (m) {
+      const yyyy = Number(m[1])
+      const mm = Number(m[2])
+      const dd = Number(m[3])
+      if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+        const d = new Date(Date.UTC(yyyy, mm - 1, dd))
+        if (!isNaN(d.getTime())) return toIsoDate(d)
+      }
+    }
+
+    // Month-name formats (best-effort): "jan 5", "january 5 2026", "5 jan 2026"
+    const hasYear = /\b\d{4}\b/.test(token)
+    const candidate = hasYear ? token : `${token} ${now.getFullYear()}`
+    const d = new Date(candidate)
+    if (!isNaN(d.getTime())) {
+      // If the user omitted year and the parsed date lands in the future, assume previous year.
+      if (!hasYear && d.getTime() > now.getTime()) {
+        const prev = new Date(d)
+        prev.setFullYear(prev.getFullYear() - 1)
+        return toIsoDate(prev)
+      }
+      return toIsoDate(d)
+    }
+
+    return null
+  }
+
+  // Explicit date ranges:
+  // - "2025-11-01 to 2026-01-15"
+  // - "from 2025-11-01 to 2026-01-15"
+  // - "between 2025-11-01 and 2026-01-15"
+  const numericRange = expr.match(
+    /(\d{4}[./-]\d{1,2}[./-]\d{1,2})\s*(?:to|-|–|—|and)\s*(\d{4}[./-]\d{1,2}[./-]\d{1,2})/
+  )
+  if (numericRange) {
+    const start = parseDateLoose(numericRange[1])
+    const end = parseDateLoose(numericRange[2])
+    if (start && end) return getCustomWindow(start, end, `${start} to ${end}`)
+  }
+
+  const fromTo = expr.match(/\bfrom\s+([^,;]+?)\s+to\s+([^,;]+)\b/)
+  if (fromTo) {
+    const start = parseDateLoose(fromTo[1])
+    const end = parseDateLoose(fromTo[2])
+    if (start && end) return getCustomWindow(start, end, `${start} to ${end}`)
+  }
+
+  const betweenAnd = expr.match(/\bbetween\s+([^,;]+?)\s+and\s+([^,;]+)\b/)
+  if (betweenAnd) {
+    const start = parseDateLoose(betweenAnd[1])
+    const end = parseDateLoose(betweenAnd[2])
+    if (start && end) return getCustomWindow(start, end, `${start} to ${end}`)
+  }
+
+  // "since <date>"
+  const since = expr.match(/\bsince\s+([^,;]+)\b/)
+  if (since) {
+    const start = parseDateLoose(since[1])
+    if (start) return getCustomWindow(start, toIsoDate(now), `Since ${start}`)
+  }
   
   // Match "last X days/weeks/months"
   const lastMatch = expr.match(/last (\d+) (days?|weeks?|months?)/)
@@ -139,19 +241,45 @@ export function parseTimeExpression(expression: string, now: Date = new Date()):
     
     return getLastNDaysWindow(days, now)
   }
+
+  // Also accept common synonyms: "past", "previous", "over the last", "in the last"
+  const relativeMatch = expr.match(/\b(?:past|previous|over the last|in the last)\s+(\d+)\s+(days?|weeks?|months?)\b/)
+  if (relativeMatch) {
+    const num = parseInt(relativeMatch[1])
+    const unit = relativeMatch[2]
+    let days: number
+    if (unit.startsWith('day')) days = num
+    else if (unit.startsWith('week')) days = num * 7
+    else if (unit.startsWith('month')) days = num * 30
+    else return null
+    return getLastNDaysWindow(days, now)
+  }
   
-  // Match preset expressions
+  // Match common preset phrases inside longer sentences.
+  // Example: "how was my last week" -> matches "last week".
+  const has = (re: RegExp) => re.test(expr)
+
+  if (has(/\btoday\b/)) return getLastNDaysWindow(1, now)
+
+  if (has(/\byesterday\b/)) {
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    return getCustomWindow(
+      yesterday.toISOString().split('T')[0],
+      now.toISOString().split('T')[0],
+      'Yesterday'
+    )
+  }
+
+  if (has(/\b(last|this)\s+week\b/)) return getLastNDaysWindow(7, now)
+  if (has(/\b(last|this)\s+month\b/)) return getLastNDaysWindow(30, now)
+  if (has(/\b(last|this)\s+year\b/)) return getLastNDaysWindow(365, now)
+  if (has(/\b(last|previous|past)\s+fortnight\b/)) return getLastNDaysWindow(14, now)
+  if (has(/\b(last|previous|past)\s+quarter\b/)) return getLastNDaysWindow(90, now)
+
+  // If the caller passed exactly the short phrase, keep supporting it as well.
+  // (This also covers "last three months"/"last six months" after normalization.)
   switch (expr) {
-    case 'today':
-      return getLastNDaysWindow(1, now)
-    case 'yesterday':
-      const yesterday = new Date(now)
-      yesterday.setDate(yesterday.getDate() - 1)
-      return getCustomWindow(
-        yesterday.toISOString().split('T')[0],
-        now.toISOString().split('T')[0],
-        'Yesterday'
-      )
     case 'this week':
     case 'last week':
       return getLastNDaysWindow(7, now)
@@ -159,8 +287,10 @@ export function parseTimeExpression(expression: string, now: Date = new Date()):
     case 'last month':
       return getLastNDaysWindow(30, now)
     case 'last 3 months':
+    case 'last three months':
       return getLastNDaysWindow(90, now)
     case 'last 6 months':
+    case 'last six months':
       return getLastNDaysWindow(180, now)
     case 'this year':
     case 'last year':

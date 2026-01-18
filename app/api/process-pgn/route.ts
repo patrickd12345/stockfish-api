@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { analyzePgn } from '@/lib/analysis'
+import path from 'path'
+import { analyzePgn, parsePgnWithoutEngine } from '@/lib/analysis'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame } from '@/lib/models'
 import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
+import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
+import { storeEngineAnalysis } from '@/lib/engineStorage'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,14 +25,23 @@ export async function POST(request: NextRequest) {
         : pgnValue instanceof File
           ? await pgnValue.text()
           : ''
-    const stockfishPath = (formData.get('stockfishPath') as string) || './stockfish'
+    // Use an absolute path so runtime CWD differences don't break Stockfish in dev/serverless.
+    const defaultStockfishPath =
+      process.platform === 'win32'
+        ? path.join(process.cwd(), 'stockfish.exe')
+        : path.join(process.cwd(), 'stockfish')
+    const stockfishPath = (formData.get('stockfishPath') as string) || defaultStockfishPath
     const username = (formData.get('username') as string) || ''
+    const analysisMode = process.env.ENGINE_ANALYSIS_MODE || 'offline'
 
     if (!pgn) {
       return NextResponse.json({ error: 'PGN text is required' }, { status: 400 })
     }
 
-    const results = await analyzePgn(pgn, stockfishPath, username)
+    const results =
+      analysisMode === 'inline'
+        ? await analyzePgn(pgn, stockfishPath, username)
+        : await parsePgnWithoutEngine(pgn)
 
     if (!results || results.length === 0) {
       return NextResponse.json({ error: 'No games found in PGN' }, { status: 400 })
@@ -44,6 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     let count = 0
+    const createdGameIds: string[] = []
     for (const entry of results) {
       let embedding: number[] | null = null
       try {
@@ -52,12 +65,35 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.warn('Embedding generation failed:', e)
       }
-      await createGame({
+      const id = await createGame({
         ...entry.game,
         moves: entry.moves,
         embedding,
       })
+      createdGameIds.push(id)
       count++
+    }
+
+    // Run engine analysis for a small subset immediately so blunders are real, not defaults.
+    // Keep this bounded for serverless/dev responsiveness; the full backlog can be analyzed via /api/engine/analyze or scripts/run-engine-analysis.ts.
+    const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false'
+    if (analyzeNow && createdGameIds.length > 0) {
+      const playerNames =
+        process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
+      const stockfishPathResolved =
+        process.env.STOCKFISH_PATH?.trim() || stockfishPath
+      const depth = Math.max(8, Math.min(25, Number(process.env.ANALYSIS_DEPTH ?? 15)))
+      const maxToAnalyze = Math.min(5, createdGameIds.length)
+
+      for (let i = 0; i < maxToAnalyze; i++) {
+        try {
+          const result = await analyzeGameWithEngine(pgn, stockfishPathResolved, playerNames, depth)
+          await storeEngineAnalysis(createdGameIds[i], result, 'stockfish')
+        } catch (e) {
+          // Non-fatal: game is imported; engine analysis can be re-run later.
+          console.warn('Immediate engine analysis failed:', e)
+        }
+      }
     }
 
     // Trigger batch analysis after successful import

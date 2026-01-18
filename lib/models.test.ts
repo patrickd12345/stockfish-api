@@ -1,4 +1,4 @@
-const sql = vi.fn(async () => [])
+const sql = vi.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => [] as unknown[])
 
 vi.mock('@/lib/database', () => ({
   getSql: () => sql,
@@ -22,7 +22,7 @@ describe('lib/models', () => {
   function lastSqlText(): string {
     const call = sql.mock.calls.at(-1)
     if (!call) return ''
-    return (call[0] as TemplateStringsArray).join('')
+    return (call[0] as unknown as TemplateStringsArray).join('')
   }
 
   function lastSqlValues(): unknown[] {

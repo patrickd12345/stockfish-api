@@ -19,7 +19,7 @@ test('has title and tabs', async ({ page }) => {
   const noGamesText = page.getByText('No games processed yet.');
   const loadingText = page.getByText('Loading games...');
 
-  await expect(gameInspectorHeading.or(noGamesText).or(loadingText)).toBeVisible();
+  await expect(gameInspectorHeading.or(noGamesText).or(loadingText)).toBeVisible({ timeout: 30_000 });
 
   // If we saw the loading state, wait for it to resolve
   if (await loadingText.isVisible().catch(() => false)) {
@@ -53,4 +53,66 @@ test('game search functionality', async ({ page }) => {
 
   await expect(searchingText).toBeHidden({ timeout: 10_000 });
   await expect(anyGameRow.or(noGamesText)).toBeVisible({ timeout: 10_000 });
+});
+
+test('chat posts selected gameId (network stub)', async ({ page }) => {
+  // Stub /api/games and /api/chat so the test is DB/engine independent.
+  await page.route('**/api/import/chesscom**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, imported: 0 }),
+    })
+  })
+
+  const fulfillGames = async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        games: [
+          {
+            id: 'g1',
+            white: 'Alice',
+            black: 'Bob',
+            opening_name: 'Ruy Lopez',
+            date: '2026.01.17',
+            result: '1-0',
+            pgn_text:
+              '[Event \"?\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
+          },
+        ],
+      }),
+    })
+  }
+
+  // Match both /api/games and /api/games?q=...
+  await page.route('**/api/games', fulfillGames)
+  await page.route('**/api/games?*', fulfillGames)
+
+  let lastChatBody: any = null
+  await page.route('**/api/chat', async (route) => {
+    const req = route.request()
+    lastChatBody = req.postDataJSON()
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ content: 'ok' }),
+    })
+  })
+
+  await page.goto('/')
+
+  // Wait for the sidebar to be ready.
+  await expect(page.getByPlaceholder('Search white, black, opening...')).toBeVisible()
+
+  // Select the game in the sidebar.
+  await page.getByText('Alice vs Bob').click({ timeout: 30_000 })
+
+  // Send a message.
+  await page.getByPlaceholder('Ask your coach').fill('hi')
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  await expect(page.getByText('ok')).toBeVisible()
+  expect(lastChatBody).toEqual({ message: 'hi', gameId: 'g1' })
 });

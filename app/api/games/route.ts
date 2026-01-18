@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     if (query) {
       games = await searchGames(query)
     } else {
-      games = await getGames(100)
+      // Show more than 100 so newest imports don’t push “today” off the list.
+      games = await getGames(500)
     }
     
     return NextResponse.json({ games })

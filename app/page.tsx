@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react'
 import Sidebar from '@/components/Sidebar'
 import ChatTab from '@/components/ChatTab'
 import GameInspector from '@/components/GameInspector'
+import OpeningExplorer from '@/components/OpeningExplorer'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'replay'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'replay' | 'openings'>('chat')
   const [refreshKey, setRefreshKey] = useState(0)
   const [importStatus, setImportStatus] = useState<string>('')
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
@@ -106,6 +107,20 @@ export default function Home() {
             >
               Game Inspector (Replay)
             </button>
+            <button
+              onClick={() => setActiveTab('openings')}
+              style={{
+                padding: '10px 20px',
+                marginLeft: '10px',
+                background: activeTab === 'openings' ? '#2563eb' : '#e5e7eb',
+                color: activeTab === 'openings' ? 'white' : '#374151',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              Opening Explorer
+            </button>
           </div>
           {importStatus && (
             <div style={{ color: '#059669', fontSize: '14px' }}>
@@ -116,6 +131,7 @@ export default function Home() {
 
         {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} />}
         {activeTab === 'replay' && <GameInspector key={refreshKey} />}
+        {activeTab === 'openings' && <OpeningExplorer />}
       </main>
     </div>
   )

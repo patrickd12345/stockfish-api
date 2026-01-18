@@ -154,6 +154,78 @@ export async function analyzePgn(
   }
 }
 
+export async function parsePgnWithoutEngine(pgnText: string): Promise<GameData[]> {
+  if (!pgnText.trim()) {
+    return []
+  }
+
+  const gameStrings = pgnText.split(/(\[Event\s+"[^"]+"\])/g).filter(s => s.trim())
+  const results: GameData[] = []
+
+  const games: string[] = []
+  for (let i = 0; i < gameStrings.length; i++) {
+    if (gameStrings[i].startsWith('[Event')) {
+      games.push(gameStrings[i] + (gameStrings[i + 1] || ''))
+      i++
+    } else {
+      games.push(gameStrings[i])
+    }
+  }
+
+  for (const gamePgn of games) {
+    const chess = new Chess()
+    try {
+      chess.loadPgn(gamePgn)
+    } catch (e) {
+      console.warn('Failed to load PGN:', e)
+      continue
+    }
+
+    const history = chess.history({ verbose: true })
+    const moves: GameData['moves'] = []
+    const tempChess = new Chess()
+    let ply = 0
+
+    for (const move of history) {
+      try {
+        tempChess.move(move.san)
+        ply++
+        const moveNumber = Math.ceil(ply / 2)
+        moves.push({
+          move_number: moveNumber,
+          ply,
+          fen: tempChess.fen(),
+          move_san: move.san,
+          engine_eval: undefined,
+          is_blunder: false,
+        })
+      } catch (e) {
+        console.warn('Failed move in game:', e)
+      }
+    }
+
+    const headers = chess.header()
+
+    results.push({
+      game: {
+        date: headers.Date ?? undefined,
+        white: headers.White ?? undefined,
+        black: headers.Black ?? undefined,
+        result: headers.Result ?? undefined,
+        opening_name: headers.Opening ?? undefined,
+        my_accuracy: undefined,
+        // IMPORTANT: We have no engine evaluation here, so blunders are UNKNOWN.
+        // Use a sentinel value to avoid lying with "0".
+        blunders: -1,
+        pgn_text: gamePgn,
+      },
+      moves,
+    })
+  }
+
+  return results
+}
+
 function centipawnLoss(
   beforeCp: number,
   afterCp: number,

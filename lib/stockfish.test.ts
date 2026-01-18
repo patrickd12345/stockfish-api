@@ -39,9 +39,17 @@ describe('lib/stockfish', () => {
 
   it('throws when no candidate exists', () => {
     process.env.PATH = ''
-    expect(() => resolveStockfishPath('definitely-not-a-binary')).toThrow(
-      /Stockfish binary not found/i
-    )
+    const cwd = process.cwd()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-miss-'))
+    try {
+      process.chdir(dir)
+      expect(() => resolveStockfishPath('definitely-not-a-binary')).toThrow(
+        /Stockfish binary not found/i
+      )
+    } finally {
+      process.chdir(cwd)
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

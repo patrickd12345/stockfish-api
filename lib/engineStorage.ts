@@ -108,6 +108,15 @@ export async function storeEngineAnalysis(
       analyzed_at = now(),
       updated_at = now()
   `
+
+  // Keep the `games` table in sync so "blunders" is always a concrete number
+  // once Stockfish has analyzed the game.
+  await sql`
+    UPDATE games
+    SET
+      blunders = ${result.blunders}
+    WHERE id = ${gameId}::uuid
+  `
 }
 
 /**

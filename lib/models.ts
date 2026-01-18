@@ -43,6 +43,23 @@ export interface SummaryPayload {
   coveragePercent: number
 }
 
+export interface GameAnalysisPayload {
+  pgn: string
+  moves: IMove[]
+  pvSnapshots: any[]
+  engineVersion: string | null
+  analysisDepth: number | null
+}
+
+export interface OpeningStatsRow {
+  openingName: string
+  games: number
+  whiteWins: number
+  blackWins: number
+  draws: number
+  whiteScore: number
+}
+
 type DbRow = Record<string, unknown>
 
 export async function getGames(limit = 100) {
@@ -50,7 +67,7 @@ export async function getGames(limit = 100) {
   const rows = (await sql`
     SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
     FROM games
-    ORDER BY created_at DESC
+    ORDER BY date DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
@@ -72,10 +89,82 @@ export async function getGameSummaries(limit = 10) {
   const rows = (await sql`
     SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, created_at
     FROM games
-    ORDER BY created_at DESC
+    ORDER BY date DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
+    id: String(r.id),
+    date: r.date ? String(r.date) : undefined,
+    white: r.white ? String(r.white) : undefined,
+    black: r.black ? String(r.black) : undefined,
+    result: r.result ? String(r.result) : undefined,
+    opening_name: r.opening_name ? String(r.opening_name) : undefined,
+    my_accuracy: r.my_accuracy ? Number(r.my_accuracy) : undefined,
+    blunders: Number(r.blunders ?? 0),
+    createdAt: r.created_at as Date,
+  }))
+}
+
+export async function getGameSummariesByDateRange(startDate: string, endDate: string, limit = 5000) {
+  const sql = getSql()
+  // Normalize dates - handle both YYYY-MM-DD and YYYY.MM.DD formats
+  const normalizeDate = (dateStr: string) => dateStr.replace(/\./g, '-')
+  const start = normalizeDate(startDate)
+  const end = normalizeDate(endDate)
+  
+  console.log(`📅 Querying games from ${start} to ${end}`)
+  
+  // Query with date range filter at database level
+  // Handle both date formats: YYYY-MM-DD and YYYY.MM.DD (Chess.com format)
+  // We'll fetch all games and filter in code to handle date format variations
+  // This is more reliable than complex SQL CASE statements
+  const allRows = (await sql`
+    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, created_at
+    FROM games
+    WHERE date IS NOT NULL OR created_at IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 10000
+  `) as DbRow[]
+  
+  console.log(`📊 Fetched ${allRows.length} total games from database`)
+  
+  // Filter in code to handle date format variations
+  const startDateObj = new Date(start + 'T00:00:00Z')
+  const endDateObj = new Date(end + 'T23:59:59Z')
+  
+  console.log(`🔍 Date range: ${startDateObj.toISOString()} to ${endDateObj.toISOString()}`)
+  
+  // Debug: show sample dates
+  if (allRows.length > 0) {
+    console.log(`📋 Sample dates from first 10 games:`)
+    allRows.slice(0, 10).forEach((r, i) => {
+      console.log(`  ${i + 1}. date="${r.date}" created_at="${r.created_at}"`)
+    })
+  }
+  
+  const filteredRows = allRows.filter((r: DbRow) => {
+    if (r.date) {
+      // Normalize date format
+      const dateStr = String(r.date).replace(/\./g, '-').split('T')[0].split(' ')[0]
+      const gameDate = new Date(dateStr + 'T00:00:00Z')
+      if (!isNaN(gameDate.getTime())) {
+        return gameDate >= startDateObj && gameDate <= endDateObj
+      }
+    }
+    // Fallback to created_at if date is null
+    if (r.created_at) {
+      const createdDate = new Date(r.created_at as Date)
+      const createdDateOnly = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
+      const startDateOnly = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate())
+      const endDateOnly = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate())
+      return createdDateOnly >= startDateOnly && createdDateOnly <= endDateOnly
+    }
+    return false
+  }).slice(0, limit)
+  
+  console.log(`✅ Filtered to ${filteredRows.length} games in date range`)
+  
+  return filteredRows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ? String(r.date) : undefined,
     white: r.white ? String(r.white) : undefined,
@@ -108,7 +197,7 @@ export async function searchGames(query: string, limit = 50) {
       black ILIKE ${searchTerm} OR 
       opening_name ILIKE ${searchTerm} OR
       date ILIKE ${searchTerm}
-    ORDER BY created_at DESC
+    ORDER BY date DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
@@ -125,13 +214,13 @@ export async function searchGames(query: string, limit = 50) {
   }))
 }
 
-export async function createGame(data: CreateGameInput): Promise<void> {
+export async function createGame(data: CreateGameInput): Promise<string> {
   const sql = getSql()
   
   if (data.embedding && data.embedding.length > 0) {
     const embeddingStr = toVectorString(data.embedding)
     // Cast the text parameter to vector type
-    await sql`
+    const rows = (await sql`
       INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
       VALUES (
         ${data.date ?? null},
@@ -140,14 +229,16 @@ export async function createGame(data: CreateGameInput): Promise<void> {
         ${data.result ?? null},
         ${data.opening_name ?? null},
         ${data.my_accuracy ?? null},
-        ${data.blunders ?? 0},
+        ${data.blunders ?? -1},
         ${data.pgn_text},
         ${JSON.stringify(data.moves)},
         (${embeddingStr}::text::vector)
       )
-    `
+      RETURNING id
+    `) as DbRow[]
+    return String(rows[0]?.id)
   } else {
-    await sql`
+    const rows = (await sql`
       INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves)
       VALUES (
         ${data.date ?? null},
@@ -156,11 +247,13 @@ export async function createGame(data: CreateGameInput): Promise<void> {
         ${data.result ?? null},
         ${data.opening_name ?? null},
         ${data.my_accuracy ?? null},
-        ${data.blunders ?? 0},
+        ${data.blunders ?? -1},
         ${data.pgn_text},
         ${JSON.stringify(data.moves)}
       )
-    `
+      RETURNING id
+    `) as DbRow[]
+    return String(rows[0]?.id)
   }
 }
 
@@ -170,6 +263,85 @@ export async function getGamePgn(id: string): Promise<string | null> {
     SELECT pgn_text FROM games WHERE id = ${id}
   `) as DbRow[]
   return (rows[0]?.pgn_text as string) ?? null
+}
+
+export async function getGameAnalysisData(id: string): Promise<GameAnalysisPayload | null> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT pgn_text, moves
+    FROM games
+    WHERE id = ${id}
+  `) as DbRow[]
+  if (!rows[0]) {
+    return null
+  }
+
+  const analysisRows = (await sql`
+    SELECT pv_snapshots, engine_version, analysis_depth
+    FROM engine_analysis
+    WHERE game_id = ${id}
+      AND analysis_failed = false
+    ORDER BY analyzed_at DESC
+    LIMIT 1
+  `) as DbRow[]
+
+  const rawMoves = rows[0].moves
+  let moves: IMove[] = []
+  if (Array.isArray(rawMoves)) {
+    moves = rawMoves as IMove[]
+  } else if (typeof rawMoves === 'string') {
+    try {
+      moves = JSON.parse(rawMoves) as IMove[]
+    } catch {
+      moves = []
+    }
+  } else if (rawMoves) {
+    moves = rawMoves as IMove[]
+  }
+
+  const analysis = analysisRows[0] ?? {}
+
+  return {
+    pgn: String(rows[0].pgn_text ?? ''),
+    moves,
+    pvSnapshots: (analysis.pv_snapshots as any[]) ?? [],
+    engineVersion: analysis.engine_version ? String(analysis.engine_version) : null,
+    analysisDepth: analysis.analysis_depth ? Number(analysis.analysis_depth) : null,
+  }
+}
+
+export async function getOpeningStats(limit = 100): Promise<OpeningStatsRow[]> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT
+      opening_name,
+      COUNT(*)::int AS games,
+      SUM(CASE WHEN result = '1-0' THEN 1 ELSE 0 END)::int AS white_wins,
+      SUM(CASE WHEN result = '0-1' THEN 1 ELSE 0 END)::int AS black_wins,
+      SUM(CASE WHEN result = '1/2-1/2' THEN 1 ELSE 0 END)::int AS draws
+    FROM games
+    WHERE opening_name IS NOT NULL
+      AND opening_name != ''
+    GROUP BY opening_name
+    ORDER BY games DESC
+    LIMIT ${limit}
+  `) as DbRow[]
+
+  return rows.map((row) => {
+    const games = Number(row.games ?? 0)
+    const whiteWins = Number(row.white_wins ?? 0)
+    const blackWins = Number(row.black_wins ?? 0)
+    const draws = Number(row.draws ?? 0)
+    const whiteScore = games > 0 ? (whiteWins + 0.5 * draws) / games : 0
+    return {
+      openingName: String(row.opening_name ?? 'Unknown'),
+      games,
+      whiteWins,
+      blackWins,
+      draws,
+      whiteScore,
+    }
+  })
 }
 
 export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
@@ -211,6 +383,16 @@ export async function gameExists(
   const rows = (await sql`
     SELECT 1 FROM games
     WHERE date = ${date ?? null} AND white = ${white ?? null} AND black = ${black ?? null}
+    LIMIT 1
+  `) as DbRow[]
+  return rows.length > 0
+}
+
+export async function gameExistsByPgnText(pgnText: string): Promise<boolean> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT 1 FROM games
+    WHERE pgn_text = ${pgnText}
     LIMIT 1
   `) as DbRow[]
   return rows.length > 0
