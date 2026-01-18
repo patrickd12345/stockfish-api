@@ -18,6 +18,7 @@
     "import-games": "npx tsx scripts/import-all.ts",
     "rebuild:progression": "npx tsx scripts/rebuild-progression.ts",
     "engine:analyze": "npx tsx scripts/run-engine-analysis.ts",
+    "engine:worker": "npx tsx scripts/engine-worker.ts",
     "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts"
   },
   "dependencies": {

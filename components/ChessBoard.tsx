@@ -87,14 +87,17 @@ export default function ChessBoard({ fen, svg, size }: ChessBoardProps) {
 
   const handlePieceDrop = (sourceSquare: string, targetSquare: string) => {
     const nextGame = new Chess(game.fen())
-    const move = nextGame.move({
-      from: sourceSquare,
-      to: targetSquare,
-      promotion: 'q',
-    })
-    if (!move) {
+    let move = null
+    try {
+      move = nextGame.move({
+        from: sourceSquare,
+        to: targetSquare,
+        promotion: 'q',
+      })
+    } catch {
       return false
     }
+    if (!move) return false
     setGame(nextGame)
     setPosition(nextGame.fen())
     return true

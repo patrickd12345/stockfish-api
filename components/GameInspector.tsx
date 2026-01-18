@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 
@@ -30,6 +30,23 @@ export default function GameInspector() {
     endgameCpl: number | null
     gameLength: number | null
   } | null>(null)
+  const evalSeries = useMemo(
+    () =>
+      movesData.map((move) =>
+        typeof move.engine_eval === 'number' ? move.engine_eval : null
+      ),
+    [movesData]
+  )
+  const evalSeriesFilled = useMemo(() => {
+    let lastValue: number | null = null
+    return evalSeries.map((value) => {
+      if (typeof value === 'number') {
+        lastValue = value
+        return value
+      }
+      return lastValue
+    })
+  }, [evalSeries])
 
   useEffect(() => {
     fetchGames()
@@ -106,7 +123,7 @@ export default function GameInspector() {
   const navigateMove = (direction: 'prev' | 'next') => {
     if (!board) return
 
-    const moves = board.history()
+    const moves = fullHistory
     const newIndex = direction === 'next' ? moveIndex + 1 : moveIndex - 1
 
     if (newIndex < 0 || newIndex > moves.length) return
@@ -117,6 +134,23 @@ export default function GameInspector() {
     }
     setBoard(newBoard)
     setMoveIndex(newIndex)
+  }
+
+  const navigateGame = (direction: 'older' | 'newer') => {
+    if (!selectedGameId || games.length === 0) return
+    const currentIndex = games.findIndex((g) => g.id === selectedGameId)
+    if (currentIndex === -1) return
+    const nextIndex = direction === 'older' ? currentIndex + 1 : currentIndex - 1
+    if (nextIndex < 0 || nextIndex >= games.length) return
+    setSelectedGameId(games[nextIndex].id)
+  }
+
+  const jumpGames = (delta: number) => {
+    if (!selectedGameId || games.length === 0) return
+    const currentIndex = games.findIndex((g) => g.id === selectedGameId)
+    if (currentIndex === -1) return
+    const nextIndex = Math.min(games.length - 1, Math.max(0, currentIndex + delta))
+    setSelectedGameId(games[nextIndex].id)
   }
 
   const formatGameLabel = (game: any) => {
@@ -136,9 +170,6 @@ export default function GameInspector() {
   }
 
   const moves = fullHistory
-  const evalSeries = movesData.map((move) =>
-    typeof move.engine_eval === 'number' ? move.engine_eval : null
-  )
 
   return (
     <div className="card">
@@ -157,6 +188,68 @@ export default function GameInspector() {
             </option>
           ))}
         </select>
+        <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setSelectedGameId(games[games.length - 1]?.id ?? null)}
+            disabled={
+              !selectedGameId ||
+              games.length === 0 ||
+              games[games.length - 1]?.id === selectedGameId
+            }
+            className="button"
+            title="Go to Beginning"
+          >
+            Start
+          </button>
+          <button
+            onClick={() => jumpGames(5)}
+            disabled={
+              !selectedGameId ||
+              games.length === 0 ||
+              games[games.length - 1]?.id === selectedGameId
+            }
+            className="button"
+            title="Back 5"
+          >
+            -5
+          </button>
+          <button
+            onClick={() => navigateGame('older')}
+            disabled={
+              !selectedGameId ||
+              games.length === 0 ||
+              games[games.length - 1]?.id === selectedGameId
+            }
+            className="button"
+            title="Back"
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => navigateGame('newer')}
+            disabled={!selectedGameId || games.length === 0 || games[0]?.id === selectedGameId}
+            className="button"
+            title="Forward"
+          >
+            Next
+          </button>
+          <button
+            onClick={() => jumpGames(-5)}
+            disabled={!selectedGameId || games.length === 0 || games[0]?.id === selectedGameId}
+            className="button"
+            title="Forward 5"
+          >
+            +5
+          </button>
+          <button
+            onClick={() => setSelectedGameId(games[0]?.id ?? null)}
+            disabled={!selectedGameId || games.length === 0 || games[0]?.id === selectedGameId}
+            className="button"
+            title="End"
+          >
+            End
+          </button>
+        </div>
       </div>
 
       {board && (
@@ -168,43 +261,43 @@ export default function GameInspector() {
           <div style={{ marginBottom: '20px' }}>
             <h3 style={{ marginBottom: '10px' }}>Stockfish Summary</h3>
             {analysisLoading ? (
-              <div style={{ color: '#6b7280' }}>Loading engine summary…</div>
+              <div style={{ color: '#6b7280' }}>Loading engine summary...</div>
             ) : engineStats ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Avg CPL</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.avgCentipawnLoss === null ? '—' : engineStats.avgCentipawnLoss.toFixed(1)}
+                    {engineStats.avgCentipawnLoss === null ? '--' : engineStats.avgCentipawnLoss.toFixed(1)}
                   </div>
                 </div>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Blunders</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.blunders === null ? '—' : engineStats.blunders}
+                    {engineStats.blunders === null ? '--' : engineStats.blunders}
                   </div>
                 </div>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Mistakes</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.mistakes === null ? '—' : engineStats.mistakes}
+                    {engineStats.mistakes === null ? '--' : engineStats.mistakes}
                   </div>
                 </div>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Inaccuracies</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.inaccuracies === null ? '—' : engineStats.inaccuracies}
+                    {engineStats.inaccuracies === null ? '--' : engineStats.inaccuracies}
                   </div>
                 </div>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Max eval swing</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.evalSwingMax === null ? '—' : engineStats.evalSwingMax.toFixed(0)}
+                    {engineStats.evalSwingMax === null ? '--' : engineStats.evalSwingMax.toFixed(0)}
                   </div>
                 </div>
                 <div style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
                   <div style={{ color: '#6b7280', fontSize: '12px' }}>Moves</div>
                   <div style={{ fontWeight: 600 }}>
-                    {engineStats.gameLength === null ? '—' : engineStats.gameLength}
+                    {engineStats.gameLength === null ? '--' : engineStats.gameLength}
                   </div>
                 </div>
               </div>
@@ -215,7 +308,7 @@ export default function GameInspector() {
             )}
             {analysisMeta && (analysisMeta.engineVersion || analysisMeta.analysisDepth) && (
               <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '12px' }}>
-                Engine {analysisMeta.engineVersion || 'Stockfish'} · Depth {analysisMeta.analysisDepth ?? 'n/a'}
+                Engine {analysisMeta.engineVersion || 'Stockfish'} | Depth {analysisMeta.analysisDepth ?? 'n/a'}
               </div>
             )}
           </div>
@@ -225,7 +318,7 @@ export default function GameInspector() {
             {analysisLoading ? (
               <div style={{ color: '#6b7280' }}>Loading engine evaluation...</div>
             ) : (
-              renderEvalGraph(evalSeries, moveIndex)
+              renderEvalGraph(evalSeriesFilled, moveIndex)
             )}
           </div>
 
@@ -312,6 +405,11 @@ export default function GameInspector() {
 }
 
 function renderEvalGraph(values: Array<number | null>, activeIndex: number) {
+  const hasAny = values.some((value) => typeof value === 'number')
+  if (!hasAny) {
+    return <div style={{ color: '#6b7280' }}>No evaluation data available.</div>
+  }
+
   const sanitized = values.map((value) => (typeof value === 'number' ? value : 0))
   if (sanitized.length === 0) {
     return <div style={{ color: '#6b7280' }}>No evaluation data available.</div>

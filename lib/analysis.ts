@@ -75,6 +75,7 @@ export async function analyzePgn(
         let ply = 0
 
         const headers = chess.header()
+        const openingName = deriveOpeningName(headers)
         const normalizedUsername = username.trim().toLowerCase()
         const isWhite = headers.White?.toLowerCase() === normalizedUsername
         const isBlack = headers.Black?.toLowerCase() === normalizedUsername
@@ -135,7 +136,7 @@ export async function analyzePgn(
             white: headers.White ?? undefined,
             black: headers.Black ?? undefined,
             result: headers.Result ?? undefined,
-            opening_name: headers.Opening ?? undefined,
+            opening_name: openingName,
             my_accuracy: accuracy,
             blunders,
             pgn_text: gamePgn,
@@ -205,6 +206,7 @@ export async function parsePgnWithoutEngine(pgnText: string): Promise<GameData[]
     }
 
     const headers = chess.header()
+    const openingName = deriveOpeningName(headers)
 
     results.push({
       game: {
@@ -212,7 +214,7 @@ export async function parsePgnWithoutEngine(pgnText: string): Promise<GameData[]
         white: headers.White ?? undefined,
         black: headers.Black ?? undefined,
         result: headers.Result ?? undefined,
-        opening_name: headers.Opening ?? undefined,
+        opening_name: openingName,
         my_accuracy: undefined,
         // IMPORTANT: We have no engine evaluation here, so blunders are UNKNOWN.
         // Use a sentinel value to avoid lying with "0".
@@ -243,4 +245,39 @@ function accuracyFromLosses(losses: number[]): number | undefined {
   const avgLoss = losses.reduce((sum, loss) => sum + loss, 0) / losses.length
   const accuracy = 100 - avgLoss / 2
   return Math.max(0, Math.min(100, accuracy))
+}
+
+function deriveOpeningName(headers: Record<string, string | undefined>): string | undefined {
+  const opening = normalizeOpeningName(headers.Opening)
+  if (opening) return opening
+
+  const ecoUrlName = openingNameFromEcoUrl(headers.ECOUrl)
+  if (ecoUrlName) return ecoUrlName
+
+  const eco = normalizeOpeningName(headers.ECO)
+  if (eco) return `ECO ${eco}`
+
+  return undefined
+}
+
+function normalizeOpeningName(value?: string): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function openingNameFromEcoUrl(ecoUrl?: string): string | undefined {
+  if (!ecoUrl) return undefined
+  try {
+    const trimmed = ecoUrl.trim()
+    if (!trimmed) return undefined
+    const parts = trimmed.split('/').filter(Boolean)
+    const last = parts[parts.length - 1]
+    if (!last) return undefined
+    const decoded = decodeURIComponent(last)
+    const normalized = decoded.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+    return normalized.length > 0 ? normalized : undefined
+  } catch {
+    return undefined
+  }
 }

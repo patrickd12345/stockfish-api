@@ -28,8 +28,8 @@ describe('app/api/openings', () => {
       {
         openingName: 'Ruy Lopez',
         games: 2,
-        whiteWins: 1,
-        blackWins: 0,
+        wins: 1,
+        losses: 0,
         draws: 1,
         whiteScore: 0.75,
       },
@@ -41,8 +41,8 @@ describe('app/api/openings', () => {
         {
           openingName: 'Ruy Lopez',
           games: 2,
-          whiteWins: 1,
-          blackWins: 0,
+          wins: 1,
+          losses: 0,
           draws: 1,
           whiteScore: 0.75,
         },

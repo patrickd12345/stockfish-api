@@ -19,6 +19,8 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
   const [searchQuery, setSearchQuery] = useState('')
   const [games, setGames] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null)
 
   const USER_USERNAMES = ['patrickd1234567', 'patrickd12345678', 'anonymous19670705']
 
@@ -102,6 +104,27 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
       console.error('Failed to fetch games:', e)
     } finally {
       setSearching(false)
+    }
+  }
+
+  const triggerEngineAnalysis = async () => {
+    setAnalysisLoading(true)
+    setAnalysisStatus(null)
+    try {
+      const res = await fetch('/api/engine/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'enqueue', limit: 10 }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) {
+        throw new Error(data?.error || 'Failed to enqueue engine analysis')
+      }
+      setAnalysisStatus(`Queued ${data.enqueued ?? 0} games for analysis.`)
+    } catch (e: any) {
+      setAnalysisStatus(e?.message || 'Failed to enqueue engine analysis')
+    } finally {
+      setAnalysisLoading(false)
     }
   }
 
@@ -314,6 +337,31 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             )
           })}
         </div>
+      </div>
+
+      <div style={{ marginTop: '30px', borderTop: '1px solid #4b5563', paddingTop: '20px' }}>
+        <h2 style={{ marginBottom: '12px', fontSize: '18px' }}>Engine Analysis</h2>
+        <button
+          onClick={triggerEngineAnalysis}
+          disabled={analysisLoading}
+          style={{
+            width: '100%',
+            padding: '10px',
+            background: analysisLoading ? '#374151' : '#2563eb',
+            border: 'none',
+            color: 'white',
+            borderRadius: '6px',
+            cursor: analysisLoading ? 'not-allowed' : 'pointer',
+            fontWeight: 600,
+          }}
+        >
+          {analysisLoading ? 'Queueing...' : 'Queue analysis jobs'}
+        </button>
+        {analysisStatus && (
+          <div style={{ marginTop: '10px', fontSize: '12px', color: '#9ca3af' }}>
+            {analysisStatus}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -65,6 +65,8 @@ export default function MobileGameDrawer({
   const [games, setGames] = useState<GameRow[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null)
 
   const [moveHistory, setMoveHistory] = useState<string[]>([])
   const [currentMoveIdx, setCurrentMoveIdx] = useState(-1)
@@ -82,6 +84,27 @@ export default function MobileGameDrawer({
       setError(e?.message || 'Failed to fetch games')
     } finally {
       setSearching(false)
+    }
+  }, [])
+
+  const triggerEngineAnalysis = useCallback(async () => {
+    setAnalysisLoading(true)
+    setAnalysisStatus(null)
+    try {
+      const res = await fetch('/api/engine/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'enqueue', limit: 10 }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) {
+        throw new Error(data?.error || 'Failed to enqueue engine analysis')
+      }
+      setAnalysisStatus(`Queued ${data.enqueued ?? 0} games for analysis.`)
+    } catch (e: any) {
+      setAnalysisStatus(e?.message || 'Failed to enqueue engine analysis')
+    } finally {
+      setAnalysisLoading(false)
     }
   }, [])
 
@@ -287,6 +310,33 @@ export default function MobileGameDrawer({
             <div style={{ marginTop: '8px', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>
               {hasPreview ? `Move ${Math.floor(currentMoveIdx / 2) + 1}` : 'Select a game to preview'}
             </div>
+          </div>
+
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
+              Engine analysis
+            </div>
+            <button
+              onClick={triggerEngineAnalysis}
+              disabled={analysisLoading}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '10px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: analysisLoading ? '#374151' : '#2563eb',
+                color: 'white',
+                cursor: analysisLoading ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+              }}
+            >
+              {analysisLoading ? 'Queueing...' : 'Queue analysis jobs'}
+            </button>
+            {analysisStatus && (
+              <div style={{ marginTop: '8px', fontSize: '12px', color: '#9ca3af' }}>
+                {analysisStatus}
+              </div>
+            )}
           </div>
         </div>
 

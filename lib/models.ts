@@ -63,8 +63,8 @@ export interface GameAnalysisPayload {
 export interface OpeningStatsRow {
   openingName: string
   games: number
-  whiteWins: number
-  blackWins: number
+  wins: number
+  losses: number
   draws: number
   whiteScore: number
 }
@@ -353,16 +353,44 @@ export async function getGameAnalysisData(id: string): Promise<GameAnalysisPaylo
 
 export async function getOpeningStats(limit = 100): Promise<OpeningStatsRow[]> {
   const sql = getSql()
+  const playerNames = [
+    process.env.CHESS_PLAYER_NAMES?.split(',') || [],
+    ['patrickd1234567', 'patrickd12345678', 'anonymous19670705'],
+  ]
+    .flat()
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+  const playerPatterns = playerNames.map((name) => `%${name}%`)
+
   const rows = (await sql`
     SELECT
       opening_name,
       COUNT(*)::int AS games,
-      SUM(CASE WHEN result = '1-0' THEN 1 ELSE 0 END)::int AS white_wins,
-      SUM(CASE WHEN result = '0-1' THEN 1 ELSE 0 END)::int AS black_wins,
-      SUM(CASE WHEN result = '1/2-1/2' THEN 1 ELSE 0 END)::int AS draws
+      SUM(
+        CASE
+          WHEN result = '1-0' AND white ILIKE ANY(${playerPatterns}) THEN 1
+          WHEN result = '0-1' AND black ILIKE ANY(${playerPatterns}) THEN 1
+          ELSE 0
+        END
+      )::int AS wins,
+      SUM(
+        CASE
+          WHEN result = '1-0' AND black ILIKE ANY(${playerPatterns}) THEN 1
+          WHEN result = '0-1' AND white ILIKE ANY(${playerPatterns}) THEN 1
+          ELSE 0
+        END
+      )::int AS losses,
+      SUM(
+        CASE
+          WHEN result = '1/2-1/2' AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+            THEN 1
+          ELSE 0
+        END
+      )::int AS draws
     FROM games
     WHERE opening_name IS NOT NULL
       AND opening_name != ''
+      AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
     GROUP BY opening_name
     ORDER BY games DESC
     LIMIT ${limit}
@@ -370,15 +398,15 @@ export async function getOpeningStats(limit = 100): Promise<OpeningStatsRow[]> {
 
   return rows.map((row) => {
     const games = Number(row.games ?? 0)
-    const whiteWins = Number(row.white_wins ?? 0)
-    const blackWins = Number(row.black_wins ?? 0)
+    const wins = Number(row.wins ?? 0)
+    const losses = Number(row.losses ?? 0)
     const draws = Number(row.draws ?? 0)
-    const whiteScore = games > 0 ? (whiteWins + 0.5 * draws) / games : 0
+    const whiteScore = games > 0 ? (wins + 0.5 * draws) / games : 0
     return {
       openingName: String(row.opening_name ?? 'Unknown'),
       games,
-      whiteWins,
-      blackWins,
+      wins,
+      losses,
       draws,
       whiteScore,
     }

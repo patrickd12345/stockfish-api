@@ -178,7 +178,7 @@ export async function getGamesNeedingAnalysis(
     WHERE ea.id IS NULL
       AND g.pgn_text IS NOT NULL
       AND g.pgn_text != ''
-    ORDER BY g.created_at ASC
+    ORDER BY g.created_at DESC
     LIMIT ${limit}
   `) as Array<{ id: string; pgn_text: string; white: string | null; black: string | null }>
   

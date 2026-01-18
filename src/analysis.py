@@ -7,6 +7,7 @@ import chess
 import chess.engine
 import chess.pgn
 
+from urllib.parse import unquote, urlparse
 
 ENGINE_TIME_LIMIT = 0.1
 BLUNDER_THRESHOLD = 200
@@ -122,7 +123,7 @@ def analyze_game(
             "white": headers.get("White"),
             "black": headers.get("Black"),
             "result": headers.get("Result"),
-            "opening_name": headers.get("Opening"),
+            "opening_name": derive_opening_name(headers),
             "my_accuracy": accuracy_from_losses(losses),
             "blunders": blunders,
             "pgn_text": game_pgn,
@@ -149,3 +150,45 @@ def analyze_pgn(
             results.append(analyze_game(game, engine, username))
 
     return results
+
+
+def derive_opening_name(headers: Dict[str, str]) -> Optional[str]:
+    opening = normalize_opening_name(headers.get("Opening"))
+    if opening:
+        return opening
+
+    eco_url = normalize_opening_name(headers.get("ECOUrl"))
+    if eco_url:
+        eco_url_name = opening_name_from_eco_url(eco_url)
+        if eco_url_name:
+            return eco_url_name
+
+    eco = normalize_opening_name(headers.get("ECO"))
+    if eco:
+        return f"ECO {eco}"
+
+    return None
+
+
+def normalize_opening_name(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    trimmed = value.strip()
+    return trimmed if trimmed else None
+
+
+def opening_name_from_eco_url(eco_url: str) -> Optional[str]:
+    try:
+        parsed = urlparse(eco_url)
+        path = parsed.path.strip("/")
+        if not path:
+            return None
+        last_segment = path.split("/")[-1]
+        if not last_segment:
+            return None
+        decoded = unquote(last_segment)
+        normalized = decoded.replace("-", " ").replace("_", " ").strip()
+        normalized = " ".join(normalized.split())
+        return normalized if normalized else None
+    except Exception:
+        return None
