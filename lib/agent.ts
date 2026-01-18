@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import {
   SummaryPayload,
@@ -40,7 +41,7 @@ export async function buildAgent(conn: any) {
         engineSummary,
         progressionSummary,
       })
-      const messages = [
+      const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: input },
       ]
@@ -97,7 +98,7 @@ function buildSystemPrompt({
 }
 
 function assertPromptIntegrity(
-  messages: Array<{ role: string; content: string }>,
+  messages: ChatCompletionMessageParam[],
   systemPrompt: string,
   summaries: {
     engineSummary: SummaryPayload | null
