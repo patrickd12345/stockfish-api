@@ -266,7 +266,7 @@ function normalizeOpeningName(value?: string | null): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function openingNameFromEcoUrl(ecoUrl?: string): string | undefined {
+function openingNameFromEcoUrl(ecoUrl?: string | null): string | undefined {
   if (!ecoUrl) return undefined
   try {
     const trimmed = ecoUrl.trim()
