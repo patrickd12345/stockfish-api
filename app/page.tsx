@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import DesktopHome, { type HomeTab } from '@/components/DesktopHome'
 import MobileHome from '@/components/MobileHome'
 
@@ -11,6 +12,7 @@ export default function Home() {
   const [engineStatus, setEngineStatus] = useState<string>('')
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
+  const searchParams = useSearchParams()
   
   // Use a ref to prevent double-firing in React 18 strict mode
   const hasStartedImport = useRef(false)
@@ -22,6 +24,13 @@ export default function Home() {
     mq.addEventListener('change', update)
     return () => mq.removeEventListener('change', update)
   }, [])
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab') as HomeTab | null
+    if (tabParam === 'chat' || tabParam === 'replay' || tabParam === 'openings') {
+      setActiveTab(tabParam)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const autoImport = async () => {

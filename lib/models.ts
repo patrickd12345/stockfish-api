@@ -223,6 +223,101 @@ export async function searchGames(query: string, limit = 50) {
   }))
 }
 
+export async function getGamesByOpeningOutcome(
+  opening: string,
+  outcome: string,
+  limit = 500
+) {
+  const sql = getSql()
+  const openingTerm = opening
+  const playerNames = [
+    process.env.CHESS_PLAYER_NAMES?.split(',') || [],
+    ['patrickd1234567', 'patrickd12345678', 'anonymous19670705'],
+  ]
+    .flat()
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+  const playerPatterns = playerNames.map((name) => `%${name}%`)
+
+  const rows = (await sql`
+    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    FROM games
+    WHERE opening_name ILIKE ${openingTerm}
+      AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+      AND (
+        CASE
+          WHEN ${outcome} = 'all' THEN true
+          WHEN ${outcome} = 'win' THEN (
+            (result = '1-0' AND white ILIKE ANY(${playerPatterns})) OR
+            (result = '0-1' AND black ILIKE ANY(${playerPatterns}))
+          )
+          WHEN ${outcome} = 'loss' THEN (
+            (result = '1-0' AND black ILIKE ANY(${playerPatterns})) OR
+            (result = '0-1' AND white ILIKE ANY(${playerPatterns}))
+          )
+          WHEN ${outcome} = 'draw' THEN (
+            result = '1/2-1/2' AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+          )
+          ELSE false
+        END
+      )
+    ORDER BY date DESC, created_at DESC
+    LIMIT ${limit}
+  `) as DbRow[]
+
+  return rows.map((r: DbRow) => ({
+    id: String(r.id),
+    date: r.date ?? undefined,
+    white: r.white ?? undefined,
+    black: r.black ?? undefined,
+    result: r.result ?? undefined,
+    opening_name: r.opening_name ?? undefined,
+    my_accuracy: r.my_accuracy ?? undefined,
+    blunders: r.blunders ?? 0,
+    pgn_text: r.pgn_text,
+    createdAt: r.created_at,
+  }))
+}
+
+export async function getGamesByOpeningOutcomeCount(opening: string, outcome: string) {
+  const sql = getSql()
+  const openingTerm = opening
+  const playerNames = [
+    process.env.CHESS_PLAYER_NAMES?.split(',') || [],
+    ['patrickd1234567', 'patrickd12345678', 'anonymous19670705'],
+  ]
+    .flat()
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+  const playerPatterns = playerNames.map((name) => `%${name}%`)
+
+  const rows = (await sql`
+    SELECT COUNT(*)::int AS total
+    FROM games
+    WHERE opening_name ILIKE ${openingTerm}
+      AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+      AND (
+        CASE
+          WHEN ${outcome} = 'all' THEN true
+          WHEN ${outcome} = 'win' THEN (
+            (result = '1-0' AND white ILIKE ANY(${playerPatterns})) OR
+            (result = '0-1' AND black ILIKE ANY(${playerPatterns}))
+          )
+          WHEN ${outcome} = 'loss' THEN (
+            (result = '1-0' AND black ILIKE ANY(${playerPatterns})) OR
+            (result = '0-1' AND white ILIKE ANY(${playerPatterns}))
+          )
+          WHEN ${outcome} = 'draw' THEN (
+            result = '1/2-1/2' AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+          )
+          ELSE false
+        END
+      )
+  `) as DbRow[]
+
+  return Number(rows[0]?.total ?? 0)
+}
+
 export async function createGame(data: CreateGameInput): Promise<string> {
   const sql = getSql()
   

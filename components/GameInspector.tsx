@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 
@@ -19,6 +20,7 @@ export default function GameInspector() {
     engineVersion: string | null
     analysisDepth: number | null
   } | null>(null)
+  const [filteredCount, setFilteredCount] = useState<number | null>(null)
   const [engineStats, setEngineStats] = useState<{
     avgCentipawnLoss: number | null
     blunders: number | null
@@ -30,6 +32,10 @@ export default function GameInspector() {
     endgameCpl: number | null
     gameLength: number | null
   } | null>(null)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const openingFilter = searchParams.get('opening')
+  const outcomeFilter = searchParams.get('outcome')
   const evalSeries = useMemo(
     () =>
       movesData.map((move) =>
@@ -50,7 +56,7 @@ export default function GameInspector() {
 
   useEffect(() => {
     fetchGames()
-  }, [])
+  }, [openingFilter, outcomeFilter])
 
   useEffect(() => {
     if (selectedGameId) {
@@ -78,9 +84,16 @@ export default function GameInspector() {
 
   const fetchGames = async () => {
     try {
-      const response = await fetch('/api/games')
+      const params = new URLSearchParams()
+      if (openingFilter && outcomeFilter) {
+        params.set('opening', openingFilter)
+        params.set('outcome', outcomeFilter)
+      }
+      const url = params.toString() ? `/api/games?${params.toString()}` : '/api/games'
+      const response = await fetch(url)
       const data = await response.json()
       setGames(data.games || [])
+      setFilteredCount(typeof data.totalCount === 'number' ? data.totalCount : null)
       if (data.games && data.games.length > 0) {
         setSelectedGameId(data.games[0].id)
       }
@@ -188,6 +201,20 @@ export default function GameInspector() {
             </option>
           ))}
         </select>
+        {openingFilter && outcomeFilter && (
+          <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+              Filter: {openingFilter} · {outcomeFilter} ({filteredCount ?? games.length} games)
+            </div>
+            <button
+              onClick={() => router.replace('/?tab=replay')}
+              className="button"
+              style={{ padding: '6px 10px' }}
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setSelectedGameId(games[games.length - 1]?.id ?? null)}

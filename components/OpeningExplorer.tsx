@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 
 interface OpeningStat {
   openingName: string
@@ -207,10 +208,38 @@ export default function OpeningExplorer() {
             {sorted.map((opening) => (
               <tr key={opening.openingName} style={{ borderBottom: '1px solid #f3f4f6' }}>
                 <td style={{ padding: '8px 4px', fontWeight: 600 }}>{opening.openingName}</td>
-                <td style={{ padding: '8px 4px' }}>{opening.games}</td>
-                <td style={{ padding: '8px 4px' }}>{formatValue(opening.wins, opening.games)}</td>
-                <td style={{ padding: '8px 4px' }}>{formatValue(opening.losses, opening.games)}</td>
-                <td style={{ padding: '8px 4px' }}>{formatValue(opening.draws, opening.games)}</td>
+                <td style={{ padding: '8px 4px' }}>
+                  <Link
+                    href={`/?tab=replay&opening=${encodeURIComponent(opening.openingName)}&outcome=all`}
+                    style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    {opening.games}
+                  </Link>
+                </td>
+                <td style={{ padding: '8px 4px' }}>
+                  <Link
+                    href={`/?tab=replay&opening=${encodeURIComponent(opening.openingName)}&outcome=win`}
+                    style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    {formatValue(opening.wins, opening.games)}
+                  </Link>
+                </td>
+                <td style={{ padding: '8px 4px' }}>
+                  <Link
+                    href={`/?tab=replay&opening=${encodeURIComponent(opening.openingName)}&outcome=loss`}
+                    style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    {formatValue(opening.losses, opening.games)}
+                  </Link>
+                </td>
+                <td style={{ padding: '8px 4px' }}>
+                  <Link
+                    href={`/?tab=replay&opening=${encodeURIComponent(opening.openingName)}&outcome=draw`}
+                    style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    {formatValue(opening.draws, opening.games)}
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
