@@ -247,7 +247,7 @@ function accuracyFromLosses(losses: number[]): number | undefined {
   return Math.max(0, Math.min(100, accuracy))
 }
 
-function deriveOpeningName(headers: Record<string, string | undefined>): string | undefined {
+function deriveOpeningName(headers: Record<string, string | null | undefined>): string | undefined {
   const opening = normalizeOpeningName(headers.Opening)
   if (opening) return opening
 
@@ -260,7 +260,7 @@ function deriveOpeningName(headers: Record<string, string | undefined>): string 
   return undefined
 }
 
-function normalizeOpeningName(value?: string): string | undefined {
+function normalizeOpeningName(value?: string | null): string | undefined {
   if (!value) return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
