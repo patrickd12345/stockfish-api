@@ -7,7 +7,9 @@ import { loadEngineSummary } from '@/lib/engineSummaryStorage'
 import { parseTimeExpression, formatTimeWindowForPrompt, filterGamesInWindow } from '@/lib/timeWindows'
 import { formatProgressionSummaryForPrompt, formatEngineSummaryForPrompt } from '@/lib/promptFormatters'
 
-const BOARD_SVG_MARKER = 'BOARD_SVG::'
+const DEBUG_ENGINE_MARKER = '=== DEBUG: ENGINE SUMMARY PRESENT ==='
+const DEBUG_PROGRESSION_MARKER = '=== DEBUG: PROGRESSION SUMMARY PRESENT ==='
+const FINAL_SYSTEM_PROMPT_MARKER = '=== DEBUG: FINAL SYSTEM PROMPT ==='
 
 export const SYSTEM_PROMPT = `You are a chess coach. You can help users analyze their games, answer chess questions, and provide coaching advice.
 If the user asks to see a board position, you can describe it, but board rendering is handled separately.

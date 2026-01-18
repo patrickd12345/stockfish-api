@@ -23,7 +23,7 @@ ALTER TABLE games
 
 CREATE INDEX IF NOT EXISTS idx_games_created_at ON games (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_games_dedup ON games (date, white, black);
-CREATE INDEX IF NOT EXISTS idx_games_embedding ON games USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_games_embedding ON games USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- Progression summaries table for batch analysis results
 CREATE TABLE IF NOT EXISTS progression_summaries (
@@ -71,11 +71,11 @@ CREATE TABLE IF NOT EXISTS engine_analysis (
   analysis_failed BOOLEAN DEFAULT false,
   failure_reason TEXT,
   
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  
   -- One analysis per game per engine version
-  UNIQUE(game_id, engine_name, engine_version, analysis_depth)
+  UNIQUE(game_id, engine_name, engine_version, analysis_depth),
+  
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_engine_analysis_game_id ON engine_analysis (game_id);

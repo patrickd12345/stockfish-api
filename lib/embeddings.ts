@@ -70,3 +70,7 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
   }
   return null
 }
+
+export function toVectorString(embedding: number[]): string {
+  return `[${embedding.join(',')}]`
+}

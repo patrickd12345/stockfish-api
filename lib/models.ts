@@ -1,4 +1,5 @@
 import { getSql } from '@/lib/database'
+import { toVectorString } from '@/lib/embeddings'
 
 export interface IMove {
   move_number: number
@@ -34,6 +35,12 @@ export interface CreateGameInput {
   pgn_text: string
   moves: IMove[]
   embedding?: number[] | null
+}
+
+export interface SummaryPayload {
+  summary: unknown
+  summaryText: string
+  coveragePercent: number
 }
 
 type DbRow = Record<string, unknown>
@@ -122,7 +129,7 @@ export async function createGame(data: CreateGameInput): Promise<void> {
   const sql = getSql()
   
   if (data.embedding && data.embedding.length > 0) {
-    const embeddingStr = `[${data.embedding.join(',')}]`
+    const embeddingStr = toVectorString(data.embedding)
     // Cast the text parameter to vector type
     await sql`
       INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
@@ -165,25 +172,10 @@ export async function getGamePgn(id: string): Promise<string | null> {
   return (rows[0]?.pgn_text as string) ?? null
 }
 
-export async function gameExists(
-  date: string | undefined,
-  white: string | undefined,
-  black: string | undefined
-): Promise<boolean> {
-  const sql = getSql()
-  const rows = (await sql`
-    SELECT 1 FROM games
-    WHERE date = ${date ?? null} AND white = ${white ?? null} AND black = ${black ?? null}
-    LIMIT 1
-  `) as DbRow[]
-  return rows.length > 0
-}
-
 export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
   const sql = getSql()
   // pgvector accepts array format [1,2,3] - we'll pass it as a parameter and cast it
-  const embeddingArray = embedding
-  const embeddingStr = `[${embeddingArray.join(',')}]`
+  const embeddingStr = toVectorString(embedding)
   
   // Use template literal - the embedding string is safe since it's generated from numbers
   // We need to cast the parameter to vector type
@@ -208,4 +200,18 @@ export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
     createdAt: r.created_at,
     distance: r.distance ? Number(r.distance) : null,
   }))
+}
+
+export async function gameExists(
+  date: string | undefined,
+  white: string | undefined,
+  black: string | undefined
+): Promise<boolean> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT 1 FROM games
+    WHERE date = ${date ?? null} AND white = ${white ?? null} AND black = ${black ?? null}
+    LIMIT 1
+  `) as DbRow[]
+  return rows.length > 0
 }

@@ -13,11 +13,20 @@ test('has title and tabs', async ({ page }) => {
   
   // Test navigation to Replay tab
   await page.getByRole('button', { name: 'Game Inspector (Replay)' }).click();
-  
-  // Since we have no games, it should show the empty state OR the heading if component structure changes.
-  // In current implementation, heading is hidden if no games.
-  // We check for the specific empty state message which confirms the component loaded.
-  await expect(page.getByText('No games processed yet.')).toBeVisible();
+
+  // Ensure the Replay tab actually rendered (avoid false positives where "Loading..." is simply absent)
+  const gameInspectorHeading = page.getByRole('heading', { name: 'Game Inspector' });
+  const noGamesText = page.getByText('No games processed yet.');
+  const loadingText = page.getByText('Loading games...');
+
+  await expect(gameInspectorHeading.or(noGamesText).or(loadingText)).toBeVisible();
+
+  // If we saw the loading state, wait for it to resolve
+  if (await loadingText.isVisible().catch(() => false)) {
+    await expect(loadingText).toBeHidden();
+  }
+
+  await expect(gameInspectorHeading.or(noGamesText)).toBeVisible();
 });
 
 test('game search functionality', async ({ page }) => {
@@ -29,23 +38,19 @@ test('game search functionality', async ({ page }) => {
 
   // Type a search query
   await searchInput.fill('ruy');
-  
-  // Wait for search results to appear (games list should update)
-  // The search is debounced, so wait a bit
-  await page.waitForTimeout(500);
-  
-  // Check that either games are displayed or "No games found" message appears
-  const hasGames = await page.locator('text=/vs/').count() > 0;
-  const hasNoGames = await page.getByText('No games found.').isVisible().catch(() => false);
-  
-  expect(hasGames || hasNoGames).toBeTruthy();
+
+  // The search is debounced and async; wait for the transient "Searching..." state to settle
+  const searchingText = page.getByText('Searching...');
+  await expect(searchingText).toBeHidden({ timeout: 10_000 });
+
+  // Either we see at least one game row (contains "vs") OR the explicit empty state
+  const anyGameRow = page.locator('text=/\\bvs\\b/').first();
+  const noGamesText = page.getByText('No games found.');
+  await expect(anyGameRow.or(noGamesText)).toBeVisible({ timeout: 10_000 });
   
   // Clear search to see all games again
   await searchInput.clear();
-  await page.waitForTimeout(500);
-  
-  // After clearing, we should see games or the no games message
-  const hasGamesAfterClear = await page.locator('text=/vs/').count() > 0;
-  const hasNoGamesAfterClear = await page.getByText('No games found.').isVisible().catch(() => false);
-  expect(hasGamesAfterClear || hasNoGamesAfterClear).toBeTruthy();
+
+  await expect(searchingText).toBeHidden({ timeout: 10_000 });
+  await expect(anyGameRow.or(noGamesText)).toBeVisible({ timeout: 10_000 });
 });
