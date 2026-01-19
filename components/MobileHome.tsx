@@ -31,136 +31,50 @@ export default function MobileHome({
 }: MobileHomeProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const headerStyle = useMemo<React.CSSProperties>(
-    () => ({
-      position: 'sticky',
-      top: 0,
-      zIndex: 20,
-      paddingTop: 'env(safe-area-inset-top)',
-      background: '#ffffff',
-      borderBottom: '1px solid #e5e7eb',
-    }),
-    []
-  )
-
   return (
-    <div
-      style={{
-        minHeight: '100dvh',
-        background: '#f5f5f5',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <div style={headerStyle}>
-        <div
-          style={{
-            padding: '12px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
-          }}
-        >
+    <div className="min-h-[100dvh] bg-sage-900 flex flex-col text-sage-100">
+      <div className="sticky top-0 z-20 pt-[env(safe-area-inset-top)] bg-sage-900/95 backdrop-blur-md border-b border-white/5 shadow-sm">
+        <div className="px-4 py-3 flex items-center justify-between gap-3">
           <button
             type="button"
-            className="button"
+            className="btn-primary py-2 px-3 text-sm font-bold"
             onClick={() => setDrawerOpen(true)}
-            style={{ padding: '10px 12px' }}
           >
             Games
           </button>
 
-          <div style={{ fontWeight: 900, color: '#111827' }}>Chess Coach</div>
+          <div className="font-black text-terracotta text-lg tracking-tight">Chess Coach</div>
 
-          <div style={{ minWidth: '72px', display: 'flex', justifyContent: 'flex-end' }}>
-            {importStatus || engineStatus ? (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                {importStatus ? (
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: '#059669',
-                      background: '#ecfdf5',
-                      border: '1px solid #a7f3d0',
-                      padding: '4px 8px',
-                      borderRadius: '999px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Importing…
-                  </div>
-                ) : null}
-                {engineStatus ? (
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: '#7c3aed',
-                      background: '#f5f3ff',
-                      border: '1px solid #ddd6fe',
-                      padding: '4px 8px',
-                      borderRadius: '999px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Analyzing…
-                  </div>
-                ) : null}
+          <div className="min-w-[72px] flex justify-end">
+            {(importStatus || engineStatus) && (
+              <div className="flex flex-col items-end text-[10px] gap-1">
+                {importStatus && <span className="text-emerald-400 font-medium animate-pulse">Importing</span>}
+                {engineStatus && <span className="text-ochre font-medium animate-pulse">Analyzing</span>}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
 
-        <div style={{ padding: '10px 14px 12px 14px', display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('chat')}
-            style={mobileTabStyle(activeTab === 'chat')}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('replay')}
-            style={mobileTabStyle(activeTab === 'replay')}
-          >
-            Replay
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('openings')}
-            style={mobileTabStyle(activeTab === 'openings')}
-          >
-            Openings
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('lichess')}
-            style={{ ...mobileTabStyle(activeTab === 'lichess'), background: activeTab === 'lichess' ? '#8b5cf6' : '#ffffff', border: `1px solid ${activeTab === 'lichess' ? '#8b5cf6' : '#e5e7eb'}` }}
-          >
-            Lichess
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('dna')}
-            style={{ ...mobileTabStyle(activeTab === 'dna'), background: activeTab === 'dna' ? '#111827' : '#ffffff', border: `1px solid ${activeTab === 'dna' ? '#111827' : '#e5e7eb'}` }}
-          >
-            DNA
-          </button>
+        <div className="px-3 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
+          <MobileTabButton active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} label="Chat" />
+          <MobileTabButton active={activeTab === 'replay'} onClick={() => setActiveTab('replay')} label="Replay" />
+          <MobileTabButton active={activeTab === 'openings'} onClick={() => setActiveTab('openings')} label="Openings" />
+          <MobileTabButton active={activeTab === 'lichess'} onClick={() => setActiveTab('lichess')} label="Lichess" special="lichess" />
+          <MobileTabButton active={activeTab === 'dna'} onClick={() => setActiveTab('dna')} label="DNA" special="dna" />
         </div>
 
-        <div style={{ padding: '0 14px 12px 14px' }}>
+        <div className="px-3 pb-3">
           <EngineCoverageWidget compact active={Boolean(importStatus || engineStatus)} />
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, padding: '12px 12px calc(18px + env(safe-area-inset-bottom)) 12px' }}>
+      <div className="flex-1 min-h-0 p-3 pb-[calc(18px+env(safe-area-inset-bottom))]">
         {activeTab === 'chat' ? (
-          <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div className="h-full min-h-0 flex flex-col">
             <ChatTab selectedGameId={selectedGameId} fill currentPage={activeTab} />
           </div>
         ) : (
-          <div style={{ height: '100%', overflowY: 'auto' }}>
+          <div className="h-full overflow-y-auto">
             {activeTab === 'replay' && <GameInspector key={refreshKey} />}
             {activeTab === 'openings' && <OpeningExplorer />}
             {activeTab === 'lichess' && <LichessLiveTab />}
@@ -184,16 +98,34 @@ export default function MobileHome({
   )
 }
 
-function mobileTabStyle(active: boolean): React.CSSProperties {
-  return {
-    flex: 1,
-    padding: '10px 10px',
-    borderRadius: '12px',
-    border: `1px solid ${active ? '#1d4ed8' : '#e5e7eb'}`,
-    background: active ? '#1d4ed8' : '#ffffff',
-    color: active ? '#ffffff' : '#111827',
-    fontWeight: 800,
-    cursor: 'pointer',
-  }
-}
+function MobileTabButton({
+  active,
+  onClick,
+  label,
+  special
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  special?: 'lichess' | 'dna'
+}) {
+  let baseClass = "flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all whitespace-nowrap "
 
+  if (active) {
+    if (special === 'lichess') {
+      baseClass += "bg-purple-600 text-white border-purple-500"
+    } else if (special === 'dna') {
+      baseClass += "bg-rose-600 text-white border-rose-500"
+    } else {
+      baseClass += "bg-terracotta text-sage-900 border-terracotta"
+    }
+  } else {
+    baseClass += "bg-sage-800/50 text-sage-400 border-white/5"
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={baseClass}>
+      {label}
+    </button>
+  )
+}

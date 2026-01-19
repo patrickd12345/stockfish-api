@@ -123,8 +123,6 @@ export default function BlunderDnaTab() {
   }, [refresh])
 
   useEffect(() => {
-    // Proactive UX: if this is the first time opening the tab and nothing exists yet,
-    // run one deterministic analysis automatically.
     if (didAutoAnalyzeRef.current) return
     if (loading || analyzing) return
     if (!data) return
@@ -132,7 +130,6 @@ export default function BlunderDnaTab() {
     if ((data.drills?.length ?? 0) > 0) return
     didAutoAnalyzeRef.current = true
     setTimeout(() => {
-      // avoid blocking initial paint
       handleAnalyze().catch(() => null)
     }, 0)
   }, [analyzing, data, handleAnalyze, loading])
@@ -155,7 +152,6 @@ export default function BlunderDnaTab() {
           : { ok: false, message: `Not quite. Best was ${activeDrill.bestMove}. PV: ${activeDrill.pv}` }
       )
 
-      // Fire-and-forget attempt record (deterministic scoring handled server-side too).
       fetch('/api/blunder-dna/attempt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,9 +162,11 @@ export default function BlunderDnaTab() {
         }),
       }).catch(() => null)
 
-      // Advance automatically on correct, otherwise stay for retry/review.
       if (ok) {
-        setActiveIdx((i) => Math.min((data?.drills?.length ?? 1) - 1, i + 1))
+        setTimeout(() => {
+            setActiveIdx((i) => Math.min((data?.drills?.length ?? 1) - 1, i + 1))
+            setLastAttemptResult(null) // Clear result after moving
+        }, 800)
       }
       return ok
     },
@@ -205,177 +203,188 @@ export default function BlunderDnaTab() {
   }, [shareUrl])
 
   return (
-    <div className="card" style={{ minHeight: '700px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+    <div className="glass-panel p-6 flex flex-col gap-6 min-h-[700px]">
+      <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
-          <h2 style={{ margin: 0 }}>Blunder DNA → Daily Auto‑Drills</h2>
-          <div style={{ marginTop: '6px', color: '#6b7280', fontSize: '13px' }}>
+          <h2 className="text-xl font-bold text-terracotta tracking-tight">Blunder DNA → Daily Auto‑Drills</h2>
+          <div className="mt-1 text-sm text-sage-400">
             Deterministic drills extracted from recent games (audit‑linked to game + ply + FEN).
           </div>
-          <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="text-xs font-bold text-sage-300 uppercase tracking-widest">
               Share Chess DNA
             </div>
             <button
-              className="button"
               onClick={handleCreateShare}
               disabled={shareLoading}
-              style={{ background: '#111827', padding: '8px 12px', fontSize: '14px' }}
+              className="px-3 py-1.5 bg-sage-800 hover:bg-sage-700 text-sage-200 text-sm font-medium rounded-lg border border-white/10 transition-colors disabled:opacity-50"
             >
               {shareLoading ? 'Generating…' : shareUrl ? 'Rotate link' : 'Create link'}
             </button>
-            {shareUrl ? (
+            {shareUrl && (
               <>
-                <input className="input" value={shareUrl} readOnly style={{ width: 'min(520px, 78vw)', marginBottom: 0, fontSize: '13px' }} />
-                <button className="button" onClick={handleCopyShare} disabled={shareLoading} style={{ padding: '8px 12px', fontSize: '14px' }}>
+                <input
+                    value={shareUrl}
+                    readOnly
+                    className="bg-sage-900 border border-sage-700 text-sage-300 text-xs px-3 py-1.5 rounded-lg w-64 focus:outline-none"
+                />
+                <button
+                    onClick={handleCopyShare}
+                    disabled={shareLoading}
+                    className="px-3 py-1.5 bg-sage-800 hover:bg-sage-700 text-sage-200 text-sm font-medium rounded-lg border border-white/10 transition-colors"
+                >
                   {shareCopied ? 'Copied' : 'Copy'}
                 </button>
                 <a
-                  className="button"
                   href={shareUrl}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ background: '#7c3aed', padding: '8px 12px', fontSize: '14px' }}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors border border-purple-500 shadow-lg shadow-purple-900/50"
                 >
                   Open
                 </a>
               </>
-            ) : null}
+            )}
           </div>
-          {shareError ? (
-            <div style={{ marginTop: '8px', color: '#b91c1c', fontSize: '13px' }}>{shareError}</div>
-          ) : null}
+          {shareError && (
+            <div className="mt-2 text-rose-400 text-xs font-semibold">{shareError}</div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="button" onClick={refresh} disabled={loading || analyzing}>
+        <div className="flex gap-3">
+          <button
+            onClick={refresh}
+            disabled={loading || analyzing}
+            className="btn-secondary"
+          >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
-          <button className="button" onClick={handleAnalyze} disabled={loading || analyzing} style={{ background: '#7c3aed' }}>
+          <button
+            onClick={handleAnalyze}
+            disabled={loading || analyzing}
+            className="btn-primary bg-purple-600 hover:bg-purple-500 border-purple-500 shadow-purple-900/50"
+          >
             {analyzing ? 'Analyzing…' : 'Analyze last 50 games'}
           </button>
         </div>
       </div>
 
-      {error ? (
-        <div style={{ padding: '12px 16px', background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', fontSize: '14px', border: '1px solid #fecaca' }}>
+      {error && (
+        <div className="bg-rose-900/40 border border-rose-700 text-rose-200 px-4 py-3 rounded-xl text-sm font-medium">
           {error}
         </div>
-      ) : null}
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '16px', alignItems: 'stretch' }}>
-        <div className="card" style={{ padding: '14px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontWeight: 800, color: '#111827' }}>Today’s drills</div>
-            <div style={{ fontSize: '12px', color: '#6b7280' }}>{data?.date || ''}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="bg-sage-900/40 p-5 rounded-xl border border-white/5">
+          <div className="flex justify-between items-center mb-4">
+            <div className="font-bold text-lg text-sage-200">Today’s drills</div>
+            <div className="text-xs font-mono text-sage-400 bg-sage-900 px-2 py-1 rounded">{data?.date || ''}</div>
           </div>
 
           {activeDrill ? (
-            <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                <div style={{ fontSize: '13px', color: '#374151' }}>
-                  <strong>{activeIdx + 1}</strong> / {data?.drills?.length || 0} · <strong>{activeDrill.patternTag}</strong> · diff {activeDrill.difficulty}
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap justify-between items-center gap-2 bg-sage-900/50 p-3 rounded-lg border border-white/5">
+                <div className="text-sm text-sage-300">
+                  <span className="text-terracotta font-bold text-lg mr-1">{activeIdx + 1}</span>
+                  <span className="text-sage-500 mx-1">/</span>
+                  <span className="text-sage-400">{data?.drills?.length || 0}</span>
+                  <span className="mx-3 text-sage-600">|</span>
+                  <span className="font-bold text-white px-2 py-0.5 rounded bg-white/10">{activeDrill.patternTag}</span>
+                  <span className="mx-3 text-sage-600">|</span>
+                  <span className="text-sage-400">Diff: {activeDrill.difficulty}</span>
                 </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                <div className="text-xs text-sage-500 font-mono">
                   Game {activeDrill.lichessGameId} · ply {activeDrill.ply}
                 </div>
               </div>
 
-              <ChessBoard
-                fen={activeDrill.fen}
-                theme="wood"
-                size="min(72vw, 520px)"
-                orientation={activeDrill.sideToMove}
-                isDraggable
-                onMove={handleAttemptMove}
-              />
+              <div className="flex justify-center bg-sage-800 p-4 rounded-xl shadow-inner border border-white/5">
+                <ChessBoard
+                    fen={activeDrill.fen}
+                    theme="wood"
+                    size="min(72vw, 520px)"
+                    orientation={activeDrill.sideToMove}
+                    isDraggable
+                    onMove={handleAttemptMove}
+                />
+              </div>
 
-              <div
-                className="card"
-                style={{
-                  padding: '12px',
-                  borderRadius: '12px',
-                  border: '1px solid #e5e7eb',
-                  background: '#0f172a',
-                  color: '#f8fafc'
-                }}
-              >
-                <div style={{ fontSize: '12px', fontWeight: 900, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.9 }}>
+              <div className="bg-slate-900 p-4 rounded-xl border border-slate-700 shadow-lg">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 opacity-80">
                   Evaluation (position before your move)
                 </div>
-                <div style={{ marginTop: '8px' }}>
+                <div>
                   <EvalGauge evaluationCp={activeDrill.evalBefore} mate={null} />
                 </div>
               </div>
 
               {lastAttemptResult ? (
                 <div
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: `1px solid ${lastAttemptResult.ok ? '#86efac' : '#fecaca'}`,
-                    background: lastAttemptResult.ok ? '#ecfdf5' : '#fff1f2',
-                    color: lastAttemptResult.ok ? '#065f46' : '#9f1239',
-                    fontSize: '13px'
-                  }}
+                  className={`px-4 py-3 rounded-lg border text-sm font-semibold transition-all ${
+                      lastAttemptResult.ok
+                      ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
+                      : 'bg-rose-900/30 border-rose-700 text-rose-300'
+                  }`}
                 >
                   {lastAttemptResult.message}
                 </div>
               ) : (
-                <div style={{ color: '#6b7280', fontSize: '13px' }}>
-                  Play the best move (click‑to‑move or drag).
+                <div className="text-sage-400 text-sm italic text-center py-2">
+                  Find the best move...
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="flex gap-3 mt-2">
                 <button
-                  className="button"
                   onClick={() => setActiveIdx((i) => Math.max(0, i - 1))}
                   disabled={activeIdx <= 0}
-                  style={{ background: '#374151' }}
+                  className="btn-secondary flex-1"
                 >
                   Prev
                 </button>
                 <button
-                  className="button"
                   onClick={() => setActiveIdx((i) => Math.min((data?.drills?.length ?? 1) - 1, i + 1))}
                   disabled={!data?.drills?.length || activeIdx >= (data.drills.length - 1)}
-                  style={{ background: '#374151' }}
+                  className="btn-secondary flex-1"
                 >
                   Next
                 </button>
               </div>
             </div>
           ) : (
-            <div style={{ marginTop: '16px', color: '#6b7280' }}>
-              No drills yet. Run “Analyze last 50 games”.
+            <div className="py-12 text-center text-sage-500 italic">
+              No drills yet. Run “Analyze last 50 games” to generate them.
             </div>
           )}
         </div>
 
-        <div className="card" style={{ padding: '14px' }}>
-          <div style={{ fontWeight: 800, color: '#111827' }}>Blunder DNA (patterns)</div>
-          <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="bg-sage-900/40 p-5 rounded-xl border border-white/5 h-fit">
+          <div className="font-bold text-lg text-sage-200 mb-4">Blunder DNA (patterns)</div>
+          <div className="flex flex-col gap-3">
             {patternsSorted.length === 0 ? (
-              <div style={{ color: '#6b7280', fontSize: '13px' }}>
+              <div className="text-sage-500 text-sm italic">
                 No patterns yet. Run analysis to generate deterministic tags + drills.
               </div>
             ) : (
               patternsSorted.map((p) => (
                 <div
                   key={p.patternTag}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    background: '#f9fafb',
-                    border: '1px solid #e5e7eb'
-                  }}
+                  className="p-3 rounded-xl bg-sage-800/40 border border-white/5 hover:bg-sage-800/60 transition-colors"
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-                    <div style={{ fontWeight: 800, color: '#111827' }}>{p.label}</div>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>{p.occurrences} hits</div>
+                  <div className="flex justify-between gap-3 mb-1">
+                    <div className="font-bold text-sage-200 text-sm">{p.label}</div>
+                    <div className="text-xs font-medium text-sage-400 bg-sage-900/50 px-2 py-0.5 rounded">{p.occurrences} hits</div>
                   </div>
-                  <div style={{ marginTop: '6px', fontSize: '12px', color: '#374151' }}>
-                    Weakness score: <strong>{p.weaknessScore.toFixed(2)}</strong>
+                  <div className="text-xs text-sage-500">
+                    Weakness score: <strong className="text-rose-400">{p.weaknessScore.toFixed(2)}</strong>
+                  </div>
+
+                  {/* Visual bar for weakness score */}
+                  <div className="mt-2 h-1.5 w-full bg-sage-900 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-gradient-to-r from-orange-500 to-rose-600"
+                        style={{ width: `${Math.min(100, (p.weaknessScore / 10) * 100)}%` }}
+                    />
                   </div>
                 </div>
               ))
@@ -386,4 +395,3 @@ export default function BlunderDnaTab() {
     </div>
   )
 }
-
