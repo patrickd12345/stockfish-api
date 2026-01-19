@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
+import { useStockfish } from '@/hooks/useStockfish'
 
 export default function GameInspector() {
   const [games, setGames] = useState<any[]>([])
@@ -14,6 +15,10 @@ export default function GameInspector() {
   const [loading, setLoading] = useState(true)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [fullHistory, setFullHistory] = useState<string[]>([])
+
+  // Live Analysis State
+  const [isLiveAnalysisEnabled, setIsLiveAnalysisEnabled] = useState(false)
+  const { state: engineState, startAnalysis, stopAnalysis } = useStockfish({ depth: 22 })
   const [movesData, setMovesData] = useState<any[]>([])
   const [pvSnapshots, setPvSnapshots] = useState<any[]>([])
   const [analysisMeta, setAnalysisMeta] = useState<{
@@ -104,6 +109,17 @@ export default function GameInspector() {
     }
   }, [pgn])
 
+  // Sync Live Engine
+  useEffect(() => {
+    if (!isLiveAnalysisEnabled) {
+      stopAnalysis()
+      return
+    }
+    if (board) {
+      startAnalysis(board.fen(), board.turn())
+    }
+  }, [board, isLiveAnalysisEnabled, startAnalysis, stopAnalysis])
+
   const fetchGameAnalysis = async (gameId: string) => {
     setAnalysisLoading(true)
     try {
@@ -133,7 +149,7 @@ export default function GameInspector() {
     setAnalysisLoading(false)
   }
 
-  const navigateMove = (direction: 'prev' | 'next') => {
+  const navigateMove = useCallback((direction: 'prev' | 'next') => {
     if (!board) return
 
     const moves = fullHistory
@@ -147,16 +163,34 @@ export default function GameInspector() {
     }
     setBoard(newBoard)
     setMoveIndex(newIndex)
-  }
+  }, [board, fullHistory, moveIndex])
 
-  const navigateGame = (direction: 'older' | 'newer') => {
+  const navigateGame = useCallback((direction: 'older' | 'newer') => {
     if (!selectedGameId || games.length === 0) return
     const currentIndex = games.findIndex((g) => g.id === selectedGameId)
     if (currentIndex === -1) return
     const nextIndex = direction === 'older' ? currentIndex + 1 : currentIndex - 1
     if (nextIndex < 0 || nextIndex >= games.length) return
     setSelectedGameId(games[nextIndex].id)
-  }
+  }, [selectedGameId, games])
+
+  // Keyboard Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        navigateMove('prev')
+      } else if (e.key === 'ArrowRight') {
+        navigateMove('next')
+      } else if (e.key === 'ArrowUp') {
+        navigateGame('newer')
+      } else if (e.key === 'ArrowDown') {
+        navigateGame('older')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigateMove, navigateGame])
 
   const jumpGames = (delta: number) => {
     if (!selectedGameId || games.length === 0) return
@@ -286,6 +320,44 @@ export default function GameInspector() {
           </div>
 
           <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0 }}>Analysis</h3>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
+                <input
+                  type="checkbox"
+                  checked={isLiveAnalysisEnabled}
+                  onChange={(e) => setIsLiveAnalysisEnabled(e.target.checked)}
+                />
+                Enable Live Stockfish (WASM)
+              </label>
+            </div>
+
+            {isLiveAnalysisEnabled && (
+              <div style={{
+                marginBottom: '20px',
+                padding: '12px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: 600, color: '#1e3a8a' }}>
+                    Evaluation: {engineState.mate
+                      ? `Mate in ${Math.abs(engineState.mate)}`
+                      : engineState.evaluation !== null
+                        ? (engineState.evaluation / 100).toFixed(2)
+                        : '...'}
+                  </span>
+                  <span style={{ color: '#1e40af', fontSize: '12px' }}>
+                     Depth: {engineState.depth} {engineState.isSearching ? '(searching...)' : ''}
+                  </span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#1e3a8a', fontFamily: 'monospace' }}>
+                  Best: {engineState.bestLine || engineState.bestMove || '...'}
+                </div>
+              </div>
+            )}
+
             <h3 style={{ marginBottom: '10px' }}>Stockfish Summary</h3>
             {analysisLoading ? (
               <div style={{ color: '#6b7280' }}>Loading engine summary...</div>
