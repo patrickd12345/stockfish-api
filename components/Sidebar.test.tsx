@@ -97,7 +97,7 @@ describe('components/Sidebar', () => {
     const gameRow = row.closest('[role="button"]')
     if (!gameRow) throw new Error('Game row not found')
 
-    gameRow.focus()
+    ;(gameRow as HTMLElement).focus()
     await user.keyboard('{Enter}')
 
     expect(onGameSelect).toHaveBeenCalledWith('g2')
