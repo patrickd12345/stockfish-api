@@ -6,6 +6,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS games (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   date TEXT,
+  time TEXT,
   white TEXT,
   black TEXT,
   result TEXT,
