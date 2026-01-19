@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from '@/components/ChessBoard'
 import EvalGauge from '@/components/EvalGauge'
 
@@ -49,6 +49,12 @@ export default function BlunderDnaTab() {
   const [data, setData] = useState<DailyDrillsResponse | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [lastAttemptResult, setLastAttemptResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const didAutoAnalyzeRef = useRef(false)
+
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
 
   const activeDrill = data?.drills?.[activeIdx] ?? null
 
@@ -73,6 +79,29 @@ export default function BlunderDnaTab() {
     refresh().catch(() => null)
   }, [refresh])
 
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setShareLoading(true)
+      setShareError(null)
+      try {
+        const res = await fetch('/api/dna/share', { method: 'GET' })
+        const json = await res.json().catch(() => ({} as any))
+        if (!res.ok) throw new Error(json?.error || 'Failed to load share link')
+        const url = typeof json?.share?.url === 'string' ? json.share.url : null
+        if (!cancelled) setShareUrl(url)
+      } catch (e: any) {
+        if (!cancelled) setShareError(e?.message || 'Failed to load share link')
+      } finally {
+        if (!cancelled) setShareLoading(false)
+      }
+    }
+    load().catch(() => null)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleAnalyze = useCallback(async () => {
     setAnalyzing(true)
     setError(null)
@@ -92,6 +121,21 @@ export default function BlunderDnaTab() {
       setAnalyzing(false)
     }
   }, [refresh])
+
+  useEffect(() => {
+    // Proactive UX: if this is the first time opening the tab and nothing exists yet,
+    // run one deterministic analysis automatically.
+    if (didAutoAnalyzeRef.current) return
+    if (loading || analyzing) return
+    if (!data) return
+    if ((data.patterns?.length ?? 0) > 0) return
+    if ((data.drills?.length ?? 0) > 0) return
+    didAutoAnalyzeRef.current = true
+    setTimeout(() => {
+      // avoid blocking initial paint
+      handleAnalyze().catch(() => null)
+    }, 0)
+  }, [analyzing, data, handleAnalyze, loading])
 
   const patternsSorted = useMemo(() => {
     const list = data?.patterns || []
@@ -131,6 +175,35 @@ export default function BlunderDnaTab() {
     [activeDrill, data?.drills?.length]
   )
 
+  const handleCreateShare = useCallback(async () => {
+    setShareLoading(true)
+    setShareError(null)
+    setShareCopied(false)
+    try {
+      const res = await fetch('/api/dna/share', { method: 'POST' })
+      const json = await res.json().catch(() => ({} as any))
+      if (!res.ok) throw new Error(json?.error || 'Failed to create share link')
+      const url = typeof json?.share?.url === 'string' ? json.share.url : null
+      setShareUrl(url)
+    } catch (e: any) {
+      setShareError(e?.message || 'Failed to create share link')
+    } finally {
+      setShareLoading(false)
+    }
+  }, [])
+
+  const handleCopyShare = useCallback(async () => {
+    if (!shareUrl) return
+    setShareCopied(false)
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 1200)
+    } catch {
+      setShareCopied(false)
+    }
+  }, [shareUrl])
+
   return (
     <div className="card" style={{ minHeight: '700px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -139,6 +212,39 @@ export default function BlunderDnaTab() {
           <div style={{ marginTop: '6px', color: '#6b7280', fontSize: '13px' }}>
             Deterministic drills extracted from recent games (audit‑linked to game + ply + FEN).
           </div>
+          <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Share Chess DNA
+            </div>
+            <button
+              className="button"
+              onClick={handleCreateShare}
+              disabled={shareLoading}
+              style={{ background: '#111827', padding: '8px 12px', fontSize: '14px' }}
+            >
+              {shareLoading ? 'Generating…' : shareUrl ? 'Rotate link' : 'Create link'}
+            </button>
+            {shareUrl ? (
+              <>
+                <input className="input" value={shareUrl} readOnly style={{ width: 'min(520px, 78vw)', marginBottom: 0, fontSize: '13px' }} />
+                <button className="button" onClick={handleCopyShare} disabled={shareLoading} style={{ padding: '8px 12px', fontSize: '14px' }}>
+                  {shareCopied ? 'Copied' : 'Copy'}
+                </button>
+                <a
+                  className="button"
+                  href={shareUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ background: '#7c3aed', padding: '8px 12px', fontSize: '14px' }}
+                >
+                  Open
+                </a>
+              </>
+            ) : null}
+          </div>
+          {shareError ? (
+            <div style={{ marginTop: '8px', color: '#b91c1c', fontSize: '13px' }}>{shareError}</div>
+          ) : null}
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button className="button" onClick={refresh} disabled={loading || analyzing}>

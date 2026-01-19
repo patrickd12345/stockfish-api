@@ -21,6 +21,11 @@ function HomeContent() {
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
   const searchParams = useSearchParams()
+  const parseEnvList = (value?: string) =>
+    (value || '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
 
   // Allow tests to disable heavy startup side-effects (external network + batch jobs).
   const disableAutoImport = process.env.NEXT_PUBLIC_DISABLE_AUTO_IMPORT === 'true'
@@ -53,11 +58,18 @@ function HomeContent() {
       if (hasStartedImport.current) return
       hasStartedImport.current = true
 
-      const ACCOUNTS = [
-        { username: 'patrickd1234567', mode: 'all' },
-        { username: 'patrickd12345678', mode: 'all' },
-        { username: 'anonymous19670705', mode: 'recent' }
-      ]
+      const chessComUsernames = parseEnvList(
+        process.env.CHESSCOMUSERNAME || process.env.NEXT_PUBLIC_CHESSCOMUSERNAME
+      )
+      const ACCOUNTS = chessComUsernames.map((username, index) => ({
+        username,
+        mode: index === chessComUsernames.length - 1 ? 'recent' : 'all'
+      }))
+
+      if (ACCOUNTS.length === 0) {
+        console.warn('Skipping Chess.com auto-import: CHESSCOMUSERNAME is not set.')
+        return
+      }
 
       for (const acc of ACCOUNTS) {
         // Versioned keys so improvements to import logic can re-run safely.
@@ -142,28 +154,55 @@ function HomeContent() {
       // Refresh games list
       setRefreshKey(prev => prev + 1)
 
-      // Kick off a small Stockfish analysis batch so newly imported games get real engine stats
-      // (blunders/mistakes/inaccuracies/CPL/etc). This runs in small chunks to stay responsive.
+      // After import, enqueue + drain ALL pending Stockfish jobs so new games are always analyzed.
+      // This is rate-limited per browser (localStorage lock) to avoid multiple tabs stampeding.
       try {
-        setEngineStatus('Queueing Stockfish analysis…')
-        const res = await fetch('/api/engine/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 5, mode: 'enqueue' }),
-        })
-        const data = await res.json()
-        if (res.ok) {
-          const queued = data.enqueued ?? 0
-          setEngineStatus(`Stockfish analysis queued: ${queued} game${queued === 1 ? '' : 's'}`)
-        } else {
-          setEngineStatus('')
-          console.warn('Engine analyze failed:', data)
+        const lockKey = 'engine_worker_lock_v2'
+        const now = Date.now()
+        const lockUntil = Number(localStorage.getItem(lockKey) ?? '0')
+        if (!Number.isFinite(lockUntil) || lockUntil < now) {
+          localStorage.setItem(lockKey, String(now + 5 * 60_000))
+
+          // 1) Enqueue everything pending, in chunks.
+          setEngineStatus('Queueing Stockfish analysis…')
+          for (let i = 0; i < 500; i++) {
+            const res = await fetch('/api/engine/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ limit: 25, mode: 'enqueue' }),
+            })
+            const data = await res.json().catch(() => ({} as any))
+            if (!res.ok) {
+              throw new Error(data?.error || 'Engine enqueue failed')
+            }
+            const enqueued = typeof data?.enqueued === 'number' ? data.enqueued : 0
+            if (enqueued <= 0) break
+            await new Promise((r) => setTimeout(r, 100))
+          }
+
+          // 2) Drain the queue fully, in chunks.
+          setEngineStatus('Processing Stockfish analysis…')
+          for (let i = 0; i < 2000; i++) {
+            const res = await fetch('/api/engine/analyze/worker', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ limit: 10 }),
+            })
+            const data = await res.json().catch(() => ({} as any))
+            if (!res.ok) {
+              throw new Error(data?.error || 'Engine worker failed')
+            }
+            const processed = typeof data?.processed === 'number' ? data.processed : 0
+            if (processed <= 0) break
+            await new Promise((r) => setTimeout(r, 50))
+          }
+
+          setEngineStatus('Stockfish analysis complete.')
         }
       } catch (e) {
+        console.warn('Startup Stockfish processing failed:', e)
         setEngineStatus('')
-        console.warn('Engine analyze request failed:', e)
       } finally {
-        // Clear after a short delay to avoid permanent banner noise.
         setTimeout(() => setEngineStatus(''), 5000)
       }
     }

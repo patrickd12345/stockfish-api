@@ -27,7 +27,8 @@ async function checkMigrations() {
       'engine_summaries',
       'lichess_oauth_tokens',
       'lichess_board_sessions',
-      'lichess_game_states'
+      'lichess_game_states',
+      'dna_shares'
     ]
     
     for (const tableName of requiredTables) {

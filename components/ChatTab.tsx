@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import SuggestionBubbles from './SuggestionBubbles'
+import FirstInsightsPanel from '@/components/FirstInsightsPanel'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -121,6 +122,8 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
           </div>
         )}
       </div>
+
+      <FirstInsightsPanel />
 
       <div
         style={{

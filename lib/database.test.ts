@@ -6,6 +6,7 @@ const fakeSql = vi.fn(async () => []) as unknown as (
 vi.mock('@neondatabase/serverless', () => {
   return {
     neon: vi.fn(() => fakeSql),
+    neonConfig: {},
   }
 })
 

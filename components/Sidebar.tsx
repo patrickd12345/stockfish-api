@@ -11,6 +11,30 @@ interface SidebarProps {
   refreshKey: number
 }
 
+type GameOrigin = 'lichess' | 'chess.com' | 'pgn' | 'unknown'
+
+function inferGameOriginFromPgn(pgnText?: string): GameOrigin {
+  if (!pgnText) return 'unknown'
+  const pgn = pgnText.toLowerCase()
+
+  // Common PGN site tags:
+  // - [Site "https://lichess.org/<id>"]
+  // - [Site "https://www.chess.com/game/live/<id>"]
+  if (pgn.includes('lichess.org')) return 'lichess'
+  if (pgn.includes('chess.com') || pgn.includes('www.chess.com')) return 'chess.com'
+
+  // If it's a PGN but no known site.
+  if (pgn.includes('[event') || pgn.includes('[site')) return 'pgn'
+  return 'unknown'
+}
+
+function formatOriginLabel(origin: GameOrigin): string {
+  if (origin === 'chess.com') return 'Chess.com'
+  if (origin === 'lichess') return 'Lichess'
+  if (origin === 'pgn') return 'PGN'
+  return 'Unknown'
+}
+
 export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId, refreshKey }: SidebarProps) {
   const [boardFen, setBoardFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
   const [moveHistory, setMoveHistory] = useState<string[]>([])
@@ -19,8 +43,6 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
   const [searchQuery, setSearchQuery] = useState('')
   const [games, setGames] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
-  const [analysisLoading, setAnalysisLoading] = useState(false)
-  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null)
 
   const USER_USERNAMES = ['patrickd1234567', 'patrickd12345678', 'anonymous19670705']
 
@@ -107,26 +129,6 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
     }
   }
 
-  const triggerEngineAnalysis = async () => {
-    setAnalysisLoading(true)
-    setAnalysisStatus(null)
-    try {
-      const res = await fetch('/api/engine/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'enqueue', limit: 10 }),
-      })
-      const data = await res.json()
-      if (!res.ok || data?.error) {
-        throw new Error(data?.error || 'Failed to enqueue engine analysis')
-      }
-      setAnalysisStatus(`Queued ${data.enqueued ?? 0} games for analysis.`)
-    } catch (e: any) {
-      setAnalysisStatus(e?.message || 'Failed to enqueue engine analysis')
-    } finally {
-      setAnalysisLoading(false)
-    }
-  }
 
   const extractTimeFromPgn = (pgnText: string | undefined): string | null => {
     if (!pgnText) return null
@@ -296,6 +298,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
           {games.map((game) => {
             const status = getGameStatus(game)
             const isSelected = selectedGameId === game.id
+            const origin = inferGameOriginFromPgn(game.pgn_text)
             
             let bgColor = '#374151'
             let textColor = 'white'
@@ -340,8 +343,27 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
                   transition: 'background 0.2s'
                 }}
               >
-                <div style={{ fontWeight: 'bold' }}>
-                  {game.white} vs {game.black}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ fontWeight: 'bold' }}>
+                    {game.white} vs {game.black}
+                  </div>
+                  <div
+                    aria-label={`Game origin: ${formatOriginLabel(origin)}`}
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      padding: '2px 6px',
+                      borderRadius: '999px',
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                      background: 'rgba(0,0,0,0.22)',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      color: subTextColor,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {formatOriginLabel(origin)}
+                  </div>
                 </div>
                 <div style={{ fontSize: '11px', color: subTextColor }}>
                   {game.opening_name || 'Unknown Opening'}
@@ -355,30 +377,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
         </div>
       </div>
 
-      <div style={{ marginTop: '30px', borderTop: '1px solid #4b5563', paddingTop: '20px' }}>
-        <h2 style={{ marginBottom: '12px', fontSize: '18px' }}>Engine Analysis</h2>
-        <button
-          onClick={triggerEngineAnalysis}
-          disabled={analysisLoading}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: analysisLoading ? '#374151' : '#2563eb',
-            border: 'none',
-            color: 'white',
-            borderRadius: '6px',
-            cursor: analysisLoading ? 'not-allowed' : 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          {analysisLoading ? 'Queueing...' : 'Queue analysis jobs'}
-        </button>
-        {analysisStatus && (
-          <div style={{ marginTop: '10px', fontSize: '12px', color: '#9ca3af' }}>
-            {analysisStatus}
-          </div>
-        )}
-      </div>
+      {/* Manual Stockfish queue controls removed: analysis runs automatically after startup import. */}
     </div>
   )
 }

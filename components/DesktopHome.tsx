@@ -6,6 +6,7 @@ import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
+import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 
 export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna'
 
@@ -83,13 +84,17 @@ export default function DesktopHome({
             </button>
           </div>
 
-          {importStatus && (
-            <div style={{ color: '#059669', fontSize: '14px' }}>{importStatus}</div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <EngineCoverageWidget compact active={Boolean(importStatus || engineStatus)} />
 
-          {engineStatus && (
-            <div style={{ color: '#7c3aed', fontSize: '14px' }}>{engineStatus}</div>
-          )}
+            {importStatus && (
+              <div style={{ color: '#059669', fontSize: '14px' }}>{importStatus}</div>
+            )}
+
+            {engineStatus && (
+              <div style={{ color: '#7c3aed', fontSize: '14px' }}>{engineStatus}</div>
+            )}
+          </div>
         </div>
 
         {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} currentPage={activeTab} />}

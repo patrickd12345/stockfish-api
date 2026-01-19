@@ -24,7 +24,7 @@ describe('components/Sidebar', () => {
                   date: '2026.01.17',
                   result: '1-0',
                   pgn_text:
-                    '[Event \"?\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
+                    '[Event \"?\"]\n[Site \"https://lichess.org/abcd1234\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
                 },
               ],
             }),
@@ -43,7 +43,7 @@ describe('components/Sidebar', () => {
                 date: '2026.01.17',
                 result: '1-0',
                 pgn_text:
-                  '[Event \"?\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
+                  '[Event \"?\"]\n[Site \"https://www.chess.com/game/live/123\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
               },
             ],
           }),
@@ -68,6 +68,7 @@ describe('components/Sidebar', () => {
     // Test a11y labels
     expect(screen.getByLabelText('Go to Beginning')).toBeInTheDocument()
     expect(screen.getByLabelText('Search games')).toBeInTheDocument()
+    expect(await screen.findByLabelText(/Game origin: Chess\.com/i)).toBeInTheDocument()
 
     // Search
     const search = screen.getByLabelText('Search games')
@@ -101,6 +102,7 @@ describe('components/Sidebar', () => {
     await user.keyboard('{Enter}')
 
     expect(onGameSelect).toHaveBeenCalledWith('g2')
+    expect(await screen.findByLabelText(/Game origin: Lichess/i)).toBeInTheDocument()
 
     expect(await screen.findByText(/Ruy Lopez/i)).toBeVisible()
   })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
@@ -41,6 +41,11 @@ export default function GameInspector() {
   const router = useRouter()
   const openingFilter = searchParams.get('opening')
   const outcomeFilter = searchParams.get('outcome')
+  const requestedGameId = searchParams.get('gameId')
+  const requestedPlyRaw = searchParams.get('ply')
+  const requestedPly = requestedPlyRaw !== null ? Number(requestedPlyRaw) : null
+  const appliedGameIdRef = useRef<string | null>(null)
+  const appliedPlyRef = useRef<string | null>(null)
   const evalSeries = useMemo(
     () =>
       movesData.map((move) =>
@@ -71,15 +76,26 @@ export default function GameInspector() {
       const data = await response.json()
       setGames(data.games || [])
       setFilteredCount(typeof data.totalCount === 'number' ? data.totalCount : null)
-      if (data.games && data.games.length > 0) {
-        setSelectedGameId(data.games[0].id)
+      if (Array.isArray(data.games) && data.games.length > 0) {
+        const list = data.games as Array<{ id: string }>
+        const canUseRequested =
+          typeof requestedGameId === 'string' &&
+          requestedGameId.length > 0 &&
+          list.some((g) => g.id === requestedGameId)
+
+        if (canUseRequested && appliedGameIdRef.current !== requestedGameId) {
+          appliedGameIdRef.current = requestedGameId
+          setSelectedGameId(requestedGameId)
+        } else if (!selectedGameId) {
+          setSelectedGameId(list[0].id)
+        }
       }
     } catch (error) {
       console.error('Failed to fetch games:', error)
     } finally {
       setLoading(false)
     }
-  }, [openingFilter, outcomeFilter])
+  }, [openingFilter, outcomeFilter, requestedGameId, selectedGameId])
 
   useEffect(() => {
     fetchGames()
@@ -96,7 +112,8 @@ export default function GameInspector() {
       const game = new Chess()
       try {
         game.loadPgn(pgn)
-        setBoard(game)
+        // Start at initial position and replay moves as moveIndex changes.
+        setBoard(new Chess())
         setMoveIndex(0)
         setFullHistory(game.history())
       } catch (e) {
@@ -108,6 +125,26 @@ export default function GameInspector() {
       setFullHistory([])
     }
   }, [pgn])
+
+  useEffect(() => {
+    if (!selectedGameId) return
+    if (!requestedGameId) return
+    if (selectedGameId !== requestedGameId) return
+    if (!Number.isFinite(requestedPly as number)) return
+    if (!board) return
+
+    const ply = Math.max(0, Math.min(fullHistory.length, Math.trunc(requestedPly as number)))
+    const key = `${selectedGameId}:${ply}`
+    if (appliedPlyRef.current === key) return
+    appliedPlyRef.current = key
+
+    const newBoard = new Chess()
+    for (let i = 0; i < ply; i++) {
+      newBoard.move(fullHistory[i])
+    }
+    setBoard(newBoard)
+    setMoveIndex(ply)
+  }, [board, fullHistory, requestedGameId, requestedPly, selectedGameId])
 
   // Sync Live Engine
   useEffect(() => {

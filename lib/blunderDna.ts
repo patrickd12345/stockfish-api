@@ -171,7 +171,7 @@ export async function persistInputGames(lichessUserId: string, games: InputGame[
   await connectToDb()
   const sql = getSql()
   await sql`
-    CREATE TABLE IF NOT EXISTS lichess_recent_games (
+    CREATE TABLE IF NOT EXISTS public.lichess_recent_games (
       lichess_user_id TEXT NOT NULL,
       lichess_game_id TEXT NOT NULL,
       pgn TEXT NOT NULL,
@@ -184,7 +184,7 @@ export async function persistInputGames(lichessUserId: string, games: InputGame[
 
   for (const g of games) {
     await sql`
-      INSERT INTO lichess_recent_games (lichess_user_id, lichess_game_id, pgn, time_control, created_at)
+      INSERT INTO public.lichess_recent_games (lichess_user_id, lichess_game_id, pgn, time_control, created_at)
       VALUES (${lichessUserId}, ${g.lichessGameId}, ${g.pgn}, ${g.timeControl ?? null}, ${g.createdAt ? new Date(g.createdAt) : null})
       ON CONFLICT (lichess_user_id, lichess_game_id)
       DO UPDATE SET pgn = EXCLUDED.pgn, time_control = EXCLUDED.time_control, created_at = EXCLUDED.created_at, fetched_at = now()
@@ -242,11 +242,13 @@ export async function analyzeBlunderDnaFromGames(params: {
   const engine = new StockfishEngine(enginePath)
   const engineAny = engine as any
 
+  // Cache in **white perspective** (positive = good for White).
   const evalCache = new Map<string, number>()
-  const bestCache = new Map<string, { bestMove: string | null; evalBest: number; pv: string[] }>()
+  const bestCache = new Map<string, { bestMove: string | null; evalBestWhite: number; pv: string[] }>()
 
-  const evaluateDepth = async (fen: string, sideToMove: 'w' | 'b', d: number): Promise<number> => {
-    const key = `eval:${d}:${sideToMove}:${fen}`
+  // Stockfish "score" is from side-to-move perspective. Normalize to **white** perspective.
+  const evaluateDepthWhite = async (fen: string, d: number): Promise<number> => {
+    const key = `evalw:${d}:${fen}`
     const cached = evalCache.get(key)
     if (typeof cached === 'number') return cached
 
@@ -254,14 +256,15 @@ export async function analyzeBlunderDnaFromGames(params: {
     engineAny.send(`position fen ${fen}`)
     engineAny.send(`go depth ${d}`)
     const lines = await wait
-    const score = parseScoreFromLines(lines)
-    const normalized = sideToMove === 'b' ? -score : score
-    evalCache.set(key, normalized)
-    return normalized
+    const scoreFromTurn = parseScoreFromLines(lines)
+    const turn = (fen.split(' ')[1] as 'w' | 'b' | undefined) ?? 'w'
+    const scoreFromWhite = turn === 'b' ? -scoreFromTurn : scoreFromTurn
+    evalCache.set(key, scoreFromWhite)
+    return scoreFromWhite
   }
 
-  const bestMoveAndPV = async (fen: string, sideToMove: 'w' | 'b', d: number) => {
-    const key = `best:${d}:${sideToMove}:${fen}`
+  const bestMoveAndPVWhite = async (fen: string, d: number) => {
+    const key = `bestw:${d}:${fen}`
     const cached = bestCache.get(key)
     if (cached) return cached
 
@@ -269,27 +272,22 @@ export async function analyzeBlunderDnaFromGames(params: {
     engineAny.send(`position fen ${fen}`)
     engineAny.send(`go depth ${d}`)
     const lines = await wait
-    const score = parseScoreFromLines(lines)
-    const evalBest = sideToMove === 'b' ? -score : score
+    const scoreFromTurn = parseScoreFromLines(lines)
+    const turn = (fen.split(' ')[1] as 'w' | 'b' | undefined) ?? 'w'
+    const evalBestWhite = turn === 'b' ? -scoreFromTurn : scoreFromTurn
     const bestMoveLine = lines.find((l: string) => l.startsWith('bestmove'))
-    const bestMove = bestMoveLine?.match(/bestmove\\s+(\\S+)/)?.[1] || null
+    const bestMove = bestMoveLine?.match(/bestmove\s+(\S+)/)?.[1] || null
     const pvLine = [...lines].reverse().find((l: string) => l.startsWith('info') && l.includes(' pv '))
-    const pv = pvLine?.match(/pv\\s+(.+)/)?.[1]?.split(/\\s+/) || []
+    // Match " pv <moves...>" (avoid matching the "pv" in "multipv").
+    const pv = pvLine?.match(/\spv\s+(.+)/)?.[1]?.split(/\s+/) || []
 
-    const out = { bestMove, evalBest, pv }
+    const out = { bestMove, evalBestWhite, pv }
     bestCache.set(key, out)
     return out
   }
 
-  const allDrills: Array<Omit<DrillRow, 'drillId' | 'createdAt'>> = []
-  const occurrences: Record<PatternTag, number> = {
-    hanging_piece: 0,
-    missed_threat: 0,
-    missed_win: 0,
-    unsafe_king: 0,
-    bad_capture: 0,
-    time_trouble_collapse: 0
-  }
+  type DrillCandidate = Omit<DrillRow, 'drillId' | 'createdAt'> & { delta: number }
+  const candidates: DrillCandidate[] = []
 
   const normalizedUser = normalizeUsername(lichessUserId)
 
@@ -339,7 +337,9 @@ export async function analyzeBlunderDnaFromGames(params: {
           continue
         }
 
-        const { bestMove, evalBest, pv } = await bestMoveAndPV(fenBefore, temp.turn(), depth)
+        const myPerspective = temp.turn()
+        const sign = myPerspective === 'w' ? 1 : -1
+        const { bestMove, evalBestWhite, pv } = await bestMoveAndPVWhite(fenBefore, depth)
 
         let played: any = null
         try {
@@ -349,18 +349,19 @@ export async function analyzeBlunderDnaFromGames(params: {
         }
 
         const fenAfter = temp.fen()
-        const evalAfter = await evaluateDepth(fenAfter, temp.turn(), depth)
+        const evalAfterWhite = await evaluateDepthWhite(fenAfter, depth)
         const myMoveUci = `${played.from}${played.to}${played.promotion || ''}`.toLowerCase()
         const isCapture = !!played.captured
 
-        const delta = Math.max(0, Math.round(evalBest - evalAfter))
-        const mateLike = Math.abs(evalBest) >= 90000 || Math.abs(evalAfter) >= 90000
-        if (delta < thresholdCp) continue
+        const evalBestMy = sign * evalBestWhite
+        const evalAfterMy = sign * evalAfterWhite
+        const delta = Math.max(0, Math.round(evalBestMy - evalAfterMy))
+        const mateLike = Math.abs(evalBestMy) >= 90000 || Math.abs(evalAfterMy) >= 90000
 
         const pattern = classifyPatternV1({
           delta,
-          evalBefore: evalBest,
-          evalAfter,
+          evalBefore: evalBestMy,
+          evalAfter: evalAfterMy,
           myMoveUci,
           bestMoveUci: (bestMove || '').toLowerCase(),
           pv: pv.join(' '),
@@ -368,9 +369,8 @@ export async function analyzeBlunderDnaFromGames(params: {
           isCapture
         })
 
-        occurrences[pattern] += 1
-
-        allDrills.push({
+        // Always store candidates; threshold filtering happens deterministically afterwards.
+        candidates.push({
           lichessGameId: gameId,
           ply,
           fen: fenBefore,
@@ -378,10 +378,11 @@ export async function analyzeBlunderDnaFromGames(params: {
           myMove: myMoveUci,
           bestMove: (bestMove || myMoveUci).toLowerCase(),
           pv: pv.slice(0, 8).join(' '),
-          evalBefore: Math.round(evalBest),
-          evalAfter: Math.round(evalAfter),
+          evalBefore: Math.round(evalBestMy),
+          evalAfter: Math.round(evalAfterMy),
           patternTag: pattern,
-          difficulty: computeDifficulty(delta)
+          difficulty: computeDifficulty(delta),
+          delta
         })
       }
     }
@@ -389,8 +390,37 @@ export async function analyzeBlunderDnaFromGames(params: {
     await engine.stop().catch(() => null)
   }
 
+  const maxDelta = candidates.reduce((m, d) => Math.max(m, d.delta), 0)
+  const effectiveThreshold = maxDelta >= thresholdCp ? thresholdCp : Math.min(thresholdCp, 80)
+  if (process.env.NODE_ENV !== 'production') {
+    const nonZero = candidates.filter((c) => c.evalBefore !== 0 || c.evalAfter !== 0).length
+    const maxAbsEval = candidates.reduce((m, c) => Math.max(m, Math.abs(c.evalBefore), Math.abs(c.evalAfter)), 0)
+    console.log('[Blunder DNA] analyze stats', {
+      lichessUserId,
+      candidates: candidates.length,
+      nonZero,
+      maxAbsEval,
+      maxDelta,
+      thresholdCp,
+      effectiveThreshold
+    })
+  }
+
+  const occurrences: Record<PatternTag, number> = {
+    hanging_piece: 0,
+    missed_threat: 0,
+    missed_win: 0,
+    unsafe_king: 0,
+    bad_capture: 0,
+    time_trouble_collapse: 0
+  }
+
+  for (const c of candidates) {
+    if (c.delta >= effectiveThreshold) occurrences[c.patternTag] += 1
+  }
+
   // Choose top drills deterministically: highest delta, then stable tie-breaks.
-  const perPattern: Record<PatternTag, Array<Omit<DrillRow, 'drillId' | 'createdAt'>>> = {
+  const perPattern: Record<PatternTag, Array<DrillCandidate>> = {
     hanging_piece: [],
     missed_threat: [],
     missed_win: [],
@@ -399,16 +429,16 @@ export async function analyzeBlunderDnaFromGames(params: {
     time_trouble_collapse: []
   }
 
-  for (const d of allDrills) perPattern[d.patternTag].push(d)
+  for (const d of candidates) {
+    if (d.delta >= effectiveThreshold) perPattern[d.patternTag].push(d)
+  }
 
   const selected: Array<Omit<DrillRow, 'drillId' | 'createdAt'>> = []
   for (const tag of Object.keys(perPattern) as PatternTag[]) {
     perPattern[tag].sort((a, b) => {
-      const da = Math.max(0, a.evalBefore - a.evalAfter)
-      const db = Math.max(0, b.evalBefore - b.evalAfter)
-      return (db - da) || a.lichessGameId.localeCompare(b.lichessGameId) || (a.ply - b.ply)
+      return (b.delta - a.delta) || a.lichessGameId.localeCompare(b.lichessGameId) || (a.ply - b.ply)
     })
-    selected.push(...perPattern[tag].slice(0, clampInt(nPerPattern, 1, 3)))
+    selected.push(...perPattern[tag].slice(0, clampInt(nPerPattern, 1, 3)).map(({ delta: _delta, ...rest }) => rest))
   }
 
   // Persist patterns and drills (auditability)
@@ -419,7 +449,7 @@ export async function analyzeBlunderDnaFromGames(params: {
     // weaknessScore: no attempts yet => based on occurrences.
     const weaknessScore = occ === 0 ? 0 : Math.min(1, 0.25 + occ / 20)
     await sql`
-      INSERT INTO blunder_dna_patterns (lichess_user_id, version, pattern_tag, label, description, occurrences, weakness_score, computed_at, updated_at)
+      INSERT INTO public.blunder_dna_patterns (lichess_user_id, version, pattern_tag, label, description, occurrences, weakness_score, computed_at, updated_at)
       VALUES (${lichessUserId}, 'v1', ${tag}, ${meta.label}, ${meta.description}, ${occ}, ${weaknessScore}, ${now}, ${now})
       ON CONFLICT (lichess_user_id, version, pattern_tag)
       DO UPDATE SET
@@ -435,7 +465,7 @@ export async function analyzeBlunderDnaFromGames(params: {
   const inserted: DrillRow[] = []
   for (const d of selected) {
     const rows = (await sql`
-      INSERT INTO blunder_dna_drills (
+      INSERT INTO public.blunder_dna_drills (
         lichess_user_id, lichess_game_id, ply, fen, side_to_move, my_move, best_move, pv,
         eval_before, eval_after, pattern_tag, difficulty, created_at, updated_at
       ) VALUES (
@@ -475,7 +505,7 @@ export async function analyzeBlunderDnaFromGames(params: {
 
     // Ensure mastery row exists
     await sql`
-      INSERT INTO blunder_dna_mastery (drill_id, lichess_user_id, due_date)
+      INSERT INTO public.blunder_dna_mastery (drill_id, lichess_user_id, due_date)
       VALUES (${row.drill_id}, ${lichessUserId}, ${now.toISOString().slice(0, 10)}::date)
       ON CONFLICT (drill_id)
       DO NOTHING
@@ -490,12 +520,12 @@ function parseScoreFromLines(lines: string[]): number {
   const MATE_SCORE = 100000
   let lastScore: number | null = null
   for (const line of lines) {
-    const cpMatch = line.match(/score\\s+cp\\s+(-?\\d+)/)
+    const cpMatch = line.match(/score\s+cp\s+(-?\d+)/)
     if (cpMatch) {
       lastScore = parseInt(cpMatch[1], 10)
       continue
     }
-    const mateMatch = line.match(/score\\s+mate\\s+(-?\\d+)/)
+    const mateMatch = line.match(/score\s+mate\s+(-?\d+)/)
     if (mateMatch) {
       const mate = parseInt(mateMatch[1], 10)
       lastScore = mate > 0 ? MATE_SCORE : -MATE_SCORE
@@ -510,7 +540,7 @@ export async function getPatternSummaries(lichessUserId: string): Promise<Patter
   const sql = getSql()
   const rows = (await sql`
     SELECT pattern_tag, label, occurrences, weakness_score, updated_at
-    FROM blunder_dna_patterns
+    FROM public.blunder_dna_patterns
     WHERE lichess_user_id = ${lichessUserId} AND version = 'v1'
     ORDER BY weakness_score DESC, occurrences DESC, pattern_tag ASC
   `) as Array<any>
@@ -529,7 +559,7 @@ export async function getTodayQueue(lichessUserId: string, date: string): Promis
   const sql = getSql()
   const rows = (await sql`
     SELECT drill_ids
-    FROM blunder_dna_daily_queue
+    FROM public.blunder_dna_daily_queue
     WHERE lichess_user_id = ${lichessUserId} AND date = ${date}::date
   `) as Array<{ drill_ids: any }>
   if (rows.length === 0) return []
@@ -546,8 +576,8 @@ export async function buildAndStoreTodayQueue(lichessUserId: string, date: strin
 
   const dueRows = (await sql`
     SELECT d.drill_id, d.pattern_tag, d.difficulty, COALESCE(m.correct, 0) as correct, COALESCE(m.attempts, 0) as attempts
-    FROM blunder_dna_drills d
-    LEFT JOIN blunder_dna_mastery m ON m.drill_id = d.drill_id
+    FROM public.blunder_dna_drills d
+    LEFT JOIN public.blunder_dna_mastery m ON m.drill_id = d.drill_id
     WHERE d.lichess_user_id = ${lichessUserId}
       AND (m.due_date IS NULL OR m.due_date <= ${date}::date)
     ORDER BY d.pattern_tag ASC, d.difficulty ASC, d.drill_id ASC
@@ -584,7 +614,7 @@ export async function buildAndStoreTodayQueue(lichessUserId: string, date: strin
   const finalIds = picked.slice(0, 5)
 
   await sql`
-    INSERT INTO blunder_dna_daily_queue (lichess_user_id, date, drill_ids)
+    INSERT INTO public.blunder_dna_daily_queue (lichess_user_id, date, drill_ids)
     VALUES (${lichessUserId}, ${date}::date, ${JSON.stringify(finalIds)}::jsonb)
     ON CONFLICT (lichess_user_id, date)
     DO UPDATE SET drill_ids = EXCLUDED.drill_ids
@@ -599,7 +629,7 @@ export async function getDrillsByIds(lichessUserId: string, ids: string[]): Prom
   const sql = getSql()
   const rows = (await sql`
     SELECT drill_id, lichess_game_id, ply, fen, side_to_move, my_move, best_move, pv, eval_before, eval_after, pattern_tag, difficulty, created_at
-    FROM blunder_dna_drills
+    FROM public.blunder_dna_drills
     WHERE lichess_user_id = ${lichessUserId} AND drill_id = ANY(${ids}::uuid[])
   `) as Array<any>
 
@@ -631,13 +661,13 @@ export async function recordAttempt(params: { lichessUserId: string; drillId: st
   const now = new Date()
 
   await sql`
-    INSERT INTO blunder_dna_attempts (drill_id, lichess_user_id, attempted_at, user_move, ok)
+    INSERT INTO public.blunder_dna_attempts (drill_id, lichess_user_id, attempted_at, user_move, ok)
     VALUES (${params.drillId}::uuid, ${params.lichessUserId}, ${now}, ${params.userMove}, ${params.ok})
   `
 
   const masteryRows = (await sql`
     SELECT attempts, correct, streak, ease, interval_days
-    FROM blunder_dna_mastery
+    FROM public.blunder_dna_mastery
     WHERE drill_id = ${params.drillId}::uuid
   `) as Array<any>
 
@@ -656,7 +686,7 @@ export async function recordAttempt(params: { lichessUserId: string; drillId: st
   const due = dueDate.toISOString().slice(0, 10)
 
   await sql`
-    INSERT INTO blunder_dna_mastery (drill_id, lichess_user_id, attempts, correct, streak, ease, interval_days, due_date, updated_at)
+    INSERT INTO public.blunder_dna_mastery (drill_id, lichess_user_id, attempts, correct, streak, ease, interval_days, due_date, updated_at)
     VALUES (${params.drillId}::uuid, ${params.lichessUserId}, ${attempts}, ${correct}, ${streak}, ${ease}, ${intervalDays}, ${due}::date, ${now})
     ON CONFLICT (drill_id)
     DO UPDATE SET

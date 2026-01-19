@@ -14,6 +14,24 @@ type GameRow = {
   pgn_text?: string
 }
 
+type GameOrigin = 'lichess' | 'chess.com' | 'pgn' | 'unknown'
+
+function inferGameOriginFromPgn(pgnText?: string): GameOrigin {
+  if (!pgnText) return 'unknown'
+  const pgn = pgnText.toLowerCase()
+  if (pgn.includes('lichess.org')) return 'lichess'
+  if (pgn.includes('chess.com') || pgn.includes('www.chess.com')) return 'chess.com'
+  if (pgn.includes('[event') || pgn.includes('[site')) return 'pgn'
+  return 'unknown'
+}
+
+function formatOriginLabel(origin: GameOrigin): string {
+  if (origin === 'chess.com') return 'Chess.com'
+  if (origin === 'lichess') return 'Lichess'
+  if (origin === 'pgn') return 'PGN'
+  return 'Unknown'
+}
+
 interface MobileGameDrawerProps {
   open: boolean
   onClose: () => void
@@ -65,8 +83,6 @@ export default function MobileGameDrawer({
   const [games, setGames] = useState<GameRow[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [analysisLoading, setAnalysisLoading] = useState(false)
-  const [analysisStatus, setAnalysisStatus] = useState<string | null>(null)
 
   const [moveHistory, setMoveHistory] = useState<string[]>([])
   const [currentMoveIdx, setCurrentMoveIdx] = useState(-1)
@@ -87,26 +103,6 @@ export default function MobileGameDrawer({
     }
   }, [])
 
-  const triggerEngineAnalysis = useCallback(async () => {
-    setAnalysisLoading(true)
-    setAnalysisStatus(null)
-    try {
-      const res = await fetch('/api/engine/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'enqueue', limit: 10 }),
-      })
-      const data = await res.json()
-      if (!res.ok || data?.error) {
-        throw new Error(data?.error || 'Failed to enqueue engine analysis')
-      }
-      setAnalysisStatus(`Queued ${data.enqueued ?? 0} games for analysis.`)
-    } catch (e: any) {
-      setAnalysisStatus(e?.message || 'Failed to enqueue engine analysis')
-    } finally {
-      setAnalysisLoading(false)
-    }
-  }, [])
 
   // Fetch only when opened (keeps mobile landing fast and DB-free).
   useEffect(() => {
@@ -312,32 +308,7 @@ export default function MobileGameDrawer({
             </div>
           </div>
 
-          <div style={{ marginTop: '16px' }}>
-            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
-              Engine analysis
-            </div>
-            <button
-              onClick={triggerEngineAnalysis}
-              disabled={analysisLoading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '10px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: analysisLoading ? '#374151' : '#2563eb',
-                color: 'white',
-                cursor: analysisLoading ? 'not-allowed' : 'pointer',
-                fontWeight: 600,
-              }}
-            >
-              {analysisLoading ? 'Queueing...' : 'Queue analysis jobs'}
-            </button>
-            {analysisStatus && (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: '#9ca3af' }}>
-                {analysisStatus}
-              </div>
-            )}
-          </div>
+          {/* Manual Stockfish queue controls removed: analysis runs automatically after startup import. */}
         </div>
 
         <div style={{ padding: '12px 14px', flex: 1, overflowY: 'auto' }}>
@@ -351,6 +322,7 @@ export default function MobileGameDrawer({
             {games.map((game) => {
               const isSelected = selectedGameId === game.id
               const status = getGameStatus(game)
+              const origin = inferGameOriginFromPgn(game.pgn_text)
 
               let bgColor = '#0b1220'
               let borderColor = 'rgba(255,255,255,0.12)'
@@ -382,8 +354,27 @@ export default function MobileGameDrawer({
                     cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontWeight: 800, fontSize: '14px' }}>
-                    {game.white || 'White'} vs {game.black || 'Black'}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <div style={{ fontWeight: 800, fontSize: '14px' }}>
+                      {game.white || 'White'} vs {game.black || 'Black'}
+                    </div>
+                    <div
+                      aria-label={`Game origin: ${formatOriginLabel(origin)}`}
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: '999px',
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        background: 'rgba(0,0,0,0.22)',
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        color: subTextColor,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {formatOriginLabel(origin)}
+                    </div>
                   </div>
                   <div style={{ fontSize: '12px', color: subTextColor, marginTop: '4px' }}>
                     {game.opening_name || 'Unknown Opening'}

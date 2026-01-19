@@ -7,6 +7,7 @@ import OpeningExplorer from '@/components/OpeningExplorer'
 import MobileGameDrawer from '@/components/MobileGameDrawer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
+import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import type { HomeTab } from '@/components/DesktopHome'
 
 interface MobileHomeProps {
@@ -147,15 +148,19 @@ export default function MobileHome({
             DNA
           </button>
         </div>
+
+        <div style={{ padding: '0 14px 12px 14px' }}>
+          <EngineCoverageWidget compact active={Boolean(importStatus || engineStatus)} />
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, padding: '12px 12px 18px 12px' }}>
         {activeTab === 'chat' ? (
-          <div style={{ height: 'calc(100dvh - 132px)', minHeight: 0 }}>
+          <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <ChatTab selectedGameId={selectedGameId} fill currentPage={activeTab} />
           </div>
         ) : (
-          <div style={{ height: 'calc(100dvh - 132px)', overflowY: 'auto' }}>
+          <div style={{ height: '100%', overflowY: 'auto' }}>
             {activeTab === 'replay' && <GameInspector key={refreshKey} />}
             {activeTab === 'openings' && <OpeningExplorer />}
             {activeTab === 'lichess' && <LichessLiveTab />}
