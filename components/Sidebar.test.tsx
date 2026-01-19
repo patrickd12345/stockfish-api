@@ -1,6 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-
 import Sidebar from '@/components/Sidebar'
 
 describe('components/Sidebar', () => {
@@ -66,24 +65,43 @@ describe('components/Sidebar', () => {
     // Initial load request
     expect(fetchSpy).toHaveBeenCalled()
 
+    // Test a11y labels
+    expect(screen.getByLabelText('Go to Beginning')).toBeInTheDocument()
+    expect(screen.getByLabelText('Search games')).toBeInTheDocument()
+
     // Search
-    const search = screen.getByPlaceholderText('Search white, black, opening...')
+    const search = screen.getByLabelText('Search games')
     await user.type(search, 'ruy')
 
     // Debounce is 300ms
     await new Promise((resolve) => setTimeout(resolve, 350))
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(fetchSpy.mock.calls.some(([u]) => String(u).startsWith('/api/games?q='))).toBe(
         true
       )
     })
 
-    // Click game row
+    // Click game row (using keyboard now)
     const row = await screen.findByText(/Alice vs Bob/i)
-    await user.click(row)
+    // Find the parent button (since we added role="button" to the row)
+    // Actually the text is inside the div with role="button"
+
+    // We can focus it. It should have tabIndex 0
+    // user.tab() is a bit tricky, but we can try to find the element and focus it or click it.
+
+    // Check if it is focusable?
+    // The element containing "Alice vs Bob" is a child of the row.
+    // The row itself has the click handler.
+
+    // Let's verify we can trigger it with Enter key
+    const gameRow = row.closest('[role="button"]')
+    if (!gameRow) throw new Error('Game row not found')
+
+    gameRow.focus()
+    await user.keyboard('{Enter}')
+
     expect(onGameSelect).toHaveBeenCalledWith('g2')
 
     expect(await screen.findByText(/Ruy Lopez/i)).toBeVisible()
   })
 })
-
