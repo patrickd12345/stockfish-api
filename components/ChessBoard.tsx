@@ -8,6 +8,7 @@ interface ChessBoardProps {
   fen?: string
   svg?: string
   size?: number | string
+  theme?: 'default' | 'wood'
 }
 
 const DEFAULT_BOARD_WIDTH = 400
@@ -17,6 +18,25 @@ const buildGame = (fen?: string) => {
     return new Chess()
   }
   return new Chess(fen)
+}
+
+const WOOD_LIGHT = '#e7c9a2'
+const WOOD_DARK = '#b07a4a'
+
+const getThemeStyles = (theme: ChessBoardProps['theme']) => {
+  if (theme !== 'wood') {
+    return {}
+  }
+
+  return {
+    customLightSquareStyle: { backgroundColor: WOOD_LIGHT },
+    customDarkSquareStyle: { backgroundColor: WOOD_DARK },
+    customBoardStyle: {
+      borderRadius: '14px',
+      boxShadow: '0 12px 24px rgba(60, 36, 14, 0.35)',
+      border: '8px solid rgba(90, 56, 22, 0.6)',
+    },
+  }
 }
 
 const toCssSize = (size: number | string | undefined): string => {
@@ -30,11 +50,12 @@ const toCssSize = (size: number | string | undefined): string => {
   return 'min(92vw, 400px)'
 }
 
-export default function ChessBoard({ fen, svg, size }: ChessBoardProps) {
+export default function ChessBoard({ fen, svg, size, theme = 'default' }: ChessBoardProps) {
   const [game, setGame] = useState(() => buildGame(fen))
   const [position, setPosition] = useState(game.fen())
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
+  const themeStyles = useMemo(() => getThemeStyles(theme), [theme])
 
   useEffect(() => {
     if (!fen) {
@@ -68,17 +89,25 @@ export default function ChessBoard({ fen, svg, size }: ChessBoardProps) {
 
   const boardWidth = useMemo(() => {
     let desired = DEFAULT_BOARD_WIDTH
+    let usesRelativeSize = false
 
     if (typeof size === 'number') {
       desired = size
     } else if (typeof size === 'string') {
-      const parsed = Number.parseInt(size, 10)
-      if (Number.isFinite(parsed)) {
-        desired = parsed
+      const trimmed = size.trim()
+      if (/^\d+$/.test(trimmed)) {
+        desired = Number.parseInt(trimmed, 10)
+      } else if (/^\d+px$/.test(trimmed)) {
+        desired = Number.parseInt(trimmed.replace('px', ''), 10)
+      } else {
+        usesRelativeSize = true
       }
     }
 
     if (typeof measuredWidth === 'number' && Number.isFinite(measuredWidth)) {
+      if (usesRelativeSize) {
+        return Math.max(1, measuredWidth)
+      }
       return Math.max(1, Math.min(measuredWidth, desired))
     }
 
@@ -131,6 +160,9 @@ export default function ChessBoard({ fen, svg, size }: ChessBoardProps) {
         areArrowsAllowed
         arePiecesDraggable
         onPieceDrop={handlePieceDrop}
+        customLightSquareStyle={themeStyles.customLightSquareStyle}
+        customDarkSquareStyle={themeStyles.customDarkSquareStyle}
+        customBoardStyle={themeStyles.customBoardStyle}
       />
     </div>
   )
