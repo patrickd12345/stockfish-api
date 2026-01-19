@@ -76,39 +76,97 @@ async function main() {
   let skipped = 0
 
   for (let i = 0; i < games.length; i += BATCH_SIZE) {
-    const batch = games.slice(i, i + BATCH_SIZE)
+    const rawBatch = games.slice(i, i + BATCH_SIZE)
+    const parsedGames: any[] = []
 
-    await Promise.all(
-      batch.map(async (rawGame: any) => {
-        const pgn = rawGame?.pgn
-        if (!pgn) {
-          return
+    // 1. Parse Phase
+    for (const rawGame of rawBatch) {
+      const pgn = rawGame?.pgn
+      if (!pgn) continue
+
+      try {
+        const chess = new Chess()
+        const loaded = chess.loadPgn(pgn)
+        if (!loaded) {
+          console.warn('Skipping game with invalid PGN.')
+          continue
         }
+        const headers = chess.header()
+        const date = resolveGameDate(headers, rawGame)
+        const white = headers.White || 'Unknown'
+        const black = headers.Black || 'Unknown'
+        const result = headers.Result || '*'
+        const opening = headers.Opening || ''
 
+        parsedGames.push({
+          date,
+          white,
+          black,
+          result,
+          opening,
+          pgn,
+          blunders: 0,
+          my_accuracy: null
+        })
+      } catch (err) {
+        console.error('Error parsing game:', err)
+      }
+    }
+
+    if (parsedGames.length === 0) continue
+
+    try {
+      // 2. Bulk Check Phase
+      // We check for any games that match the dates involved, then filter more strictly in memory.
+      const dates = parsedGames.map(g => g.date)
+      const existingCandidates = await sql`
+        SELECT date, white, black FROM games
+        WHERE date = ANY(${dates}::text[])
+      `
+
+      const existingSet = new Set(
+        existingCandidates.map((r: any) => `${r.date}|${r.white}|${r.black}`)
+      )
+
+      const toInsert = parsedGames.filter(g => !existingSet.has(`${g.date}|${g.white}|${g.black}`))
+      skipped += (parsedGames.length - toInsert.length)
+
+      if (toInsert.length > 0) {
+        // 3. Bulk Insert Phase
+        // Use UNNEST pattern for efficient bulk insert
+        await sql`
+          INSERT INTO games (
+            date, white, black, result, opening_name,
+            pgn_text, blunders, my_accuracy
+          )
+          SELECT * FROM UNNEST(
+            ${toInsert.map(g => g.date)}::text[],
+            ${toInsert.map(g => g.white)}::text[],
+            ${toInsert.map(g => g.black)}::text[],
+            ${toInsert.map(g => g.result)}::text[],
+            ${toInsert.map(g => g.opening)}::text[],
+            ${toInsert.map(g => g.pgn)}::text[],
+            ${toInsert.map(g => g.blunders)}::int[],
+            ${toInsert.map(g => g.my_accuracy)}::int[]
+          )
+        `
+        imported += toInsert.length
+      }
+
+    } catch (batchError) {
+      console.error('Batch insert failed. Retrying row-by-row...', batchError)
+
+      // Fallback: Row-by-row insertion
+      for (const game of parsedGames) {
         try {
-          const chess = new Chess()
-          const loaded = chess.loadPgn(pgn)
-          if (!loaded) {
-            console.warn('Skipping game with invalid PGN.')
-            return
-          }
-          const headers = chess.header()
-
-          const date = resolveGameDate(headers, rawGame)
-          const white = headers.White || 'Unknown'
-          const black = headers.Black || 'Unknown'
-          const result = headers.Result || '*'
-          const opening = headers.Opening || ''
-
-          const existing = await sql`
+           const existing = await sql`
             SELECT id FROM games
-            WHERE date = ${date} AND white = ${white} AND black = ${black}
+            WHERE date = ${game.date} AND white = ${game.white} AND black = ${game.black}
             LIMIT 1
           `
-
           if (existing.length > 0) {
             skipped++
-            return
+            continue
           }
 
           await sql`
@@ -116,17 +174,16 @@ async function main() {
               date, white, black, result, opening_name,
               pgn_text, blunders, my_accuracy
             ) VALUES (
-              ${date}, ${white}, ${black}, ${result}, ${opening},
-              ${pgn}, 0, null
+              ${game.date}, ${game.white}, ${game.black}, ${game.result}, ${game.opening},
+              ${game.pgn}, 0, null
             )
           `
-
           imported++
-        } catch (err) {
-          console.error('Failed to import game:', err)
+        } catch (rowError) {
+          console.error('Failed to import game (fallback):', rowError)
         }
-      })
-    )
+      }
+    }
 
     console.log(`Processed ${Math.min(i + BATCH_SIZE, games.length)}/${games.length}...`)
   }
