@@ -13,6 +13,7 @@ export interface IMove {
 export interface IGame {
   id: string
   date?: string
+  time?: string
   white?: string
   black?: string
   result?: string
@@ -26,6 +27,7 @@ export interface IGame {
 
 export interface CreateGameInput {
   date?: string
+  time?: string
   white?: string
   black?: string
   result?: string
@@ -74,14 +76,15 @@ type DbRow = Record<string, unknown>
 export async function getGames(limit = 100) {
   const sql = getSql()
   const rows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
     FROM games
-    ORDER BY date DESC, created_at DESC
+    ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ?? undefined,
+    time: r.time ?? undefined,
     white: r.white ?? undefined,
     black: r.black ?? undefined,
     result: r.result ?? undefined,
@@ -96,14 +99,15 @@ export async function getGames(limit = 100) {
 export async function getGameSummaries(limit = 10) {
   const sql = getSql()
   const rows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
     FROM games
-    ORDER BY date DESC, created_at DESC
+    ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ? String(r.date) : undefined,
+    time: r.time ? String(r.time) : undefined,
     white: r.white ? String(r.white) : undefined,
     black: r.black ? String(r.black) : undefined,
     result: r.result ? String(r.result) : undefined,
@@ -128,10 +132,10 @@ export async function getGameSummariesByDateRange(startDate: string, endDate: st
   // We'll fetch all games and filter in code to handle date format variations
   // This is more reliable than complex SQL CASE statements
   const allRows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
     FROM games
     WHERE date IS NOT NULL OR created_at IS NOT NULL
-    ORDER BY created_at DESC
+    ORDER BY date DESC, time DESC, created_at DESC
     LIMIT 10000
   `) as DbRow[]
   
@@ -199,19 +203,20 @@ export async function searchGames(query: string, limit = 50) {
   const sql = getSql()
   const searchTerm = `%${query}%`
   const rows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
     FROM games
     WHERE 
       white ILIKE ${searchTerm} OR 
       black ILIKE ${searchTerm} OR 
       opening_name ILIKE ${searchTerm} OR
       date ILIKE ${searchTerm}
-    ORDER BY date DESC, created_at DESC
+    ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
   return rows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ?? undefined,
+    time: r.time ?? undefined,
     white: r.white ?? undefined,
     black: r.black ?? undefined,
     result: r.result ?? undefined,
@@ -240,7 +245,7 @@ export async function getGamesByOpeningOutcome(
   const playerPatterns = playerNames.map((name) => `%${name}%`)
 
   const rows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
     FROM games
     WHERE opening_name ILIKE ${openingTerm}
       AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
@@ -261,13 +266,14 @@ export async function getGamesByOpeningOutcome(
           ELSE false
         END
       )
-    ORDER BY date DESC, created_at DESC
+    ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
 
   return rows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ?? undefined,
+    time: r.time ?? undefined,
     white: r.white ?? undefined,
     black: r.black ?? undefined,
     result: r.result ?? undefined,
@@ -325,9 +331,10 @@ export async function createGame(data: CreateGameInput): Promise<string> {
     const embeddingStr = toVectorString(data.embedding)
     // Cast the text parameter to vector type
     const rows = (await sql`
-      INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
+      INSERT INTO games (date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
       VALUES (
         ${data.date ?? null},
+        ${data.time ?? null},
         ${data.white ?? null},
         ${data.black ?? null},
         ${data.result ?? null},
@@ -343,9 +350,10 @@ export async function createGame(data: CreateGameInput): Promise<string> {
     return String(rows[0]?.id)
   } else {
     const rows = (await sql`
-      INSERT INTO games (date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves)
+      INSERT INTO games (date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves)
       VALUES (
         ${data.date ?? null},
+        ${data.time ?? null},
         ${data.white ?? null},
         ${data.black ?? null},
         ${data.result ?? null},

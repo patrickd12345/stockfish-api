@@ -7,6 +7,7 @@ const DEFAULT_MOVE_TIME_MS = 100
 export interface GameData {
   game: {
     date?: string
+    time?: string
     white?: string
     black?: string
     result?: string
@@ -133,6 +134,7 @@ export async function analyzePgn(
         results.push({
           game: {
             date: headers.Date ?? undefined,
+            time: headers.UTCTime || headers.Time || undefined,
             white: headers.White ?? undefined,
             black: headers.Black ?? undefined,
             result: headers.Result ?? undefined,
@@ -211,6 +213,7 @@ export async function parsePgnWithoutEngine(pgnText: string): Promise<GameData[]
     results.push({
       game: {
         date: headers.Date ?? undefined,
+        time: headers.UTCTime || headers.Time || undefined,
         white: headers.White ?? undefined,
         black: headers.Black ?? undefined,
         result: headers.Result ?? undefined,
