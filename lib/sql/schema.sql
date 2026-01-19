@@ -129,3 +129,51 @@ CREATE TABLE IF NOT EXISTS engine_summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_engine_summaries_computed_at ON engine_summaries (computed_at DESC);
+
+-- Lichess OAuth tokens for board integration
+CREATE TABLE IF NOT EXISTS lichess_oauth_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lichess_user_id TEXT NOT NULL UNIQUE,
+  access_token_encrypted TEXT NOT NULL,
+  token_type TEXT NOT NULL DEFAULT 'Bearer',
+  scope TEXT[] NOT NULL DEFAULT '{}',
+  expires_in INT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_lichess_oauth_tokens_user ON lichess_oauth_tokens (lichess_user_id);
+
+-- Board session lifecycle tracking
+CREATE TABLE IF NOT EXISTS lichess_board_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lichess_user_id TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'idle',
+  active_game_id TEXT,
+  last_event_at TIMESTAMPTZ,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lichess_board_sessions_user ON lichess_board_sessions (lichess_user_id);
+
+-- Latest game state per live game
+CREATE TABLE IF NOT EXISTS lichess_game_states (
+  game_id TEXT PRIMARY KEY,
+  lichess_user_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'started',
+  moves TEXT NOT NULL DEFAULT '',
+  fen TEXT NOT NULL,
+  wtime INT NOT NULL DEFAULT 0,
+  btime INT NOT NULL DEFAULT 0,
+  winc INT NOT NULL DEFAULT 0,
+  binc INT NOT NULL DEFAULT 0,
+  winner TEXT,
+  last_move_at TIMESTAMPTZ,
+  last_clock_update_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lichess_game_states_user ON lichess_game_states (lichess_user_id);
