@@ -58,7 +58,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         conn.commit()
 
 
-def insert_game(conn: sqlite3.Connection, game_data: dict) -> int:
+def insert_game(conn: sqlite3.Connection, game_data: dict, commit: bool = True) -> int:
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -77,12 +77,13 @@ def insert_game(conn: sqlite3.Connection, game_data: dict) -> int:
             game_data.get("pgn_text"),
         ),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return int(cursor.lastrowid)
 
 
 def insert_moves(
-    conn: sqlite3.Connection, game_id: int, moves: Iterable[dict]
+    conn: sqlite3.Connection, game_id: int, moves: Iterable[dict], commit: bool = True
 ) -> None:
     cursor = conn.cursor()
     cursor.executemany(
@@ -104,7 +105,8 @@ def insert_moves(
             for move in moves
         ],
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def fetch_games(conn: sqlite3.Connection) -> List[sqlite3.Row]:
