@@ -47,7 +47,12 @@ export async function storeBlunderDetails(
       AND analysis_depth = ${analysisDepth}
   `
 
-  for (const blunder of blunders) {
+  if (blunders.length === 0) return
+
+  const BATCH_SIZE = 1000
+  for (let i = 0; i < blunders.length; i += BATCH_SIZE) {
+    const batch = blunders.slice(i, i + BATCH_SIZE)
+
     await sql`
       INSERT INTO analysis_blunders (
         game_id,
@@ -62,19 +67,20 @@ export async function storeBlunderDetails(
         eval_after,
         best_eval,
         centipawn_loss
-      ) VALUES (
-        ${gameId}::uuid,
-        ${engineName},
-        ${analysisDepth},
-        ${blunder.moveNumber},
-        ${blunder.ply},
-        ${blunder.fen},
-        ${blunder.playedMove},
-        ${blunder.bestMove},
-        ${blunder.evalBefore},
-        ${blunder.evalAfter},
-        ${blunder.bestEval},
-        ${blunder.centipawnLoss}
+      )
+      SELECT * FROM UNNEST(
+        ${batch.map(() => gameId)}::uuid[],
+        ${batch.map(() => engineName)}::text[],
+        ${batch.map(() => analysisDepth)}::int[],
+        ${batch.map((b) => b.moveNumber)}::int[],
+        ${batch.map((b) => b.ply)}::int[],
+        ${batch.map((b) => b.fen)}::text[],
+        ${batch.map((b) => b.playedMove)}::text[],
+        ${batch.map((b) => b.bestMove)}::text[],
+        ${batch.map((b) => b.evalBefore)}::int[],
+        ${batch.map((b) => b.evalAfter)}::int[],
+        ${batch.map((b) => b.bestEval)}::int[],
+        ${batch.map((b) => b.centipawnLoss)}::int[]
       )
     `
   }
