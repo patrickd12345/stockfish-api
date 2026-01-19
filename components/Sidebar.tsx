@@ -212,6 +212,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(0)}
             disabled={moveHistory.length === 0 || currentMoveIdx === 0}
             title="Go to Beginning"
+            aria-label="Go to Beginning"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
           >
             «
@@ -220,6 +221,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))}
             disabled={moveHistory.length === 0 || currentMoveIdx === 0}
             title="Back 5"
+            aria-label="Back 5 moves"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
           >
             -5
@@ -228,6 +230,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(currentMoveIdx - 1)}
             disabled={moveHistory.length === 0 || currentMoveIdx === 0}
             title="Back"
+            aria-label="Back one move"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
           >
             ‹
@@ -236,6 +239,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(currentMoveIdx + 1)}
             disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
             title="Forward"
+            aria-label="Forward one move"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
           >
             ›
@@ -244,6 +248,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))}
             disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
             title="Forward 5"
+            aria-label="Forward 5 moves"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
           >
             +5
@@ -252,6 +257,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             onClick={() => navigateTo(moveHistory.length - 1)}
             disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
             title="End"
+            aria-label="Go to End"
             style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
           >
             »
@@ -268,6 +274,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
         <input
           type="text"
           placeholder="Search white, black, opening..."
+          aria-label="Search games"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -312,6 +319,15 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
               <div
                 key={game.id}
                 onClick={() => onGameSelect(game.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onGameSelect(game.id)
+                  }
+                }}
+                tabIndex={0}
+                role="button"
+                aria-pressed={isSelected}
                 style={{
                   padding: '10px',
                   marginBottom: '8px',
