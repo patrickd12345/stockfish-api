@@ -6,6 +6,7 @@ import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
 import MobileGameDrawer from '@/components/MobileGameDrawer'
 import LichessLiveTab from '@/components/LichessLiveTab'
+import BlunderDnaTab from '@/components/BlunderDnaTab'
 import type { HomeTab } from '@/components/DesktopHome'
 
 interface MobileHomeProps {
@@ -138,6 +139,13 @@ export default function MobileHome({
           >
             Lichess
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('dna')}
+            style={{ ...mobileTabStyle(activeTab === 'dna'), background: activeTab === 'dna' ? '#111827' : '#ffffff', border: `1px solid ${activeTab === 'dna' ? '#111827' : '#e5e7eb'}` }}
+          >
+            DNA
+          </button>
         </div>
       </div>
 
@@ -151,6 +159,7 @@ export default function MobileHome({
             {activeTab === 'replay' && <GameInspector key={refreshKey} />}
             {activeTab === 'openings' && <OpeningExplorer />}
             {activeTab === 'lichess' && <LichessLiveTab />}
+            {activeTab === 'dna' && <BlunderDnaTab />}
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useStockfish } from '@/hooks/useStockfish'
+import EvalGauge, { formatEvalLabel } from '@/components/EvalGauge'
 
 interface LiveCommentaryProps {
   fen: string
@@ -50,9 +51,11 @@ export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
   const [isDragging, setIsDragging] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const [commentary, setCommentary] = useState<string>('Waiting for the next move…')
+  const [commentarySource, setCommentarySource] = useState<'llm' | 'fallback'>('fallback')
   const lastMoveRef = useRef<string | null>(null)
   const lastEvalRef = useRef<number | null>(null)
   const lastCommentedMoveRef = useRef<string | null>(null)
+  const llmAbortRef = useRef<AbortController | null>(null)
 
   const lastMove = useMemo(() => {
     const trimmed = moves.trim()
@@ -85,22 +88,55 @@ export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
       : null
 
     const evalLabel = formatEval(engineState.evaluation, engineState.mate)
+    const evalLabelCompact = formatEvalLabel(engineState.evaluation, engineState.mate)
     if (swing === null) {
-      setCommentary(`After ${lastMove}, the evaluation is ${evalLabel}.`)
+      setCommentary(`After ${lastMove}, evaluation is ${evalLabelCompact}.`)
     } else {
       const swingLabel = formatSwing(swing)
       const descriptor = describeSwing(swing)
       const direction = swing > 0 ? 'toward White' : 'toward Black'
       setCommentary(
-        `After ${lastMove}, evaluation moved ${swingLabel} pawns ${direction} (${descriptor}). Now ${evalLabel}.`
+        `After ${lastMove}, evaluation moved ${swingLabel} pawns ${direction} (${descriptor}). Now ${evalLabelCompact}.`
       )
     }
+    setCommentarySource('fallback')
+
+    // Ask the onboard LLM to write interpreted feedback using history + Stockfish output.
+    llmAbortRef.current?.abort()
+    const ac = new AbortController()
+    llmAbortRef.current = ac
+
+    const payload = {
+      fen,
+      moves,
+      lastMove,
+      evaluation: engineState.evaluation,
+      mate: engineState.mate,
+      depth: engineState.depth,
+      bestLine: engineState.bestLine,
+      bestMove: engineState.bestMove,
+      evalLabel: evalLabelCompact,
+    }
+
+    fetch('/api/coach/live-commentary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: ac.signal,
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null)
+        if (!json || typeof json.commentary !== 'string') return
+        setCommentary(json.commentary)
+        setCommentarySource(json.source === 'llm' ? 'llm' : 'fallback')
+      })
+      .catch(() => null)
 
     if (typeof currentEval === 'number') {
       lastEvalRef.current = currentEval
     }
     lastCommentedMoveRef.current = lastMove
-  }, [engineState.depth, engineState.evaluation, engineState.mate, lastMove])
+  }, [engineState.bestLine, engineState.bestMove, engineState.depth, engineState.evaluation, engineState.mate, fen, lastMove, moves])
 
   useEffect(() => {
     const handleMove = (event: globalThis.MouseEvent) => {
@@ -166,12 +202,17 @@ export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
           marginBottom: '8px',
         }}
       >
-        <span>Stockfish Coach</span>
+        <span>{commentarySource === 'llm' ? 'Coach' : 'Stockfish Coach'}</span>
         <span style={{ fontSize: '10px', opacity: 0.7 }}>Drag</span>
       </button>
       <div style={{ fontSize: '13px', lineHeight: 1.4 }}>{commentary}</div>
+      <div style={{ marginTop: '10px' }}>
+        <EvalGauge evaluationCp={engineState.evaluation} mate={engineState.mate} />
+      </div>
       <div style={{ marginTop: '10px', fontSize: '11px', color: '#cbd5f5' }}>
-        {engineState.isReady ? `Depth ${engineState.depth}` : 'Engine loading…'}
+        {commentarySource === 'llm'
+          ? 'LLM coach + Stockfish'
+          : (engineState.isReady ? `Depth ${engineState.depth}` : 'Engine loading…')}
       </div>
     </div>
   )

@@ -109,4 +109,7 @@ export interface ClockSnapshot {
   winc: number
   binc: number
   receivedAt: number
+  activeColor: 'white' | 'black' | null
+  isRunning: boolean
+  lastClockUpdateAt?: string | null
 }

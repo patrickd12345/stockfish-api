@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 
@@ -12,6 +12,7 @@ interface ChessBoardProps {
   onMove?: (from: string, to: string) => void
   isDraggable?: boolean
   orientation?: 'white' | 'black'
+  highlightSquares?: Record<string, CSSProperties>
 }
 
 const DEFAULT_BOARD_WIDTH = 400
@@ -25,6 +26,14 @@ const buildGame = (fen?: string) => {
 
 const WOOD_LIGHT = '#d2b48c' // Tan / Light Wood
 const WOOD_DARK = '#8b4513'  // SaddleBrown / Dark Wood
+
+const isDarkSquare = (square: string): boolean => {
+  // a1 is dark.
+  const file = square.charCodeAt(0) - 'a'.charCodeAt(0) // 0..7
+  const rank = Number.parseInt(square[1] ?? '0', 10) // 1..8
+  if (!Number.isFinite(file) || !Number.isFinite(rank)) return false
+  return (file + rank) % 2 === 1
+}
 
 const getThemeStyles = (theme: ChessBoardProps['theme']) => {
   if (theme !== 'wood') {
@@ -124,10 +133,12 @@ export default function ChessBoard({
   theme = 'default',
   onMove,
   isDraggable = true,
-  orientation = 'white'
+  orientation = 'white',
+  highlightSquares
 }: ChessBoardProps) {
   const [game, setGame] = useState(() => buildGame(fen))
   const [position, setPosition] = useState(game.fen())
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
   const themeStyles = useMemo(() => getThemeStyles(theme), [theme])
@@ -139,6 +150,7 @@ export default function ChessBoard({
     const nextGame = buildGame(fen)
     setGame(nextGame)
     setPosition(nextGame.fen())
+    setSelectedSquare(null)
   }, [fen])
 
   useEffect(() => {
@@ -191,30 +203,130 @@ export default function ChessBoard({
 
   const pieces = useMemo(() => customPieces(theme), [theme])
 
-  const handlePieceDrop = (sourceSquare: string, targetSquare: string) => {
+  const applyLocalMove = (from: string, to: string): boolean => {
     const nextGame = new Chess(game.fen())
-    let move = null
     try {
-      move = nextGame.move({
-        from: sourceSquare,
-        to: targetSquare,
+      const move = nextGame.move({
+        from,
+        to,
         promotion: 'q',
       })
+      if (!move) return false
     } catch {
       return false
     }
-    
-    if (!move) return false
-    
+
     setGame(nextGame)
     setPosition(nextGame.fen())
-    
-    // Notify parent
-    if (onMove) {
-      onMove(sourceSquare, targetSquare)
-    }
-    
+    setSelectedSquare(null)
+
+    if (onMove) onMove(from, to)
     return true
+  }
+
+  const isMyPiece = (piece: any): boolean => {
+    if (!piece) return false
+    const pieceColor = piece.color === 'w' ? 'white' : 'black'
+    return pieceColor === orientation
+  }
+
+  const canInteract = !!isDraggable
+  const isMyTurn = useMemo(() => {
+    const turn = game.turn() === 'w' ? 'white' : 'black'
+    return turn === orientation
+  }, [game, orientation])
+
+  const legalTargetSquares = useMemo(() => {
+    if (!selectedSquare) return []
+    try {
+      const moves = game.moves({ square: selectedSquare as any, verbose: true }) as Array<any>
+      return moves.map((m) => m.to).filter(Boolean) as string[]
+    } catch {
+      return []
+    }
+  }, [game, selectedSquare])
+
+  const mergedSquareStyles = useMemo(() => {
+    const styles: Record<string, CSSProperties> = { ...(highlightSquares ?? {}) }
+    const isWood = theme === 'wood'
+
+    if (selectedSquare) {
+      styles[selectedSquare] = {
+        ...(styles[selectedSquare] ?? {}),
+        boxShadow: 'inset 0 0 0 4px rgba(59, 130, 246, 0.95)',
+      }
+    }
+
+    for (const sq of legalTargetSquares) {
+      const isDark = isDarkSquare(sq)
+      const baseWood = isDark ? WOOD_DARK : WOOD_LIGHT
+      const baseWoodTexture = isDark
+        ? 'radial-gradient(circle, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0) 100%)'
+        : 'radial-gradient(circle, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0) 100%)'
+
+      // Dot indicator + subtle ring. Use background-image layering so it works on both light/dark squares.
+      const dot = 'radial-gradient(circle at center, rgba(34,197,94,0.95) 0 14%, rgba(34,197,94,0.0) 15%)'
+      const ring = 'radial-gradient(circle at center, rgba(34,197,94,0.0) 0 26%, rgba(34,197,94,0.45) 27% 31%, rgba(0,0,0,0) 32%)'
+
+      const existingBg = styles[sq]?.backgroundImage
+      const layeredBg = existingBg
+        ? `${ring}, ${dot}, ${existingBg}`
+        : isWood
+          ? `${ring}, ${dot}, ${baseWoodTexture}`
+          : `${ring}, ${dot}`
+
+      styles[sq] = {
+        ...(styles[sq] ?? {}),
+        // Keep any existing highlight border and add a gentle green outline.
+        boxShadow:
+          (styles[sq]?.boxShadow ? `${styles[sq]?.boxShadow}, ` : '') +
+          'inset 0 0 0 3px rgba(34, 197, 94, 0.38)',
+        backgroundImage: layeredBg,
+        backgroundColor: styles[sq]?.backgroundColor ?? (isWood ? baseWood : undefined),
+      }
+    }
+
+    return styles
+  }, [highlightSquares, legalTargetSquares, selectedSquare, theme])
+
+  const handlePieceDrop = (sourceSquare: string, targetSquare: string) => {
+    if (!canInteract || !isMyTurn) return false
+    setSelectedSquare(null)
+    return applyLocalMove(sourceSquare, targetSquare)
+  }
+
+  const handleSquareClick = (square: string) => {
+    if (!canInteract) return
+
+    // If it's not our turn, allow deselecting but avoid new selection/moves.
+    if (!isMyTurn) {
+      setSelectedSquare(null)
+      return
+    }
+
+    const piece = game.get(square as any)
+
+    // No selection yet: only allow selecting own piece.
+    if (!selectedSquare) {
+      if (isMyPiece(piece)) setSelectedSquare(square)
+      return
+    }
+
+    // Clicking the same square toggles selection off.
+    if (selectedSquare === square) {
+      setSelectedSquare(null)
+      return
+    }
+
+    // If clicking another own piece, switch selection.
+    if (isMyPiece(piece)) {
+      setSelectedSquare(square)
+      return
+    }
+
+    // Otherwise attempt move from selectedSquare to clicked square.
+    const ok = applyLocalMove(selectedSquare, square)
+    if (!ok) setSelectedSquare(null)
   }
 
   const maxWidth = toCssSize(size)
@@ -251,7 +363,9 @@ export default function ChessBoard({
           return pieceColor === orientation
         }}
         onPieceDrop={handlePieceDrop}
+        onSquareClick={(square) => handleSquareClick(String(square))}
         boardOrientation={orientation}
+        customSquareStyles={mergedSquareStyles}
         customLightSquareStyle={themeStyles.customLightSquareStyle}
         customDarkSquareStyle={themeStyles.customDarkSquareStyle}
         customBoardStyle={themeStyles.customBoardStyle}

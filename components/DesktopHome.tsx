@@ -5,8 +5,9 @@ import ChatTab from '@/components/ChatTab'
 import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
 import LichessLiveTab from '@/components/LichessLiveTab'
+import BlunderDnaTab from '@/components/BlunderDnaTab'
 
-export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess'
+export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna'
 
 interface DesktopHomeProps {
   activeTab: HomeTab
@@ -74,6 +75,12 @@ export default function DesktopHome({
             >
               Lichess Live
             </button>
+            <button
+              onClick={() => setActiveTab('dna')}
+              style={{ ...tabStyle(activeTab === 'dna'), marginLeft: '10px', background: activeTab === 'dna' ? '#111827' : '#e5e7eb' }}
+            >
+              Blunder DNA
+            </button>
           </div>
 
           {importStatus && (
@@ -89,6 +96,7 @@ export default function DesktopHome({
         {activeTab === 'replay' && <GameInspector key={refreshKey} />}
         {activeTab === 'openings' && <OpeningExplorer />}
         {activeTab === 'lichess' && <LichessLiveTab />}
+        {activeTab === 'dna' && <BlunderDnaTab />}
       </main>
     </div>
   )

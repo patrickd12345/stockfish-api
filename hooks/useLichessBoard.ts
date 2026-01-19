@@ -42,12 +42,29 @@ export function useLichessBoard(pollIntervalMs: number = 2000) {
       const payload = (await response.json()) as LichessBoardState | null
       setState(payload)
       if (payload) {
+        const fenParts = (payload.fen || '').split(' ')
+        const turnToken = fenParts[1]
+        const activeColor = turnToken === 'w' ? 'white' : turnToken === 'b' ? 'black' : null
+        const isRunning = payload.status === 'started' || payload.status === 'playing'
+        const prev = snapshotRef.current
+
+        // Only reset the interpolation anchor when the clock actually updates.
+        // Otherwise we keep the previous receivedAt so the countdown stays smooth between polls.
+        const clockChanged =
+          !prev ||
+          prev.wtime !== payload.wtime ||
+          prev.btime !== payload.btime ||
+          prev.lastClockUpdateAt !== (payload.lastClockUpdateAt ?? null)
+
         snapshotRef.current = {
           wtime: payload.wtime,
           btime: payload.btime,
           winc: payload.winc,
           binc: payload.binc,
-          receivedAt: Date.now()
+          receivedAt: clockChanged ? Date.now() : prev.receivedAt,
+          activeColor,
+          isRunning,
+          lastClockUpdateAt: payload.lastClockUpdateAt ?? null
         }
       }
       setError(null)

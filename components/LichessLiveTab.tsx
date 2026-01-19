@@ -83,6 +83,36 @@ function uciMovesToMovePairs(uciMoves: string): Array<{ moveNumber: number; whit
   return pairs
 }
 
+function getLastPlyUciMoves(uciMoves: string, plyCount: number): string[] {
+  const tokens = (uciMoves || '').trim().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return []
+  return tokens.slice(Math.max(0, tokens.length - plyCount))
+}
+
+function uciMovesToFenAtPly(uciMoves: string, ply: number): { fen: string; appliedMoves: string } {
+  const tokens = (uciMoves || '').trim().split(/\s+/).filter(Boolean)
+  const clamped = Math.max(0, Math.min(tokens.length, ply))
+  const chess = new Chess()
+
+  const applied: string[] = []
+  for (let i = 0; i < clamped; i++) {
+    const token = tokens[i]
+    if (token.length < 4) break
+    const from = token.slice(0, 2)
+    const to = token.slice(2, 4)
+    const promotion = token.length >= 5 ? token.slice(4, 5) : undefined
+    try {
+      const move = chess.move({ from, to, promotion: promotion as any })
+      if (!move) break
+      applied.push(token)
+    } catch {
+      break
+    }
+  }
+
+  return { fen: chess.fen(), appliedMoves: applied.join(' ') }
+}
+
 export default function LichessLiveTab() {
   // Use a faster poll interval (500ms) to reduce "cappiness" during gameplay
   const { state: liveGameState, displayClock, error, refreshState } = useLichessBoard(500)
@@ -98,6 +128,7 @@ export default function LichessLiveTab() {
   const [optimisticChatMessages, setOptimisticChatMessages] = useState<
     Array<{ id: string; username: string; text: string; room: string; receivedAt: string }>
   >([])
+  const [viewPly, setViewPly] = useState<number | null>(null)
 
   // Time control selection
   const [seekTime, setSeekTime] = useState(3)
@@ -125,6 +156,11 @@ export default function LichessLiveTab() {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
     }
   }, [liveGameState?.chatMessages])
+
+  useEffect(() => {
+    // Reset navigation when game changes or ends.
+    setViewPly(null)
+  }, [liveGameState?.gameId, liveGameState?.status])
 
   useEffect(() => {
     // Reconcile optimistic messages once the server echoes them back.
@@ -430,7 +466,69 @@ export default function LichessLiveTab() {
   const isOpponentTurn = turnColor !== myColor
   const isMyTurn = turnColor === myColor
 
+  const liveMoveTokens = useMemo(
+    () => (liveGameState?.moves || '').trim().split(/\s+/).filter(Boolean),
+    [liveGameState?.moves]
+  )
+  const fullPly = liveMoveTokens.length
+  const isReviewMode = viewPly !== null && viewPly >= 0 && viewPly < fullPly
+
+  const view = useMemo(() => {
+    if (!liveGameState) return { fen: 'start', moves: '' }
+    if (!isReviewMode) return { fen: liveGameState.fen, moves: liveGameState.moves }
+    const { fen, appliedMoves } = uciMovesToFenAtPly(liveGameState.moves, viewPly ?? 0)
+    return { fen, moves: appliedMoves }
+  }, [isReviewMode, liveGameState, viewPly])
+
   const movePairs = useMemo(() => uciMovesToMovePairs(liveGameState?.moves || ''), [liveGameState?.moves])
+  const lastMoveHighlights = useMemo(() => {
+    const lastTwo = getLastPlyUciMoves(view.moves || '', 2)
+    if (lastTwo.length === 0) return undefined
+
+    const highlights: Record<string, React.CSSProperties> = {}
+    const styles = [
+      // Most recent ply (usually the last move made)
+      {
+        backgroundColor: 'rgba(250, 204, 21, 0.45)',
+        boxShadow: 'inset 0 0 0 4px rgba(245, 158, 11, 0.9)'
+      },
+      // Previous ply (the other side's last move)
+      {
+        backgroundColor: 'rgba(34, 197, 94, 0.30)',
+        boxShadow: 'inset 0 0 0 4px rgba(22, 163, 74, 0.75)'
+      }
+    ]
+
+    // Apply in order so the most recent stays strongest if overlapping (rare).
+    const ordered = lastTwo.length === 2 ? [lastTwo[1], lastTwo[0]] : [lastTwo[0]]
+    ordered.forEach((uci, idx) => {
+      if (uci.length < 4) return
+      const from = uci.slice(0, 2)
+      const to = uci.slice(2, 4)
+      highlights[from] = styles[idx] ?? styles[0]
+      highlights[to] = styles[idx] ?? styles[0]
+    })
+
+    return highlights
+  }, [view.moves])
+
+  const handleBack = () => {
+    if (!liveGameState) return
+    const next = (viewPly ?? fullPly) - 1
+    setViewPly(Math.max(0, next))
+  }
+
+  const handleForward = () => {
+    if (viewPly === null) return
+    const next = viewPly + 1
+    if (next >= fullPly) {
+      setViewPly(null)
+      return
+    }
+    setViewPly(next)
+  }
+
+  const handleGoLive = () => setViewPly(null)
 
   return (
     <div className="card" style={{ minHeight: '700px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -540,11 +638,46 @@ export default function LichessLiveTab() {
           <div style={{ position: 'relative', background: '#1f1306', borderRadius: '12px', padding: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '15px' }}>
 
             <div style={{ width: '100%', maxWidth: '500px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.08em', color: '#fbbf24' }}>
-                Live Game
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.08em', color: '#fbbf24' }}>
+                  Live Game
+                </div>
+                {isReviewMode && (
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#93c5fd' }}>
+                    Review {viewPly}/{fullPly}
+                  </div>
+                )}
               </div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#e5e5e5', opacity: 0.85 }}>
-                {getPerfName(liveGameState.initialTimeMs || 0)} {Math.floor((liveGameState.initialTimeMs || 0) / 60000)}+{Math.floor((liveGameState.initialIncrementMs || 0) / 1000)}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#e5e5e5', opacity: 0.85, marginRight: '6px' }}>
+                  {getPerfName(liveGameState.initialTimeMs || 0)} {Math.floor((liveGameState.initialTimeMs || 0) / 60000)}+{Math.floor((liveGameState.initialIncrementMs || 0) / 1000)}
+                </div>
+                <button
+                  onClick={handleBack}
+                  disabled={fullPly === 0 || (viewPly ?? fullPly) <= 0}
+                  className="button"
+                  style={{ padding: '6px 10px', fontSize: '12px', background: '#374151' }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleForward}
+                  disabled={viewPly === null}
+                  className="button"
+                  style={{ padding: '6px 10px', fontSize: '12px', background: '#374151' }}
+                >
+                  Forward
+                </button>
+                {isReviewMode && (
+                  <button
+                    onClick={handleGoLive}
+                    className="button"
+                    style={{ padding: '6px 10px', fontSize: '12px', background: '#2563eb' }}
+                  >
+                    Live
+                  </button>
+                )}
               </div>
             </div>
             
@@ -582,12 +715,13 @@ export default function LichessLiveTab() {
             {/* Chess Board */}
             <div style={{ width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)' }}>
               <ChessBoard 
-                fen={liveGameState.fen} 
+                fen={view.fen} 
                 theme="wood" 
                 size="100%" 
-                isDraggable={isGameActive}
+                isDraggable={isGameActive && !isReviewMode}
                 orientation={myColor}
                 onMove={handleMove}
+                highlightSquares={lastMoveHighlights}
               />
             </div>
 
@@ -714,7 +848,7 @@ export default function LichessLiveTab() {
 
             {/* Commentary */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <LiveCommentary fen={liveGameState.fen} moves={liveGameState.moves} />
+              <LiveCommentary fen={view.fen} moves={view.moves} />
             </div>
           </div>
         </div>
