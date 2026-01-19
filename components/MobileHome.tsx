@@ -154,7 +154,7 @@ export default function MobileHome({
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, padding: '12px 12px 18px 12px' }}>
+      <div style={{ flex: 1, minHeight: 0, padding: '12px 12px calc(18px + env(safe-area-inset-bottom)) 12px' }}>
         {activeTab === 'chat' ? (
           <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <ChatTab selectedGameId={selectedGameId} fill currentPage={activeTab} />
