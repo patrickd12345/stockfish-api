@@ -24,6 +24,12 @@ export async function GET(request: NextRequest) {
     winc: state.winc,
     binc: state.binc,
     winner: state.winner,
+    myColor: state.myColor,
+    opponentName: state.opponentName,
+    opponentRating: state.opponentRating,
+    initialTimeMs: state.initialTimeMs,
+    initialIncrementMs: state.initialIncrementMs,
+    chatMessages: state.chatMessages,
     lastClockUpdateAt: state.lastClockUpdateAt ? state.lastClockUpdateAt.toISOString() : null
   })
 }

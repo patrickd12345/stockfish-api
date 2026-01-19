@@ -11,10 +11,26 @@ describe('components/ChatTab', () => {
   it('posts message with selectedGameId as gameId', async () => {
     const user = userEvent.setup()
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: 'hello back' }),
-    } as any)
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url === '/api/chat') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ content: 'hello back' }),
+        } as any)
+      }
+
+      if (url === '/api/coach/suggestions') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ suggestions: [] }),
+        } as any)
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({}),
+      } as any)
+    })
     vi.stubGlobal('fetch', fetchSpy)
 
     render(<ChatTab selectedGameId="game-123" />)
@@ -22,8 +38,9 @@ describe('components/ChatTab', () => {
     await user.type(screen.getByPlaceholderText('Ask your coach'), 'hi')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchSpy.mock.calls[0]
+    const chatCall = fetchSpy.mock.calls.find(([calledUrl]) => calledUrl === '/api/chat')
+    expect(chatCall).toBeTruthy()
+    const [url, init] = chatCall as any
     expect(url).toBe('/api/chat')
     const initAny = init as any
     expect(initAny.method).toBe('POST')

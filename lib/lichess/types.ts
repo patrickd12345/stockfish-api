@@ -90,6 +90,17 @@ export interface LichessGameState {
   binc: number
   lastMoveAt?: Date | null
   lastClockUpdateAt?: Date | null
+  myColor: 'white' | 'black'
+  opponentName?: string | null
+  opponentRating?: number | null
+  initialTimeMs?: number | null
+  initialIncrementMs?: number | null
+  chatMessages?: Array<{
+    username: string
+    text: string
+    room: string
+    receivedAt: Date
+  }>
 }
 
 export interface ClockSnapshot {

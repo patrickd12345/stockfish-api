@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-
 import GameInspector from '@/components/GameInspector'
+import { vi } from 'vitest'
 
+// Mock dependencies
 vi.mock('next/navigation', () => ({
   useSearchParams: () => ({
     get: () => null,
@@ -10,6 +11,27 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({
     replace: vi.fn(),
   }),
+}))
+
+// Mock useStockfish hook
+const mockStartAnalysis = vi.fn()
+const mockStopAnalysis = vi.fn()
+
+vi.mock('@/hooks/useStockfish', () => ({
+  useStockfish: () => ({
+    state: {
+      isReady: true,
+      evaluation: 0,
+      mate: null,
+      depth: 10,
+      bestLine: 'e2e4 e7e5',
+      bestMove: 'e2e4',
+      isSearching: false
+    },
+    startAnalysis: mockStartAnalysis,
+    stopAnalysis: mockStopAnalysis,
+    worker: {}
+  })
 }))
 
 describe('components/GameInspector', () => {
@@ -60,7 +82,7 @@ describe('components/GameInspector', () => {
 
     expect(await screen.findByRole('heading', { name: 'Game Inspector' })).toBeVisible()
     // Wait for first analysis fetch
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(fetchSpy.mock.calls.some(([u]) => String(u) === '/api/games/g1/analysis')).toBe(true)
     })
 
@@ -68,4 +90,3 @@ describe('components/GameInspector', () => {
     await user.selectOptions(screen.getByRole('combobox'), ['g1'])
   })
 })
-

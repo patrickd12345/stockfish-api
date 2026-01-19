@@ -22,16 +22,21 @@ export async function GET(request: NextRequest) {
     const account = await fetchAccount(token.accessToken)
     await storeLichessToken(account.id, token)
 
-    const response = NextResponse.redirect(request.cookies.get('lichess_oauth_redirect')?.value || '/')
-    const isSecure = origin.startsWith('https://')
+    const redirectPath = request.cookies.get('lichess_oauth_redirect')?.value || '/'
+    const redirectUrl = new URL(redirectPath, origin)
+    const response = NextResponse.redirect(redirectUrl.toString())
+    // Force insecure cookies on localhost to avoid browser blocking
+    const isProduction = process.env.NODE_ENV === 'production'
+    const isSecure = isProduction && origin.startsWith('https://')
     
-    console.log(`[Lichess OAuth] Callback success for user ${account.id}. Setting session cookie. Secure: ${isSecure}`)
+    console.log(`[Lichess OAuth] Callback success for user ${account.id}. Session cookie secure: ${isSecure}`)
 
     response.cookies.set('lichess_user_id', account.id, { 
       httpOnly: true, 
       secure: isSecure, 
       sameSite: 'lax', 
-      path: '/' 
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30 // 30 days
     })
     response.cookies.delete('lichess_oauth_state')
     response.cookies.delete('lichess_oauth_verifier')

@@ -8,7 +8,8 @@ export async function POST(request: NextRequest) {
   const lichessUserId = request.cookies.get('lichess_user_id')?.value
   
   if (!lichessUserId) {
-    console.warn('[Lichess Session] Attempted to start session without user_id cookie.')
+    const allCookies = request.cookies.getAll().map(c => c.name)
+    console.warn(`[Lichess Session] Attempted to start session without user_id cookie. Present cookies: ${allCookies.join(', ')}`)
     return NextResponse.json({ error: 'Missing Lichess user session. Please click "Reconnect Lichess" to log in again.' }, { status: 401 })
   }
 

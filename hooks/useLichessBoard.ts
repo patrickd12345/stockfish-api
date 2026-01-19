@@ -4,6 +4,7 @@ import { ClockSnapshot } from '@/lib/lichess/types'
 
 export interface LichessBoardState {
   gameId: string
+  lichessUserId: string
   fen: string
   moves: string
   status: string
@@ -12,7 +13,18 @@ export interface LichessBoardState {
   winc: number
   binc: number
   winner?: 'white' | 'black'
+  myColor?: 'white' | 'black'
+  opponentName?: string | null
+  opponentRating?: number | null
+  initialTimeMs?: number | null
+  initialIncrementMs?: number | null
   lastClockUpdateAt?: string | null
+  chatMessages?: Array<{
+    username: string
+    text: string
+    room: string
+    receivedAt: string
+  }>
 }
 
 export function useLichessBoard(pollIntervalMs: number = 2000) {

@@ -1,6 +1,13 @@
 import { connectToDb, getSql } from '@/lib/database'
 import { deriveFenFromMoves } from '@/lib/lichess/fen'
-import { LichessGameFinishEvent, LichessGameStartEvent, LichessGameStateEvent, LichessGameState, LichessBoardSession } from '@/lib/lichess/types'
+import {
+  LichessChatLineEvent,
+  LichessGameFinishEvent,
+  LichessGameStartEvent,
+  LichessGameStateEvent,
+  LichessGameState,
+  LichessBoardSession
+} from '@/lib/lichess/types'
 
 export async function ensureBoardSession(lichessUserId: string): Promise<LichessBoardSession> {
   await connectToDb()
@@ -58,40 +65,66 @@ export async function recordGameStart(lichessUserId: string, event: LichessGameS
       winc,
       binc,
       last_move_at,
-      last_clock_update_at
+      last_clock_update_at,
+      my_color,
+      opponent_name,
+      opponent_rating,
+      initial_time_ms,
+      initial_increment_ms
     ) VALUES (
       ${gameId},
       ${lichessUserId},
       'started',
       '',
       ${deriveFenFromMoves('')},
-      ${event.game.clock?.initial ?? 0},
-      ${event.game.clock?.initial ?? 0},
+      ${(event.game.clock?.initial ?? 0) * 1000},
+      ${(event.game.clock?.initial ?? 0) * 1000},
       ${event.game.clock?.increment ?? 0},
       ${event.game.clock?.increment ?? 0},
       null,
-      now()
+      now(),
+      ${event.game.color ?? 'white'},
+      ${event.game.opponent.username ?? null},
+      ${event.game.opponent.rating ?? null},
+      ${(event.game.clock?.initial ?? 0) * 1000},
+      ${(event.game.clock?.increment ?? 0) * 1000}
     )
     ON CONFLICT (game_id)
     DO UPDATE SET
       status = 'started',
+      my_color = EXCLUDED.my_color,
+      opponent_name = EXCLUDED.opponent_name,
+      opponent_rating = EXCLUDED.opponent_rating,
+      initial_time_ms = EXCLUDED.initial_time_ms,
+      initial_increment_ms = EXCLUDED.initial_increment_ms,
       updated_at = now()
   `
 }
 
-export async function recordGameState(lichessUserId: string, event: LichessGameStateEvent): Promise<LichessGameState> {
+export async function recordGameState(
+  lichessUserId: string,
+  event: LichessGameStateEvent,
+  gameIdOverride?: string
+): Promise<LichessGameState> {
   await connectToDb()
   const sql = getSql()
-  const sessionRows = (await sql`
-    SELECT active_game_id
-    FROM lichess_board_sessions
-    WHERE lichess_user_id = ${lichessUserId}
-  `) as Array<{ active_game_id: string | null }>
-  const activeGameId = sessionRows[0]?.active_game_id
-  if (!activeGameId) {
-    throw new Error('No active game to update')
-  }
+  const activeGameId =
+    gameIdOverride ??
+    (
+      ((
+        await sql`
+          SELECT active_game_id
+          FROM lichess_board_sessions
+          WHERE lichess_user_id = ${lichessUserId}
+        `
+      ) as Array<{ active_game_id: string | null }>)[0]?.active_game_id ?? null
+    )
+  if (!activeGameId) throw new Error('No active game to update')
   const fen = deriveFenFromMoves(event.moves)
+  
+  // Ensure status is a string
+  const statusStr = typeof event.status === 'string' ? event.status : JSON.stringify(event.status)
+
   const rows = (await sql`
     INSERT INTO lichess_game_states (
       game_id,
@@ -111,7 +144,7 @@ export async function recordGameState(lichessUserId: string, event: LichessGameS
     VALUES (
       ${activeGameId},
       ${lichessUserId},
-      ${event.status},
+      ${statusStr},
       ${event.moves},
       ${fen},
       ${event.wtime},
@@ -136,7 +169,7 @@ export async function recordGameState(lichessUserId: string, event: LichessGameS
       last_move_at = EXCLUDED.last_move_at,
       last_clock_update_at = EXCLUDED.last_clock_update_at,
       updated_at = EXCLUDED.updated_at
-    RETURNING game_id, lichess_user_id, status, moves, fen, wtime, btime, winc, binc, winner, last_move_at, last_clock_update_at
+    RETURNING game_id, lichess_user_id, status, moves, fen, wtime, btime, winc, binc, winner, last_move_at, last_clock_update_at, my_color, opponent_name, opponent_rating, initial_time_ms, initial_increment_ms
   `) as Array<{
     game_id: string
     lichess_user_id: string
@@ -150,6 +183,11 @@ export async function recordGameState(lichessUserId: string, event: LichessGameS
     winner: 'white' | 'black' | null
     last_move_at: Date | null
     last_clock_update_at: Date | null
+    my_color: 'white' | 'black' | null
+    opponent_name: string | null
+    opponent_rating: number | null
+    initial_time_ms: number | null
+    initial_increment_ms: number | null
   }>
 
   const row = rows[0]
@@ -165,13 +203,21 @@ export async function recordGameState(lichessUserId: string, event: LichessGameS
     binc: row.binc,
     winner: row.winner ?? undefined,
     lastMoveAt: row.last_move_at,
-    lastClockUpdateAt: row.last_clock_update_at
+    lastClockUpdateAt: row.last_clock_update_at,
+    myColor: row.my_color ?? 'white',
+    opponentName: row.opponent_name,
+    opponentRating: row.opponent_rating,
+    initialTimeMs: row.initial_time_ms,
+    initialIncrementMs: row.initial_increment_ms
   }
 }
 
 export async function recordGameFinish(lichessUserId: string, event: LichessGameFinishEvent): Promise<void> {
   await connectToDb()
   const sql = getSql()
+  
+  const statusStr = typeof event.game.status === 'string' ? event.game.status : JSON.stringify(event.game.status)
+  
   await sql`
     UPDATE lichess_board_sessions
     SET status = 'finished', active_game_id = null, last_event_at = now(), updated_at = now()
@@ -180,7 +226,7 @@ export async function recordGameFinish(lichessUserId: string, event: LichessGame
 
   await sql`
     UPDATE lichess_game_states
-    SET status = ${event.game.status}, winner = ${event.game.winner ?? null}, updated_at = now()
+    SET status = ${statusStr}, winner = ${event.game.winner ?? null}, updated_at = now()
     WHERE game_id = ${event.game.id}
   `
 }
@@ -233,14 +279,46 @@ export async function getSession(lichessUserId: string): Promise<LichessBoardSes
   }
 }
 
+export async function recordChatMessage(
+  lichessUserId: string,
+  event: LichessChatLineEvent,
+  gameIdOverride?: string
+): Promise<void> {
+  await connectToDb()
+  const sql = getSql()
+  
+  const activeGameId =
+    gameIdOverride ??
+    (
+      ((
+        await sql`
+          SELECT active_game_id
+          FROM lichess_board_sessions
+          WHERE lichess_user_id = ${lichessUserId}
+        `
+      ) as Array<{ active_game_id: string | null }>)[0]?.active_game_id ?? null
+    )
+  if (!activeGameId) return
+
+  await sql`
+    INSERT INTO lichess_chat_messages (
+      game_id, lichess_user_id, room, username, text, received_at
+    ) VALUES (
+      ${activeGameId}, ${lichessUserId}, ${event.room}, ${event.username}, ${event.text}, now()
+    )
+  `
+}
+
 export async function getActiveGameState(lichessUserId: string): Promise<LichessGameState | null> {
   await connectToDb()
   const sql = getSql()
   const rows = (await sql`
-    SELECT game_id, lichess_user_id, status, moves, fen, wtime, btime, winc, binc, winner, last_move_at, last_clock_update_at
+    SELECT game_id, lichess_user_id, status, moves, fen, wtime, btime, winc, binc, winner, last_move_at, last_clock_update_at, my_color, opponent_name, opponent_rating, initial_time_ms, initial_increment_ms
     FROM lichess_game_states
     WHERE lichess_user_id = ${lichessUserId}
-    ORDER BY updated_at DESC
+    ORDER BY 
+      CASE WHEN status IN ('started', 'playing') THEN 1 ELSE 0 END DESC,
+      updated_at DESC
     LIMIT 1
   `) as Array<{
     game_id: string
@@ -255,10 +333,23 @@ export async function getActiveGameState(lichessUserId: string): Promise<Lichess
     winner: 'white' | 'black' | null
     last_move_at: Date | null
     last_clock_update_at: Date | null
+    my_color: 'white' | 'black' | null
+    opponent_name: string | null
+    opponent_rating: number | null
+    initial_time_ms: number | null
+    initial_increment_ms: number | null
   }>
 
   if (rows.length === 0) return null
   const row = rows[0]
+
+  const chatRows = (await sql`
+    SELECT username, text, room, received_at
+    FROM lichess_chat_messages
+    WHERE game_id = ${row.game_id}
+    ORDER BY received_at ASC
+  `) as Array<{ username: string, text: string, room: string, received_at: Date }>
+
   return {
     gameId: row.game_id,
     lichessUserId: row.lichess_user_id,
@@ -271,6 +362,17 @@ export async function getActiveGameState(lichessUserId: string): Promise<Lichess
     binc: row.binc,
     winner: row.winner ?? undefined,
     lastMoveAt: row.last_move_at,
-    lastClockUpdateAt: row.last_clock_update_at
+    lastClockUpdateAt: row.last_clock_update_at,
+    myColor: row.my_color ?? 'white',
+    opponentName: row.opponent_name,
+    opponentRating: row.opponent_rating,
+    initialTimeMs: row.initial_time_ms,
+    initialIncrementMs: row.initial_increment_ms,
+    chatMessages: chatRows.map(c => ({
+      username: c.username,
+      text: c.text,
+      room: c.room,
+      receivedAt: c.received_at
+    }))
   }
 }

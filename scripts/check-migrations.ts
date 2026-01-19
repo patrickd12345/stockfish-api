@@ -24,7 +24,10 @@ async function checkMigrations() {
       'games',
       'progression_summaries',
       'engine_analysis',
-      'engine_summaries'
+      'engine_summaries',
+      'lichess_oauth_tokens',
+      'lichess_board_sessions',
+      'lichess_game_states'
     ]
     
     for (const tableName of requiredTables) {
