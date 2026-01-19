@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import SuggestionBubbles from './SuggestionBubbles'
-import { useLichessBoard } from '@/hooks/useLichessBoard'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -24,7 +23,6 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
   const [loading, setLoading] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const { state: liveGameState } = useLichessBoard()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -100,43 +98,6 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
 
     fetchSuggestions()
   }, [currentPage, selectedGameId, messages])
-
-  if (liveGameState) {
-    return (
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 50,
-          background: '#1f1306',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: '24px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '10px 16px',
-            borderRadius: '999px',
-            background: 'rgba(254, 243, 199, 0.95)',
-            color: '#92400e',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            fontSize: '12px',
-          }}
-        >
-          Live Lichess Game · Status: {liveGameState.status}
-        </div>
-        <ChessBoard fen={liveGameState.fen} size="100vmin" theme="wood" />
-        <LiveCommentary fen={liveGameState.fen} moves={liveGameState.moves} />
-      </div>
-    )
-  }
 
   return (
     <div

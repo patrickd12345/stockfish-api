@@ -4,9 +4,9 @@ const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 12
 
 function getKey(): Buffer {
-  const secret = process.env.LICHESS_TOKEN_SECRET?.trim()
+  const secret = process.env.LICHESS_TOKEN_SECRET?.trim() || process.env.MYCHESSCOACH_SECRET?.trim()
   if (!secret) {
-    throw new Error('Missing LICHESS_TOKEN_SECRET for token encryption')
+    throw new Error('Missing encryption secret. Please set LICHESS_TOKEN_SECRET or MYCHESSCOACH_SECRET in .env.local')
   }
   return crypto.createHash('sha256').update(secret).digest()
 }

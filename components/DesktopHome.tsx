@@ -4,8 +4,9 @@ import Sidebar from '@/components/Sidebar'
 import ChatTab from '@/components/ChatTab'
 import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
+import LichessLiveTab from '@/components/LichessLiveTab'
 
-export type HomeTab = 'chat' | 'replay' | 'openings'
+export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess'
 
 interface DesktopHomeProps {
   activeTab: HomeTab
@@ -67,6 +68,12 @@ export default function DesktopHome({
             >
               Opening Explorer
             </button>
+            <button
+              onClick={() => setActiveTab('lichess')}
+              style={{ ...tabStyle(activeTab === 'lichess'), marginLeft: '10px', background: activeTab === 'lichess' ? '#8b5cf6' : '#e5e7eb' }}
+            >
+              Lichess Live
+            </button>
           </div>
 
           {importStatus && (
@@ -81,6 +88,7 @@ export default function DesktopHome({
         {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} currentPage={activeTab} />}
         {activeTab === 'replay' && <GameInspector key={refreshKey} />}
         {activeTab === 'openings' && <OpeningExplorer />}
+        {activeTab === 'lichess' && <LichessLiveTab />}
       </main>
     </div>
   )

@@ -5,6 +5,7 @@ import ChatTab from '@/components/ChatTab'
 import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
 import MobileGameDrawer from '@/components/MobileGameDrawer'
+import LichessLiveTab from '@/components/LichessLiveTab'
 import type { HomeTab } from '@/components/DesktopHome'
 
 interface MobileHomeProps {
@@ -130,6 +131,13 @@ export default function MobileHome({
           >
             Openings
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('lichess')}
+            style={{ ...mobileTabStyle(activeTab === 'lichess'), background: activeTab === 'lichess' ? '#8b5cf6' : '#ffffff', border: `1px solid ${activeTab === 'lichess' ? '#8b5cf6' : '#e5e7eb'}` }}
+          >
+            Lichess
+          </button>
         </div>
       </div>
 
@@ -142,6 +150,7 @@ export default function MobileHome({
           <div style={{ height: 'calc(100dvh - 132px)', overflowY: 'auto' }}>
             {activeTab === 'replay' && <GameInspector key={refreshKey} />}
             {activeTab === 'openings' && <OpeningExplorer />}
+            {activeTab === 'lichess' && <LichessLiveTab />}
           </div>
         )}
       </div>

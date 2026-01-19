@@ -9,8 +9,10 @@ export function requireEnv(name: string): string {
 }
 
 export function getOAuthConfig() {
-  const clientId = requireEnv('LICHESS_CLIENT_ID')
-  const clientSecret = requireEnv('LICHESS_CLIENT_SECRET')
+  const clientId = process.env.LICHESS_CLIENT_ID?.trim() || 'stockfish-api-coach'
+  // Lichess OAuth2 with PKCE doesn't strictly require a client secret for public clients
+  // Support both LICHESS_CLIENT_SECRET and MYCHESSCOACH_SECRET as fallbacks
+  const clientSecret = process.env.LICHESS_CLIENT_SECRET?.trim() || process.env.MYCHESSCOACH_SECRET?.trim() || ''
   const redirectUri = process.env.LICHESS_REDIRECT_URI?.trim()
   return { clientId, clientSecret, redirectUri }
 }

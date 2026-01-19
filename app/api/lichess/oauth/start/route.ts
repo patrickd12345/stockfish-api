@@ -4,25 +4,42 @@ import { buildOAuthUrl, createCodeChallenge, createCodeVerifier, createOAuthStat
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
-  const state = createOAuthState()
-  const verifier = createCodeVerifier()
-  const codeChallenge = createCodeChallenge(verifier)
-  const origin = request.nextUrl.origin
-  const redirectUri = `${origin}/api/lichess/oauth/callback`
-  const redirectTarget = request.nextUrl.searchParams.get('redirect')
+  try {
+    const state = createOAuthState()
+    const verifier = createCodeVerifier()
+    const codeChallenge = createCodeChallenge(verifier)
+    const origin = request.nextUrl.origin
+    const redirectUri = `${origin}/api/lichess/oauth/callback`
+    const redirectTarget = request.nextUrl.searchParams.get('redirect')
 
-  const url = buildOAuthUrl({
-    redirectUri,
-    state,
-    codeChallenge,
-    scopes: ['board:play', 'board:read']
-  })
+    const url = buildOAuthUrl({
+      redirectUri,
+      state,
+      codeChallenge,
+      scopes: ['board:play']
+    })
 
-  const response = NextResponse.redirect(url)
-  response.cookies.set('lichess_oauth_state', state, { httpOnly: true, secure: true, sameSite: 'lax', path: '/' })
-  response.cookies.set('lichess_oauth_verifier', verifier, { httpOnly: true, secure: true, sameSite: 'lax', path: '/' })
-  if (redirectTarget) {
-    response.cookies.set('lichess_oauth_redirect', redirectTarget, { httpOnly: true, secure: true, sameSite: 'lax', path: '/' })
+    const response = NextResponse.redirect(url)
+    const isSecure = origin.startsWith('https://')
+    
+    const cookieOptions = { 
+      httpOnly: true, 
+      secure: isSecure, 
+      sameSite: 'lax' as const, 
+      path: '/' 
+    }
+
+    console.log(`[Lichess OAuth] Starting flow. Cookies will be secure: ${isSecure}`)
+
+    response.cookies.set('lichess_oauth_state', state, cookieOptions)
+    response.cookies.set('lichess_oauth_verifier', verifier, cookieOptions)
+    if (redirectTarget) {
+      response.cookies.set('lichess_oauth_redirect', redirectTarget, cookieOptions)
+    }
+    return response
+  } catch (error: any) {
+    console.error('Lichess OAuth start failed:', error)
+    const origin = request.nextUrl.origin
+    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(error.message)}`)
   }
-  return response
 }

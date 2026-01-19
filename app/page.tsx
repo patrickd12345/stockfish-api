@@ -39,7 +39,7 @@ function HomeContent() {
 
   useEffect(() => {
     const tabParam = searchParams.get('tab') as HomeTab | null
-    if (tabParam === 'chat' || tabParam === 'replay' || tabParam === 'openings') {
+    if (tabParam === 'chat' || tabParam === 'replay' || tabParam === 'openings' || tabParam === 'lichess') {
       setActiveTab(tabParam)
     }
   }, [searchParams])

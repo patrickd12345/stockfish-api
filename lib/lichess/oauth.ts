@@ -41,14 +41,19 @@ export async function exchangeCodeForToken(params: {
   codeVerifier: string
 }): Promise<LichessOAuthToken> {
   const { clientId, clientSecret } = getOAuthConfig()
-  const body = new URLSearchParams({
+  const params_body: Record<string, string> = {
     grant_type: 'authorization_code',
     code: params.code,
     redirect_uri: params.redirectUri,
     client_id: clientId,
-    client_secret: clientSecret,
     code_verifier: params.codeVerifier
-  })
+  }
+
+  if (clientSecret) {
+    params_body.client_secret = clientSecret
+  }
+
+  const body = new URLSearchParams(params_body)
 
   const response = await lichessFetch('/api/token', {
     method: 'POST',
@@ -58,17 +63,16 @@ export async function exchangeCodeForToken(params: {
     body: body.toString()
   })
 
-  const payload = (await response.json()) as {
-    access_token: string
-    token_type: string
-    scope: string
-    expires_in?: number
+  const payload = await response.json()
+
+  if (!response.ok) {
+    throw new Error(`Lichess token exchange failed: ${payload.error_description || payload.error || response.statusText}`)
   }
 
   return {
     accessToken: payload.access_token,
     tokenType: payload.token_type,
-    scope: payload.scope.split(' '),
+    scope: (payload.scope || '').split(' ').filter(Boolean),
     expiresIn: payload.expires_in,
     createdAt: new Date()
   }
