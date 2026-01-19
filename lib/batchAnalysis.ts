@@ -3,6 +3,32 @@ import { connectToDb, getSql } from '@/lib/database'
 import { ProgressionSummary, OpeningStats, TrendDirection, PhasePerformance } from '@/types/ProgressionSummary'
 import { storeProgressionSummary } from '@/lib/progressionStorage'
 
+/**
+ * Validate accuracy value
+ * Must be a number between 0 and 100 inclusive
+ */
+export function isValidAccuracy(value: any): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 100
+  )
+}
+
+/**
+ * Validate blunder count
+ * Must be a non-negative integer
+ */
+export function isValidBlunder(value: any): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0
+  )
+}
+
 type DbRow = Record<string, unknown>
 
 interface GameData {
@@ -176,8 +202,11 @@ function processGame(game: GameData): ProcessedGame {
   }
   
   // CRITICAL: Fix accuracy and blunder data handling
-  const hasAccuracy = game.my_accuracy !== null && game.my_accuracy !== undefined && !isNaN(Number(game.my_accuracy))
-  const hasBlunderData = game.blunders !== null && game.blunders !== undefined && !isNaN(Number(game.blunders))
+  const accVal = game.my_accuracy !== null && game.my_accuracy !== undefined ? Number(game.my_accuracy) : undefined
+  const hasAccuracy = isValidAccuracy(accVal)
+
+  const blunderVal = game.blunders !== null && game.blunders !== undefined ? Number(game.blunders) : undefined
+  const hasBlunderData = isValidBlunder(blunderVal)
   
   return {
     ...game,
@@ -190,7 +219,7 @@ function processGame(game: GameData): ProcessedGame {
     hasAccuracy,
     hasBlunderData,
     // Only use blunder count if we have valid data, otherwise exclude from averages
-    blunders: hasBlunderData ? Number(game.blunders) : 0
+    blunders: hasBlunderData ? (blunderVal as number) : 0
   }
 }
 
