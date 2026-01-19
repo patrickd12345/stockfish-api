@@ -9,8 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
-    "validate": "npm run lint && npm run typecheck",
-    "prebuild": "npm run validate",
+    "validate": "pnpm lint && pnpm typecheck",
+    "prebuild": "pnpm validate",
     "test": "vitest",
     "test:unit": "vitest run --coverage",
     "test:unit:watch": "vitest --coverage",
@@ -24,7 +24,8 @@
     "engine:analyze": "npx tsx scripts/run-engine-analysis.ts",
     "engine:worker": "npx tsx scripts/engine-worker.ts",
     "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts",
-    "migrate:analysis-blunders": "npx tsx scripts/migrate-analysis-blunders.ts"
+    "migrate:analysis-blunders": "npx tsx scripts/migrate-analysis-blunders.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",
@@ -34,8 +35,8 @@
     "openai": "^4.47.0",
     "react": "^18.3.0",
     "react-chessboard": "^4.7.3",
-    "recharts": "^2.12.7",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "recharts": "^2.15.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
@@ -49,6 +50,7 @@
     "@vitest/coverage-v8": "^4.0.17",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.0",
+    "husky": "^9.1.7",
     "jsdom": "^27.4.0",
     "tsx": "^4.21.0",
     "typescript": "^5.3.0",
