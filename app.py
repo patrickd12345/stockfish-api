@@ -83,8 +83,9 @@ def process_pgn(pgn_text: str, stockfish_path: str, username: str) -> None:
 
     with database.get_connection(DB_PATH) as conn:
         for entry in results:
-            game_id = database.insert_game(conn, entry["game"])
-            database.insert_moves(conn, game_id, entry["moves"])
+            game_id = database.insert_game(conn, entry["game"], commit=False)
+            database.insert_moves(conn, game_id, entry["moves"], commit=False)
+        conn.commit()
 
     st.success(f"Processed {len(results)} game(s).")
 
