@@ -1,11 +1,19 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import DesktopHome, { type HomeTab } from '@/components/DesktopHome'
 import MobileHome from '@/components/MobileHome'
 
 export default function Home() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#6b7280' }}>Loading application...</div>}>
+      <HomeContent />
+    </Suspense>
+  )
+}
+
+function HomeContent() {
   const [activeTab, setActiveTab] = useState<HomeTab>('chat')
   const [refreshKey, setRefreshKey] = useState(0)
   const [importStatus, setImportStatus] = useState<string>('')

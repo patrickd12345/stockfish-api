@@ -109,24 +109,6 @@ export default function GameInspector() {
     }
   }, [pgn])
 
-  // Keyboard Navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        navigateMove('prev')
-      } else if (e.key === 'ArrowRight') {
-        navigateMove('next')
-      } else if (e.key === 'ArrowUp') {
-        navigateGame('newer')
-      } else if (e.key === 'ArrowDown') {
-        navigateGame('older')
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [board, moveIndex, fullHistory, selectedGameId, games]) // Dependencies for navigation
-
   // Sync Live Engine
   useEffect(() => {
     if (!isLiveAnalysisEnabled) {
@@ -191,6 +173,24 @@ export default function GameInspector() {
     if (nextIndex < 0 || nextIndex >= games.length) return
     setSelectedGameId(games[nextIndex].id)
   }, [selectedGameId, games])
+
+  // Keyboard Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        navigateMove('prev')
+      } else if (e.key === 'ArrowRight') {
+        navigateMove('next')
+      } else if (e.key === 'ArrowUp') {
+        navigateGame('newer')
+      } else if (e.key === 'ArrowDown') {
+        navigateGame('older')
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigateMove, navigateGame])
 
   const jumpGames = (delta: number) => {
     if (!selectedGameId || games.length === 0) return
