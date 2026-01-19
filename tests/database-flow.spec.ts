@@ -37,7 +37,7 @@ test('import flow shows progress without a live database', async ({ page }) => {
   await page.route('**/api/games', fulfillGames)
   await page.route('**/api/games?*', fulfillGames)
 
-  await page.goto('/')
+  await page.goto('/?autoImport=true')
 
   const importButton = page.getByRole('button', { name: /import/i })
   if ((await importButton.count()) > 0) {

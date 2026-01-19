@@ -1,5 +1,6 @@
 import { connectToDb, getSql } from '@/lib/database'
 import { EngineAnalysisResult } from '@/lib/engineAnalysis'
+import { storeBlunderDetails } from '@/lib/blunderStorage'
 
 export interface StoredEngineAnalysis {
   id: string
@@ -117,6 +118,8 @@ export async function storeEngineAnalysis(
       blunders = ${result.blunders}
     WHERE id = ${gameId}::uuid
   `
+
+  await storeBlunderDetails(gameId, engineName, result.analysisDepth, result.blunderDetails ?? [])
 }
 
 /**

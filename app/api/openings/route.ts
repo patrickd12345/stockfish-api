@@ -10,7 +10,7 @@ export async function GET() {
   }
   try {
     await connectToDb()
-    const openings = await getOpeningStats(200)
+    const openings = await getOpeningStats(1000)
     return NextResponse.json({ openings })
   } catch (error: any) {
     console.error('Error fetching opening stats:', error)

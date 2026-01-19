@@ -38,7 +38,7 @@ a {
   margin-bottom: 20px;
 }
 
-.button {
+.button, .btn-primary {
   background: #2563eb;
   color: white;
   border: none;
@@ -49,13 +49,28 @@ a {
   transition: background 0.2s;
 }
 
-.button:hover {
+.button:hover, .btn-primary:hover {
   background: #1d4ed8;
 }
 
-.button:disabled {
+.button:disabled, .btn-primary:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #e5e7eb;
+  color: #374151;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #d1d5db;
 }
 
 .input {

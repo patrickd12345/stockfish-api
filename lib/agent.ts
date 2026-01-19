@@ -1,6 +1,6 @@
 import { getOpenAIClient, getOpenAIConfig } from '@/lib/openaiClient'
 import { connectToDb } from '@/lib/database'
-import { getGameSummaries, getGamePgn, searchGamesByEmbedding } from '@/lib/models'
+import { getGameCount, getGameSummaries, getGamePgn, searchGamesByEmbedding } from '@/lib/models'
 import { getEmbedding } from '@/lib/embeddings'
 import { loadProgressionSummary } from '@/lib/progressionStorage'
 import { loadEngineSummary } from '@/lib/engineSummaryStorage'
@@ -77,6 +77,15 @@ export async function buildAgent(conn: any) {
       
       try {
         await connectToDb()
+
+        // Always include a concrete database count so the coach can answer
+        // "how many games are in the database?" even if summaries are stale.
+        let dbGameCount: number | null = null
+        try {
+          dbGameCount = await getGameCount()
+        } catch (e) {
+          console.warn('Failed to fetch DB game count:', e)
+        }
         
         // ALWAYS load stored summaries (unconditional)
         progressionSummary = await loadProgressionSummary()
@@ -133,6 +142,12 @@ The agent must explicitly state that engine analysis data is unavailable.
 To generate engine analysis, run: npm run engine:analyze
 Then rebuild summary: npm run rebuild:engine-summary
 ================================`
+        }
+
+        if (typeof dbGameCount === 'number') {
+          context += `\n\n=== DATABASE STATS (AUTHORITATIVE) ===
+Total games in database: ${dbGameCount.toLocaleString()}
+==================================`
         }
 
         // Handle time window requests - provide data, let agent do the analysis

@@ -78,7 +78,7 @@ export default function DesktopHome({
           )}
         </div>
 
-        {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} />}
+        {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} currentPage={activeTab} />}
         {activeTab === 'replay' && <GameInspector key={refreshKey} />}
         {activeTab === 'openings' && <OpeningExplorer />}
       </main>

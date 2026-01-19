@@ -13,6 +13,10 @@ export default function Home() {
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState<boolean | null>(null)
   const searchParams = useSearchParams()
+
+  // Allow tests to disable heavy startup side-effects (external network + batch jobs).
+  const disableAutoImport = process.env.NEXT_PUBLIC_DISABLE_AUTO_IMPORT === 'true'
+  const forceAutoImport = searchParams.get('autoImport') === 'true'
   
   // Use a ref to prevent double-firing in React 18 strict mode
   const hasStartedImport = useRef(false)
@@ -33,6 +37,10 @@ export default function Home() {
   }, [searchParams])
 
   useEffect(() => {
+    if (disableAutoImport && !forceAutoImport) {
+      return
+    }
+
     const autoImport = async () => {
       if (hasStartedImport.current) return
       hasStartedImport.current = true
@@ -44,7 +52,9 @@ export default function Home() {
       ]
 
       for (const acc of ACCOUNTS) {
-        const storageKey = `imported_${acc.username}_${acc.mode}`
+        // Versioned keys so improvements to import logic can re-run safely.
+        const storageKey = `imported_v2_${acc.username}_${acc.mode}`
+        const cursorKey = `import_cursor_v2_${acc.username}_${acc.mode}`
         // For 'all', only run once ever. For 'recent', maybe run every time or check date.
         // User asked: "On the first load, also retrive all from my previous usernames"
         // And "upon loadind the app can you automatically load the new games from chess.com... anonymous..."
@@ -55,17 +65,66 @@ export default function Home() {
         }
 
         try {
-          setImportStatus(`Importing games for ${acc.username}...`)
-          const res = await fetch('/api/import/chesscom', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: acc.username, mode: acc.mode })
-          })
-          const data = await res.json()
-          console.log(`Import result for ${acc.username}:`, data)
-          
           if (acc.mode === 'all') {
-            localStorage.setItem(storageKey, 'true')
+            let cursor = Number(localStorage.getItem(cursorKey) ?? '0')
+            if (!Number.isFinite(cursor) || cursor < 0) cursor = 0
+
+            let safety = 0
+            while (safety < 500) {
+              safety += 1
+              setImportStatus(`Importing ${acc.username}… (${cursor})`)
+
+              const res = await fetch('/api/import/chesscom', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  username: acc.username,
+                  mode: 'all',
+                  cursor,
+                  maxArchives: 6,
+                  runBatch: true,
+                }),
+              })
+              const data = await res.json()
+              console.log(`Import chunk result for ${acc.username}:`, data)
+
+              const archivesTotal = typeof data.archivesTotal === 'number' ? data.archivesTotal : null
+              const archivesProcessed = typeof data.archivesProcessed === 'number' ? data.archivesProcessed : null
+              if (archivesTotal !== null && archivesProcessed !== null) {
+                setImportStatus(`Importing ${acc.username}… archives ${archivesProcessed}/${archivesTotal}`)
+              }
+
+              if (!res.ok) {
+                throw new Error(data?.error || 'Import failed')
+              }
+
+              if (data?.done === true) {
+                localStorage.removeItem(cursorKey)
+                localStorage.setItem(storageKey, 'true')
+                break
+              }
+
+              const nextCursor = Number(data?.nextCursor)
+              if (!Number.isFinite(nextCursor) || nextCursor <= cursor) {
+                // Avoid infinite loops if the server response is malformed.
+                throw new Error('Import stalled (invalid nextCursor)')
+              }
+
+              cursor = nextCursor
+              localStorage.setItem(cursorKey, String(cursor))
+
+              // Yield a bit to keep UI responsive and avoid hammering the API.
+              await new Promise((r) => setTimeout(r, 250))
+            }
+          } else {
+            setImportStatus(`Importing recent games for ${acc.username}...`)
+            const res = await fetch('/api/import/chesscom', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: acc.username, mode: 'recent', runBatch: true }),
+            })
+            const data = await res.json()
+            console.log(`Import result for ${acc.username}:`, data)
           }
         } catch (e) {
           console.error(`Failed to import ${acc.username}:`, e)
@@ -102,7 +161,7 @@ export default function Home() {
     }
 
     autoImport()
-  }, [])
+  }, [disableAutoImport, forceAutoImport])
 
   const handleGamesProcessed = () => {
     setRefreshKey(prev => prev + 1)

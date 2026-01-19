@@ -48,6 +48,6 @@ describe('app/api/openings', () => {
         },
       ],
     })
-    expect(getOpeningStats).toHaveBeenCalledWith(200)
+    expect(getOpeningStats).toHaveBeenCalledWith(1000)
   })
 })

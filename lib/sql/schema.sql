@@ -96,6 +96,27 @@ CREATE TABLE IF NOT EXISTS engine_analysis_queue (
   UNIQUE (game_id, engine_name, analysis_depth)
 );
 
+CREATE TABLE IF NOT EXISTS analysis_blunders (
+  id BIGSERIAL PRIMARY KEY,
+  game_id UUID NOT NULL,
+  engine_name TEXT NOT NULL,
+  analysis_depth INT NOT NULL DEFAULT 15,
+  move_number INT NOT NULL,
+  ply INT NOT NULL,
+  fen TEXT NOT NULL,
+  played_move TEXT NOT NULL,
+  best_move TEXT,
+  eval_before INT NOT NULL,
+  eval_after INT NOT NULL,
+  best_eval INT,
+  centipawn_loss INT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_blunders_game_id ON analysis_blunders (game_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_blunders_created_at ON analysis_blunders (created_at DESC);
+
 -- Engine summaries table for batch analysis results
 CREATE TABLE IF NOT EXISTS engine_summaries (
   id TEXT PRIMARY KEY DEFAULT 'default',

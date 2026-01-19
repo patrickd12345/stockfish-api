@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
@@ -54,9 +54,31 @@ export default function GameInspector() {
     })
   }, [evalSeries])
 
+  const fetchGames = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (openingFilter && outcomeFilter) {
+        params.set('opening', openingFilter)
+        params.set('outcome', outcomeFilter)
+      }
+      const url = params.toString() ? `/api/games?${params.toString()}` : '/api/games'
+      const response = await fetch(url)
+      const data = await response.json()
+      setGames(data.games || [])
+      setFilteredCount(typeof data.totalCount === 'number' ? data.totalCount : null)
+      if (data.games && data.games.length > 0) {
+        setSelectedGameId(data.games[0].id)
+      }
+    } catch (error) {
+      console.error('Failed to fetch games:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [openingFilter, outcomeFilter])
+
   useEffect(() => {
     fetchGames()
-  }, [openingFilter, outcomeFilter])
+  }, [fetchGames])
 
   useEffect(() => {
     if (selectedGameId) {
@@ -81,28 +103,6 @@ export default function GameInspector() {
       setFullHistory([])
     }
   }, [pgn])
-
-  const fetchGames = async () => {
-    try {
-      const params = new URLSearchParams()
-      if (openingFilter && outcomeFilter) {
-        params.set('opening', openingFilter)
-        params.set('outcome', outcomeFilter)
-      }
-      const url = params.toString() ? `/api/games?${params.toString()}` : '/api/games'
-      const response = await fetch(url)
-      const data = await response.json()
-      setGames(data.games || [])
-      setFilteredCount(typeof data.totalCount === 'number' ? data.totalCount : null)
-      if (data.games && data.games.length > 0) {
-        setSelectedGameId(data.games[0].id)
-      }
-    } catch (error) {
-      console.error('Failed to fetch games:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const fetchGameAnalysis = async (gameId: string) => {
     setAnalysisLoading(true)

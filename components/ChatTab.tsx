@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import ChessBoard from './ChessBoard'
+import SuggestionBubbles from './SuggestionBubbles'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -12,12 +13,14 @@ interface Message {
 interface ChatTabProps {
   selectedGameId?: string | null
   fill?: boolean
+  currentPage?: string
 }
 
-export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) {
+export default function ChatTab({ selectedGameId, fill = false, currentPage }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -28,10 +31,10 @@ export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) 
     scrollToBottom()
   }, [messages])
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return
+  const handleSend = async (message: string) => {
+    if (!message.trim() || loading) return
 
-    const userMessage: Message = { role: 'user', content: input }
+    const userMessage: Message = { role: 'user', content: message }
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setLoading(true)
@@ -41,7 +44,7 @@ export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: input,
+          message,
           gameId: selectedGameId 
         }),
       })
@@ -68,6 +71,32 @@ export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) 
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      const lastMessage = messages[messages.length - 1]?.content ?? ''
+      try {
+        const res = await fetch('/api/coach/suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page: currentPage || 'chat',
+            gameState: null,
+            lastMessage,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to fetch suggestions')
+        }
+        setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : [])
+      } catch {
+        setSuggestions([])
+      }
+    }
+
+    fetchSuggestions()
+  }, [currentPage, selectedGameId, messages])
 
   return (
     <div
@@ -140,17 +169,23 @@ export default function ChatTab({ selectedGameId, fill = false }: ChatTabProps) 
         <div ref={messagesEndRef} />
       </div>
 
+      <SuggestionBubbles
+        suggestions={suggestions}
+        onSelect={(text) => handleSend(text)}
+        disabled={loading}
+      />
+
       <div style={{ display: 'flex', gap: '10px' }}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend(input)}
           placeholder="Ask your coach"
           className="input"
           disabled={loading}
         />
-        <button onClick={handleSend} disabled={loading || !input.trim()} className="button">
+        <button onClick={() => handleSend(input)} disabled={loading || !input.trim()} className="button">
           Send
         </button>
       </div>

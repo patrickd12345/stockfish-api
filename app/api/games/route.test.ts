@@ -1,12 +1,26 @@
-const { connectToDb, isDbConfigured, getGames, searchGames } = vi.hoisted(() => ({
+const {
+  connectToDb,
+  isDbConfigured,
+  getGames,
+  searchGames,
+  getGamesByOpeningOutcome,
+  getGamesByOpeningOutcomeCount,
+} = vi.hoisted(() => ({
   connectToDb: vi.fn(async () => {}),
   isDbConfigured: vi.fn(() => true),
   getGames: vi.fn(async (): Promise<any[]> => []),
   searchGames: vi.fn(async (): Promise<any[]> => []),
+  getGamesByOpeningOutcome: vi.fn(async (): Promise<any[]> => []),
+  getGamesByOpeningOutcomeCount: vi.fn(async (): Promise<number> => 0),
 }))
 
 vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
-vi.mock('@/lib/models', () => ({ getGames, searchGames }))
+vi.mock('@/lib/models', () => ({
+  getGames,
+  searchGames,
+  getGamesByOpeningOutcome,
+  getGamesByOpeningOutcomeCount,
+}))
 
 import { GET } from '@/app/api/games/route'
 
@@ -30,7 +44,7 @@ describe('app/api/games', () => {
     getGames.mockResolvedValueOnce([{ id: 'g1' }])
     const res = await GET({ url: 'http://test.local/api/games' } as any)
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ games: [{ id: 'g1' }] })
+    await expect(res.json()).resolves.toEqual({ games: [{ id: 'g1' }], totalCount: null })
     expect(getGames).toHaveBeenCalledWith(500)
     expect(searchGames).not.toHaveBeenCalled()
   })
@@ -39,7 +53,7 @@ describe('app/api/games', () => {
     searchGames.mockResolvedValueOnce([{ id: 'g2' }])
     const res = await GET({ url: 'http://test.local/api/games?q=ruy' } as any)
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ games: [{ id: 'g2' }] })
+    await expect(res.json()).resolves.toEqual({ games: [{ id: 'g2' }], totalCount: null })
     expect(searchGames).toHaveBeenCalledWith('ruy')
   })
 })

@@ -19,6 +19,7 @@ vi.mock('@/lib/database', () => ({
 }))
 
 vi.mock('@/lib/models', () => ({
+  getGameCount: vi.fn(async () => 1019),
   getGameSummaries: vi.fn(async () => {
     return Array.from({ length: 120 }, (_, idx) => ({
       id: `g-${idx}`,

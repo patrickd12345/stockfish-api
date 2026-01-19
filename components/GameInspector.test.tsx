@@ -3,6 +3,15 @@ import userEvent from '@testing-library/user-event'
 
 import GameInspector from '@/components/GameInspector'
 
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => ({
+    get: () => null,
+  }),
+  useRouter: () => ({
+    replace: vi.fn(),
+  }),
+}))
+
 describe('components/GameInspector', () => {
   beforeEach(() => {
     vi.restoreAllMocks()

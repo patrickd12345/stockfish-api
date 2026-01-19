@@ -23,7 +23,8 @@
     "rebuild:progression": "npx tsx scripts/rebuild-progression.ts",
     "engine:analyze": "npx tsx scripts/run-engine-analysis.ts",
     "engine:worker": "npx tsx scripts/engine-worker.ts",
-    "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts"
+    "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts",
+    "migrate:analysis-blunders": "npx tsx scripts/migrate-analysis-blunders.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",
@@ -33,6 +34,7 @@
     "openai": "^4.47.0",
     "react": "^18.3.0",
     "react-chessboard": "^4.7.3",
+    "recharts": "^2.12.7",
     "react-dom": "^18.3.0"
   },
   "devDependencies": {

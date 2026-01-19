@@ -57,6 +57,13 @@ export async function resolveTimeWindowFromMessage(
     return { window: ruleWindow, source: 'rule', assumption: null }
   }
 
+  // Guardrail: only ask the LLM for a window when the message looks time-related.
+  // This prevents unrelated messages ("in the database", "total games") from being
+  // incorrectly coerced into a date range (e.g., "around christmas").
+  if (!looksTimeRelated(message)) {
+    return null
+  }
+
   // 2) LLM-assisted fuzzy resolution.
   const openai = getResolverClient()
   if (!openai) return null
@@ -120,5 +127,47 @@ export async function resolveTimeWindowFromMessage(
       gameCount: 0,
     },
   }
+}
+
+function looksTimeRelated(message: string): boolean {
+  const text = message.toLowerCase()
+
+  // Obvious numeric dates.
+  if (/\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b/.test(text)) return true
+
+  // Relative time and range cues.
+  const keywords = [
+    'today',
+    'yesterday',
+    'last',
+    'this week',
+    'this month',
+    'this year',
+    'past',
+    'previous',
+    'since',
+    'between',
+    'from',
+    'to',
+    'during',
+    'around',
+    'before',
+    'after',
+    'week',
+    'month',
+    'year',
+    'days',
+    'weeks',
+    'months',
+    'years',
+  ]
+  if (keywords.some((k) => text.includes(k))) return true
+
+  // Month names (common in natural queries).
+  if (/\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b/.test(text)) {
+    return true
+  }
+
+  return false
 }
 

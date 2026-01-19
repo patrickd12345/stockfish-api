@@ -136,7 +136,7 @@ export default function MobileHome({
       <div style={{ flex: 1, minHeight: 0, padding: '12px 12px 18px 12px' }}>
         {activeTab === 'chat' ? (
           <div style={{ height: 'calc(100dvh - 132px)', minHeight: 0 }}>
-            <ChatTab selectedGameId={selectedGameId} fill />
+            <ChatTab selectedGameId={selectedGameId} fill currentPage={activeTab} />
           </div>
         ) : (
           <div style={{ height: 'calc(100dvh - 132px)', overflowY: 'auto' }}>

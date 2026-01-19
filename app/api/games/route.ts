@@ -28,7 +28,14 @@ export async function GET(req: NextRequest) {
       games = await getGames(500)
     }
     
-    return NextResponse.json({ games, totalCount })
+    const normalizedGames = Array.isArray(games)
+      ? games.map((game: any) => ({
+          ...game,
+          opening_name: game.opening_name ?? game.opening ?? undefined,
+        }))
+      : []
+
+    return NextResponse.json({ games: normalizedGames, totalCount })
   } catch (error: any) {
     console.error('Error fetching games:', error)
     return NextResponse.json(

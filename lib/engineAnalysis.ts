@@ -27,6 +27,7 @@ export interface EngineAnalysisResult {
   missedTactics: MissedTactic[]
   timeTroubleIndicators: TimeTroubleIndicator[]
   pvSnapshots: PVSnapshot[]
+  blunderDetails: BlunderDetail[]
   
   // Metadata
   engineVersion: string | null
@@ -64,6 +65,18 @@ export interface PVSnapshot {
   fen: string
   principalVariation: string[]
   depth: number
+}
+
+export interface BlunderDetail {
+  moveNumber: number
+  ply: number
+  fen: string
+  playedMove: string
+  bestMove: string | null
+  evalBefore: number
+  evalAfter: number
+  bestEval: number | null
+  centipawnLoss: number
 }
 
 /**
@@ -124,6 +137,7 @@ export async function analyzeGameWithEngine(
     const missedTactics: MissedTactic[] = []
     const timeTroubleIndicators: TimeTroubleIndicator[] = []
     const pvSnapshots: PVSnapshot[] = []
+    const blunderDetails: BlunderDetail[] = []
     
     const tempChess = new Chess()
     let ply = 0
@@ -136,12 +150,13 @@ export async function analyzeGameWithEngine(
       
       if (isPlayerMove) {
         // Evaluate position before move
-        const evalBefore = await evaluatePosition(engine, tempChess.fen(), tempChess.turn(), analysisDepth)
+        const fenBeforeMove = tempChess.fen()
+        const evalBefore = await evaluatePosition(engine, fenBeforeMove, tempChess.turn(), analysisDepth)
         
         // Get best move and evaluation BEFORE making the move
         const { bestMove, evalAfter: bestEval, principalVariation } = await getBestMove(
           engine,
-          tempChess.fen(),
+          fenBeforeMove,
           tempChess.turn(),
           analysisDepth
         )
@@ -162,6 +177,17 @@ export async function analyzeGameWithEngine(
         // Categorize error
         if (cpl > BLUNDER_THRESHOLD) {
           blunders++
+          blunderDetails.push({
+            moveNumber,
+            ply,
+            fen: fenBeforeMove,
+            playedMove: move.san,
+            bestMove,
+            evalBefore,
+            evalAfter,
+            bestEval,
+            centipawnLoss: cpl
+          })
         } else if (cpl > MISTAKE_THRESHOLD) {
           mistakes++
         } else if (cpl > INACCURACY_THRESHOLD) {
@@ -273,6 +299,7 @@ export async function analyzeGameWithEngine(
       missedTactics,
       timeTroubleIndicators,
       pvSnapshots,
+      blunderDetails,
       engineVersion: versionInfo,
       analysisDepth
     }
