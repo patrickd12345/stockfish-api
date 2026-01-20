@@ -184,6 +184,7 @@ export default function LichessLiveTab() {
   const [seekTime, setSeekTime] = useState(3)
   const [seekIncrement, setSeekIncrement] = useState(2)
   const [seekAny, setSeekAny] = useState(false)
+  const [seekRated, setSeekRated] = useState(false)
 
   const [ratingDiffLower, setRatingDiffLower] = useState<number | null>(null)
   const [ratingDiffUpper, setRatingDiffUpper] = useState<number | null>(null)
@@ -430,7 +431,7 @@ export default function LichessLiveTab() {
         body: JSON.stringify({
           any: seekAny,
           ...(seekAny ? {} : { time: seekTime, increment: seekIncrement }),
-          rated: false,
+          rated: seekRated,
           variant: 'standard',
           color: 'random',
           ...ratingPayload,
@@ -522,7 +523,7 @@ export default function LichessLiveTab() {
       const res = await fetch(`/api/lichess/board/challenge/${liveGameState.opponentName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ time: seekTime, increment: seekIncrement })
+        body: JSON.stringify({ time: seekTime, increment: seekIncrement, rated: seekRated })
       })
       let data: any = {}
       try {
@@ -562,7 +563,7 @@ export default function LichessLiveTab() {
         body: JSON.stringify({ 
           time: seekTime, 
           increment: seekIncrement,
-          rated: false 
+          rated: seekRated
         })
       })
       let data: any = {}
@@ -957,6 +958,39 @@ export default function LichessLiveTab() {
 
               <div className="mt-2 text-[12px] text-sage-500 text-center">
                 Filters opponents by rating range relative to the selected time control rating.
+              </div>
+            </div>
+
+            <div className="w-full pt-2 border-t border-white/5">
+              <div className="mb-2 text-[11px] font-black tracking-widest uppercase text-sage-400 text-center">
+                Rated
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSeekRated(false)}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
+                    !seekRated
+                      ? 'bg-terracotta text-sage-900 border-terracotta'
+                      : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                  }`}
+                >
+                  Casual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSeekRated(true)}
+                  className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
+                    seekRated
+                      ? 'bg-terracotta text-sage-900 border-terracotta'
+                      : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                  }`}
+                >
+                  Rated
+                </button>
+              </div>
+              <div className="mt-2 text-[12px] text-sage-500 text-center">
+                Elo only changes on rated games.
               </div>
             </div>
           </div>

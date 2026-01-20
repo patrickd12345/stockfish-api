@@ -22,11 +22,12 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
     const limit = (body.time || 3) * 60
     const increment = body.increment || 2
+    const rated = typeof body.rated === 'boolean' ? body.rated : false
     
     const formData = new URLSearchParams()
     formData.append('clock.limit', limit.toString())
     formData.append('clock.increment', increment.toString())
-    formData.append('rated', 'false')
+    formData.append('rated', rated ? 'true' : 'false')
     formData.append('color', 'random')
 
     const response = await lichessFetch(`/api/challenge/${params.username}`, {
