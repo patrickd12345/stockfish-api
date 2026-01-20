@@ -35,7 +35,7 @@ describe('components/ChatTab', () => {
 
     render(<ChatTab selectedGameId="game-123" />)
 
-    await user.type(screen.getByPlaceholderText('Ask your coach'), 'hi')
+    await user.type(screen.getByPlaceholderText('Ask your coach...'), 'hi coach')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     const chatCall = fetchSpy.mock.calls.find(([calledUrl]) => calledUrl === '/api/chat')
@@ -44,7 +44,7 @@ describe('components/ChatTab', () => {
     expect(url).toBe('/api/chat')
     const initAny = init as any
     expect(initAny.method).toBe('POST')
-    expect(JSON.parse(initAny.body)).toEqual({ message: 'hi', gameId: 'game-123' })
+    expect(JSON.parse(initAny.body)).toEqual({ message: 'hi coach', gameId: 'game-123' })
 
     expect(await screen.findByText('hello back')).toBeVisible()
   })

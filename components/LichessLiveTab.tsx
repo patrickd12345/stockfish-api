@@ -114,7 +114,6 @@ function uciMovesToFenAtPly(uciMoves: string, ply: number): { fen: string; appli
 }
 
 export default function LichessLiveTab() {
-  // Use a faster poll interval (500ms) to reduce "cappiness" during gameplay
   const { state: liveGameState, displayClock, error, refreshState } = useLichessBoard(500)
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -130,7 +129,6 @@ export default function LichessLiveTab() {
   >([])
   const [viewPly, setViewPly] = useState<number | null>(null)
 
-  // Time control selection
   const [seekTime, setSeekTime] = useState(3)
   const [seekIncrement, setSeekIncrement] = useState(2)
 
@@ -158,12 +156,10 @@ export default function LichessLiveTab() {
   }, [liveGameState?.chatMessages])
 
   useEffect(() => {
-    // Reset navigation when game changes or ends.
     setViewPly(null)
   }, [liveGameState?.gameId, liveGameState?.status])
 
   useEffect(() => {
-    // Reconcile optimistic messages once the server echoes them back.
     if (!liveGameState?.chatMessages || liveGameState.chatMessages.length === 0) return
     const myId = (liveGameState.lichessUserId || '').toLowerCase()
     setOptimisticChatMessages((pending) =>
@@ -246,7 +242,6 @@ export default function LichessLiveTab() {
         data = { error: await res.text() }
       }
       if (!res.ok) throw new Error(data.error || 'Failed to seek match')
-      // Keep "seeking" state until a game actually starts (or an error occurs).
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to seek match')
       setSeeking(false)
@@ -307,7 +302,6 @@ export default function LichessLiveTab() {
     setSeeking(true)
     setActionError(null)
     
-    // Safety timeout to prevent "stuck" seeking state if the bot doesn't start the game
     const timeoutId = setTimeout(() => {
       setSeeking((s) => {
         if (s) {
@@ -338,7 +332,6 @@ export default function LichessLiveTab() {
         clearTimeout(timeoutId)
         throw new Error(data.error || `Failed to challenge ${botUsername}`)
       }
-      // Success means challenge sent. Waiting for stream/hook to update state.
     } catch (err) {
       clearTimeout(timeoutId)
       setActionError(err instanceof Error ? err.message : `Failed to challenge ${botUsername}`)
@@ -422,7 +415,7 @@ export default function LichessLiveTab() {
           await refreshState()
           return false
         } else {
-          setTimeout(() => refreshState(), 250) // Refresh quickly after move
+          setTimeout(() => refreshState(), 250)
           return true
         }
       } catch (err) {
@@ -443,17 +436,8 @@ export default function LichessLiveTab() {
     }
   }, [isGameActive])
 
-  // Helper values for rendering
   const turnColor = liveGameState?.fen.split(' ')[1] === 'w' ? 'white' : 'black'
   const myColor = liveGameState?.myColor ?? 'white'
-  
-  // Logic: "Me" at bottom. 
-  // If myColor is White, Opponent is Black. 
-  //   Opponent Time = btime. My Time = wtime.
-  //   Turn is Opponent's if turnColor === 'black'
-  // If myColor is Black, Opponent is White.
-  //   Opponent Time = wtime. My Time = btime.
-  //   Turn is Opponent's if turnColor === 'white'
   
   const opponentTime = myColor === 'white' 
     ? (displayClock?.btime ?? liveGameState?.btime ?? 0) 
@@ -487,19 +471,16 @@ export default function LichessLiveTab() {
 
     const highlights: Record<string, React.CSSProperties> = {}
     const styles = [
-      // Most recent ply (usually the last move made)
       {
         backgroundColor: 'rgba(250, 204, 21, 0.45)',
         boxShadow: 'inset 0 0 0 4px rgba(245, 158, 11, 0.9)'
       },
-      // Previous ply (the other side's last move)
       {
         backgroundColor: 'rgba(34, 197, 94, 0.30)',
         boxShadow: 'inset 0 0 0 4px rgba(22, 163, 74, 0.75)'
       }
     ]
 
-    // Apply in order so the most recent stays strongest if overlapping (rare).
     const ordered = lastTwo.length === 2 ? [lastTwo[1], lastTwo[0]] : [lastTwo[0]]
     ordered.forEach((uci, idx) => {
       if (uci.length < 4) return
@@ -531,19 +512,19 @@ export default function LichessLiveTab() {
   const handleGoLive = () => setViewPly(null)
 
   return (
-    <div className="card" style={{ minHeight: '700px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>Lichess Live Mode</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={handleConnect} className="button" style={{ background: '#4b5563' }}>
+    <div className="glass-panel p-6 min-h-[700px] flex flex-col gap-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold text-terracotta tracking-tight">Lichess Live Mode</h2>
+        <div className="flex gap-3">
+          <button onClick={handleConnect} className="btn-secondary">
             Reconnect Lichess
           </button>
           {!session || session.status === 'idle' ? (
-            <button onClick={handleStartSession} disabled={loading} className="button" style={{ background: '#059669' }}>
+            <button onClick={handleStartSession} disabled={loading} className="btn-primary bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500">
               {loading ? 'Starting...' : 'Start Live Session'}
             </button>
           ) : (
-            <button onClick={handleStopSession} disabled={loading} className="button" style={{ background: '#dc2626' }}>
+            <button onClick={handleStopSession} disabled={loading} className="btn-primary bg-rose-600 hover:bg-rose-500 text-white border-rose-500">
               {loading ? 'Stopping...' : 'Stop Live Session'}
             </button>
           )}
@@ -551,39 +532,37 @@ export default function LichessLiveTab() {
       </div>
 
       {(error || actionError || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('error'))) && (
-        <div style={{ padding: '12px 16px', background: '#fee2e2', color: '#b91c1c', borderRadius: '8px', fontSize: '14px', border: '1px solid #fecaca' }}>
+        <div className="bg-rose-900/50 border border-rose-700 text-rose-200 px-4 py-2 rounded-lg text-sm">
           {error || actionError || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('error'))}
         </div>
       )}
 
       {!session || session.status === 'idle' ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', borderRadius: '12px', border: '2px dashed #e5e7eb', padding: '40px' }}>
-          <div style={{ fontSize: '64px', marginBottom: '20px' }}>📡</div>
-          <h3 style={{ marginBottom: '12px' }}>Live Session Inactive</h3>
-          <p style={{ maxWidth: '400px', color: '#6b7280', textAlign: 'center', lineHeight: 1.5 }}>
+        <div className="flex-1 flex flex-col items-center justify-center bg-sage-900/30 rounded-xl border border-dashed border-sage-700 p-10">
+          <div className="text-6xl mb-4 grayscale opacity-50">📡</div>
+          <h3 className="text-lg font-bold text-sage-300 mb-2">Live Session Inactive</h3>
+          <p className="max-w-md text-sage-400 text-center">
             Connect your Lichess account and start a session to play and get real-time AI commentary.
           </p>
         </div>
       ) : !liveGameState || !isGameActive ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', borderRadius: '12px', padding: '40px' }}>
-          <div style={{ fontSize: '64px', marginBottom: '24px' }}>♟️</div>
-          <h3 style={{ marginBottom: '8px' }}>Ready to Play</h3>
+        <div className="flex-1 flex flex-col items-center justify-center bg-sage-900/30 rounded-xl p-10 border border-white/5">
+          <div className="text-6xl mb-6">♟️</div>
+          <h3 className="text-lg font-bold text-sage-200 mb-2">Ready to Play</h3>
           
           {liveGameState && !isGameActive && (
-            <div style={{ marginBottom: '20px', padding: '8px 16px', background: '#fef3c7', color: '#92400e', borderRadius: '8px', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="mb-5 px-4 py-2 bg-amber-900/30 border border-amber-700/50 text-amber-200 rounded-lg text-sm font-semibold flex items-center gap-3">
               <span>Last Game: {formatStatus(liveGameState.status)} vs {liveGameState.opponentName || 'Unknown'}</span>
               <button 
-                onClick={() => {
-                  refreshState()
-                }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '16px', color: '#92400e' }}
+                onClick={() => { refreshState() }}
+                className="text-amber-400 hover:text-white"
               >
                 ✕
               </button>
             </div>
           )}
           
-          <div style={{ marginBottom: '32px', display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center', maxWidth: '500px' }}>
+          <div className="mb-8 flex flex-wrap gap-2 justify-center max-w-lg">
             {[
               { label: '1+0', t: 1, i: 0 },
               { label: '2+1', t: 2, i: 1 },
@@ -597,123 +576,91 @@ export default function LichessLiveTab() {
               <button
                 key={tc.label}
                 onClick={() => { setSeekTime(tc.t); setSeekIncrement(tc.i); }}
-                className="button"
-                style={{
-                  background: seekTime === tc.t && seekIncrement === tc.i ? '#2563eb' : 'white',
-                  color: seekTime === tc.t && seekIncrement === tc.i ? 'white' : '#374151',
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  border: seekTime === tc.t && seekIncrement === tc.i ? '1px solid #2563eb' : '1px solid #d1d5db',
-                  fontWeight: 600,
-                  minWidth: '80px'
-                }}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
+                  seekTime === tc.t && seekIncrement === tc.i
+                  ? 'bg-terracotta text-sage-900 border-terracotta'
+                  : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                }`}
               >
                 {tc.label}
               </button>
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', width: '100%', maxWidth: '500px' }}>
+          <div className="flex gap-3 w-full max-w-lg">
             <button 
               onClick={handleSeekMatch} 
               disabled={seeking || loading} 
-              className="button" 
-              style={{ background: '#2563eb', padding: '16px 32px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', flex: 1 }}
+              className="flex-1 py-4 text-lg font-bold rounded-xl bg-terracotta text-sage-900 hover:bg-terracotta-light transition-colors disabled:opacity-50"
             >
               {seeking ? 'Seeking...' : 'Seek Human'}
             </button>
             <button 
               onClick={() => handlePracticeBot('maia1')} 
               disabled={seeking || loading} 
-              className="button" 
-              style={{ background: '#4b5563', padding: '16px 32px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', flex: 1 }}
+              className="flex-1 py-4 text-lg font-bold rounded-xl bg-sage-700 text-sage-200 hover:bg-sage-600 transition-colors disabled:opacity-50"
             >
               Practice Bot
             </button>
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px' }}>
-          {/* Main Board Area */}
-          <div style={{ position: 'relative', background: '#1f1306', borderRadius: '12px', padding: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '15px' }}>
-
-            <div style={{ width: '100%', maxWidth: '500px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.08em', color: '#fbbf24' }}>
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+          <div className="relative bg-[#1f1306] rounded-xl p-8 flex flex-col items-center justify-center gap-4 shadow-2xl border border-orange-900/30">
+            <div className="w-full max-w-[500px] flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="text-xs font-black text-amber-400 uppercase tracking-widest">
                   Live Game
                 </div>
                 {isReviewMode && (
-                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#93c5fd' }}>
+                  <div className="text-[10px] font-bold text-blue-300 bg-blue-900/30 px-2 py-0.5 rounded">
                     Review {viewPly}/{fullPly}
                   </div>
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#e5e5e5', opacity: 0.85, marginRight: '6px' }}>
+              <div className="flex items-center gap-2">
+                <div className="text-xs font-bold text-sage-300 mr-2">
                   {getPerfName(liveGameState.initialTimeMs || 0)} {Math.floor((liveGameState.initialTimeMs || 0) / 60000)}+{Math.floor((liveGameState.initialIncrementMs || 0) / 1000)}
                 </div>
-                <button
-                  onClick={handleBack}
-                  disabled={fullPly === 0 || (viewPly ?? fullPly) <= 0}
-                  className="button"
-                  style={{ padding: '6px 10px', fontSize: '12px', background: '#374151' }}
-                >
-                  Back
+                <button onClick={handleBack} disabled={fullPly === 0 || (viewPly ?? fullPly) <= 0} className="p-1.5 bg-sage-800 text-sage-300 rounded hover:bg-sage-700 disabled:opacity-30">
+                  ◀
                 </button>
-                <button
-                  onClick={handleForward}
-                  disabled={viewPly === null}
-                  className="button"
-                  style={{ padding: '6px 10px', fontSize: '12px', background: '#374151' }}
-                >
-                  Forward
+                <button onClick={handleForward} disabled={viewPly === null} className="p-1.5 bg-sage-800 text-sage-300 rounded hover:bg-sage-700 disabled:opacity-30">
+                  ▶
                 </button>
                 {isReviewMode && (
-                  <button
-                    onClick={handleGoLive}
-                    className="button"
-                    style={{ padding: '6px 10px', fontSize: '12px', background: '#2563eb' }}
-                  >
+                  <button onClick={handleGoLive} className="px-2 py-1 bg-blue-600 text-white text-xs font-bold rounded hover:bg-blue-500">
                     Live
                   </button>
                 )}
               </div>
             </div>
             
-            {/* Top Bar: Opponent Info & Clock */}
-            <div style={{ width: '100%', maxWidth: '500px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', color: '#e5e5e5' }}>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#404040', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+            <div className="w-full max-w-[500px] flex justify-between items-end text-sage-200">
+              <div className="flex gap-3 items-center">
+                <div className="w-10 h-10 rounded-lg bg-sage-800 flex items-center justify-center text-2xl shadow-inner border border-white/5">
                   {liveGameState.myColor === 'black' ? '😎' : '👤'}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '15px', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                  <div className="font-bold text-sm">
                     {liveGameState.opponentName || 'Opponent'} 
-                    <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: '6px' }}>({liveGameState.opponentRating || '?'})</span>
+                    <span className="font-normal text-sage-400 ml-1">({liveGameState.opponentRating || '?'})</span>
                   </div>
-                  {/* Status Badge integrated here */}
                   {!isGameActive && (
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24', marginTop: '2px' }}>
+                    <div className="text-[10px] font-bold text-amber-400 mt-0.5">
                       {formatStatus(liveGameState.status)}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Opponent Clock */}
-              <div style={{ 
-                background: '#262626', padding: '6px 14px', borderRadius: '6px', color: '#a3a3a3', fontFamily: 'monospace', fontSize: '24px',
-                borderBottom: isGameActive && isOpponentTurn ? '3px solid #ef4444' : '3px solid transparent',
-                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.3)',
-                opacity: isGameActive ? 1 : 0.7
-              }}>
+              <div className={`bg-[#262626] px-4 py-1.5 rounded-md font-mono text-2xl shadow-inner border border-white/5 transition-opacity ${isGameActive && isOpponentTurn ? 'border-b-4 border-b-rose-500 opacity-100' : 'border-b-4 border-b-transparent opacity-70'}`}>
                 {formatClockTime(opponentTime)}
               </div>
             </div>
 
-            {/* Chess Board */}
-            <div style={{ width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)' }}>
+            <div className="w-full max-w-[500px] shadow-2xl rounded-lg overflow-hidden border border-[#5d4037]">
               <ChessBoard 
                 fen={view.fen} 
                 theme="wood" 
@@ -725,41 +672,33 @@ export default function LichessLiveTab() {
               />
             </div>
 
-            {/* Bottom Bar: My Clock */}
-            <div style={{ width: '100%', maxWidth: '500px', display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
-              <div style={{ 
-                background: '#000', padding: '10px 24px', borderRadius: '8px', color: 'white', fontFamily: 'monospace', fontSize: '36px', fontWeight: 700,
-                borderBottom: isGameActive && isMyTurn ? '4px solid #22c55e' : '4px solid transparent',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
-                textShadow: '0 0 10px rgba(255,255,255,0.2)'
-              }}>
+            <div className="w-full max-w-[500px] flex justify-end items-start">
+              <div className={`bg-black px-6 py-2 rounded-lg text-white font-mono text-4xl font-bold shadow-lg transition-all ${isGameActive && isMyTurn ? 'border-b-4 border-b-emerald-500 scale-105' : 'border-b-4 border-b-transparent opacity-90'}`}>
                 {formatClockTime(myTime)}
               </div>
             </div>
           </div>
 
-          {/* Sidebar Area: Actions, Chat, Commentary */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Actions */}
-            <div className="card" style={{ padding: '15px', background: '#f3f4f6' }}>
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#4b5563' }}>GAME ACTIONS</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="flex flex-col gap-4 h-full min-h-0">
+            <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5">
+              <h4 className="text-xs font-bold text-sage-400 mb-3 uppercase tracking-wider">Game Actions</h4>
+              <div className="flex flex-col gap-2">
                 {isGameActive ? (
                   <>
-                    <button onClick={handleResign} disabled={isResigning} className="button" style={{ background: '#dc2626', width: '100%' }}>
+                    <button onClick={handleResign} disabled={isResigning} className="btn-secondary bg-rose-900/30 text-rose-200 border-rose-800/50 hover:bg-rose-900/50 w-full">
                       {isResigning ? 'Resigning...' : 'Resign'}
                     </button>
-                    <button onClick={handleOfferDraw} disabled={isDrawing} className="button" style={{ background: '#4b5563', width: '100%' }}>
+                    <button onClick={handleOfferDraw} disabled={isDrawing} className="btn-secondary w-full">
                       {isDrawing ? 'Offering...' : 'Offer Draw'}
                     </button>
                   </>
                 ) : (
                   <>
-                    <button onClick={handleSeekMatch} disabled={seeking} className="button" style={{ background: '#059669', width: '100%' }}>
+                    <button onClick={handleSeekMatch} disabled={seeking} className="btn-primary w-full">
                       {seeking ? 'Seeking...' : 'New Match'}
                     </button>
                     {liveGameState.opponentName && (
-                      <button onClick={handleRematch} disabled={isChallenging || seeking} className="button" style={{ background: '#2563eb', width: '100%' }}>
+                      <button onClick={handleRematch} disabled={isChallenging || seeking} className="btn-secondary w-full bg-blue-900/30 text-blue-200 border-blue-800/50">
                         {isChallenging ? 'Challenging...' : 'Rematch Opponent'}
                       </button>
                     )}
@@ -768,30 +707,20 @@ export default function LichessLiveTab() {
               </div>
             </div>
 
-            {/* Moves */}
-            <div className="card" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', height: '180px' }}>
-              <h4 style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>MOVES</h4>
-              <div
-                style={{
-                  flex: 1,
-                  background: '#f9fafb',
-                  borderRadius: '4px',
-                  padding: '8px',
-                  fontSize: '12px',
-                  overflowY: 'auto'
-                }}
-              >
+            <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5 flex flex-col h-48">
+              <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider">Moves</h4>
+              <div className="flex-1 bg-sage-950/30 rounded-lg p-2 overflow-y-auto border border-white/5 text-xs">
                 {movePairs.length === 0 ? (
-                  <div style={{ color: '#9ca3af', textAlign: 'center', marginTop: 'auto', marginBottom: 'auto' }}>
+                  <div className="h-full flex items-center justify-center text-sage-600 italic">
                     No moves yet
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 1fr', gap: '6px 10px' }}>
+                  <div className="grid grid-cols-[30px_1fr_1fr] gap-y-1">
                     {movePairs.map((pair) => (
-                      <div key={pair.moveNumber} style={{ display: 'contents' }}>
-                        <div style={{ color: '#6b7280', fontWeight: 700 }}>{pair.moveNumber}.</div>
-                        <div style={{ color: '#111827', fontWeight: 600 }}>{pair.white || ''}</div>
-                        <div style={{ color: '#111827', fontWeight: 600 }}>{pair.black || ''}</div>
+                      <div key={pair.moveNumber} className="contents hover:bg-white/5">
+                        <div className="text-sage-500 font-mono text-right pr-2">{pair.moveNumber}.</div>
+                        <div className="text-sage-200 font-medium pl-1">{pair.white || ''}</div>
+                        <div className="text-sage-200 font-medium pl-1">{pair.black || ''}</div>
                       </div>
                     ))}
                   </div>
@@ -799,56 +728,43 @@ export default function LichessLiveTab() {
               </div>
             </div>
 
-            {/* Chat */}
-            <div className="card" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', height: '200px' }}>
-              <h4 style={{ margin: 0, fontSize: '14px', color: '#4b5563' }}>GAME CHAT</h4>
-              <div ref={chatScrollRef} style={{ flex: 1, background: '#f9fafb', borderRadius: '4px', padding: '8px', fontSize: '12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5 flex flex-col h-56">
+              <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider">Chat</h4>
+              <div ref={chatScrollRef} className="flex-1 bg-sage-950/30 rounded-lg p-2 overflow-y-auto border border-white/5 mb-2 flex flex-col gap-2">
                 {((liveGameState.chatMessages && liveGameState.chatMessages.length > 0) || optimisticChatMessages.length > 0) ? (
                   [...(liveGameState.chatMessages || []), ...optimisticChatMessages].map((msg: any, i) => {
-                    // Check if message is from me or opponent based on username
-                    // If liveGameState.lichessUserId matches msg.username, it's me
-                    const isMe =
-                      (msg.username || '').toLowerCase() === (liveGameState.lichessUserId || '').toLowerCase()
-                    
+                    const isMe = (msg.username || '').toLowerCase() === (liveGameState.lichessUserId || '').toLowerCase()
                     return (
-                      <div key={i} style={{ 
-                        alignSelf: isMe ? 'flex-end' : 'flex-start',
-                        background: isMe ? '#dbeafe' : '#e5e7eb',
-                        color: isMe ? '#1e40af' : '#374151',
-                        padding: '4px 8px', 
-                        borderRadius: '4px', 
-                        maxWidth: '85%',
-                        wordBreak: 'break-word'
-                      }}>
-                        <span style={{ fontWeight: 700, marginRight: '4px', fontSize: '11px', opacity: 0.8 }}>
-                          {msg.username}:
-                        </span>
+                      <div key={i} className={`max-w-[90%] px-2 py-1.5 rounded-lg text-xs ${isMe ? 'self-end bg-terracotta/20 text-terracotta-light border border-terracotta/30' : 'self-start bg-sage-800 text-sage-300 border border-sage-700'}`}>
+                        <span className="font-bold mr-1 opacity-70">{msg.username}:</span>
                         {msg.text}
                       </div>
                     )
                   })
                 ) : (
-                  <div style={{ color: '#9ca3af', textAlign: 'center', marginTop: 'auto', marginBottom: 'auto' }}>
+                  <div className="h-full flex items-center justify-center text-sage-600 italic text-xs">
                     No messages yet
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '5px' }}>
+              <div className="flex gap-2">
                 <input
                   type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
-                  placeholder="Send message..."
-                  style={{ flex: 1, padding: '6px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px' }}
+                  placeholder="Send..."
+                  className="flex-1 bg-sage-800 border border-sage-700 rounded px-2 py-1 text-xs text-sage-200 focus:outline-none focus:border-terracotta/50"
                 />
-                <button onClick={handleSendChat} disabled={!chatInput.trim()} className="button" style={{ padding: '6px 12px', fontSize: '13px' }}>
+                <button onClick={handleSendChat} disabled={!chatInput.trim()} className="px-3 py-1 bg-sage-700 text-sage-200 text-xs rounded hover:bg-sage-600 disabled:opacity-50">
                   Send
                 </button>
               </div>
             </div>
 
-            {/* Commentary */}
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              <LiveCommentary fen={view.fen} moves={view.moves} />
+            <div className="flex-1 min-h-0 bg-sage-900/40 rounded-xl p-4 border border-white/5 overflow-hidden flex flex-col">
+               <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider shrink-0">Live Commentary</h4>
+               <div className="flex-1 overflow-y-auto">
+                 <LiveCommentary fen={view.fen} moves={view.moves} />
+               </div>
             </div>
           </div>
         </div>

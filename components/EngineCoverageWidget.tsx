@@ -93,36 +93,17 @@ export default function EngineCoverageWidget({
 
   if (isLoading && !data) {
     return (
-      <div
-        style={{
-          border: '1px solid #e5e7eb',
-          background: '#ffffff',
-          borderRadius: '12px',
-          padding: compact ? '8px 10px' : '12px 14px',
-          minWidth: compact ? 220 : 260,
-        }}
-      >
-        <div style={{ color: '#6b7280', fontSize: '12px', fontWeight: 800 }}>Engine progress</div>
-        <div style={{ marginTop: '6px', height: '8px', borderRadius: '999px', background: '#f3f4f6' }} />
-        <div style={{ marginTop: '8px', color: '#9ca3af', fontSize: '12px' }}>Loading…</div>
+      <div className={`border border-white/5 bg-sage-800/50 rounded-xl ${compact ? 'p-2 min-w-[220px]' : 'p-3 min-w-[260px]'}`}>
+        <div className="text-sage-400 text-xs font-bold">Engine progress</div>
+        <div className="mt-2 h-2 rounded-full bg-sage-700 animate-pulse" />
+        <div className="mt-2 text-sage-500 text-xs">Loading…</div>
       </div>
     )
   }
 
   if (error && !data) {
     return (
-      <div
-        style={{
-          border: '1px solid #fee2e2',
-          background: '#fff1f2',
-          borderRadius: '12px',
-          padding: compact ? '8px 10px' : '12px 14px',
-          minWidth: compact ? 220 : 260,
-          color: '#991b1b',
-          fontSize: '12px',
-          fontWeight: 700,
-        }}
-      >
+      <div className={`border border-rose-900/50 bg-rose-900/20 rounded-xl ${compact ? 'p-2 min-w-[220px]' : 'p-3 min-w-[260px]'} text-rose-300 text-xs font-bold`}>
         Engine progress unavailable
       </div>
     )
@@ -131,68 +112,40 @@ export default function EngineCoverageWidget({
   if (!coverage) return null
 
   return (
-    <div
-      style={{
-        border: '1px solid #e5e7eb',
-        background: '#ffffff',
-        borderRadius: '12px',
-        padding: compact ? '8px 10px' : '12px 14px',
-        minWidth: compact ? 220 : 260,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px' }}>
-        <div style={{ color: '#111827', fontSize: '12px', fontWeight: 900 }}>Engine progress</div>
-        <div style={{ color: '#6b7280', fontSize: '12px' }}>{pct.toFixed(1)}%</div>
+    <div className={`border border-white/5 bg-sage-800/50 backdrop-blur-sm rounded-xl ${compact ? 'p-2 min-w-[220px]' : 'p-3 min-w-[260px]'} shadow-sm`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-sage-300 text-xs font-bold">Engine progress</div>
+        <div className="text-sage-400 text-xs">{pct.toFixed(1)}%</div>
       </div>
 
-      <div
-        style={{
-          marginTop: '6px',
-          height: '8px',
-          borderRadius: '999px',
-          background: '#f3f4f6',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="mt-1.5 h-2 rounded-full bg-sage-900 overflow-hidden border border-white/5">
         <div
-          style={{
-            height: '100%',
-            width: `${Math.max(0, Math.min(100, pct))}%`,
-            background: '#7c3aed',
-          }}
+          className="h-full bg-ochre transition-all duration-500 ease-out"
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
         />
       </div>
 
-      <div
-        style={{
-          marginTop: '8px',
-          display: 'grid',
-          gridTemplateColumns: compact ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))',
-          gap: '8px',
-          fontSize: '12px',
-        }}
-      >
+      <div className={`mt-2 grid gap-2 text-xs ${compact ? 'grid-cols-2' : 'grid-cols-4'}`}>
         <Stat label="Total" value={coverage.totalGames} />
         <Stat label="Analyzed" value={coverage.analyzedGames} />
-        {compact ? null : <Stat label="Failed" value={coverage.failedGames} />}
-        <Stat label={compact ? 'Pending' : 'Pending'} value={coverage.pendingGames} />
+        {!compact && <Stat label="Failed" value={coverage.failedGames} />}
+        <Stat label="Pending" value={coverage.pendingGames} />
       </div>
 
-      {updatedAt ? (
-        <div style={{ marginTop: '8px', color: '#9ca3af', fontSize: '11px' }}>
+      {updatedAt && (
+        <div className="mt-2 text-sage-500 text-[10px] text-right">
           Updated {updatedAt.toLocaleTimeString()}
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-      <div style={{ color: '#6b7280', fontWeight: 800 }}>{label}</div>
-      <div style={{ color: '#111827', fontWeight: 900 }}>{value.toLocaleString()}</div>
+    <div className="flex flex-col">
+      <div className="text-sage-500 font-bold text-[10px] uppercase tracking-wide">{label}</div>
+      <div className="text-sage-200 font-bold">{value.toLocaleString()}</div>
     </div>
   )
 }
-

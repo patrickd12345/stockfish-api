@@ -102,22 +102,12 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
 
   return (
     <div
-      className="card"
-      style={
-        fill
-          ? {
-              display: 'flex',
-              flexDirection: 'column',
-              height: '100%',
-              minHeight: 0,
-            }
-          : undefined
-      }
+      className={`glass-panel p-6 ${fill ? 'flex flex-col h-full min-h-0' : ''}`}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0 }}>Coach Chat</h2>
+      <div className="flex justify-between items-center mb-5">
+        <h2 className="text-xl font-bold text-terracotta tracking-tight">Coach Chat</h2>
         {selectedGameId && (
-          <div style={{ fontSize: '12px', color: '#2563eb', background: '#dbeafe', padding: '4px 10px', borderRadius: '12px', fontWeight: 'bold' }}>
+          <div className="text-xs font-semibold text-terracotta-dark bg-terracotta/10 border border-terracotta/20 px-3 py-1 rounded-full">
             Context: Game {selectedGameId.substring(0, 8)}...
           </div>
         )}
@@ -126,19 +116,10 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
       <FirstInsightsPanel />
 
       <div
-        style={{
-          height: fill ? undefined : '600px',
-          flex: fill ? 1 : undefined,
-          minHeight: fill ? 0 : undefined,
-          overflowY: 'auto',
-          marginBottom: '20px',
-          padding: '20px',
-          background: '#f9fafb',
-          borderRadius: '8px',
-        }}
+        className={`bg-sage-950/30 rounded-xl p-4 mb-4 overflow-y-auto ${fill ? 'flex-1 min-h-0' : 'h-[600px]'} border border-white/5 scrollbar-hide`}
       >
         {messages.length === 0 && (
-          <div style={{ color: '#6b7280', textAlign: 'center', marginTop: '50px' }}>
+          <div className="text-sage-500 italic text-center mt-12">
             Start a conversation with your chess coach
           </div>
         )}
@@ -146,20 +127,18 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            style={{
-              marginBottom: '20px',
-              padding: '15px',
-              background: msg.role === 'user' ? '#dbeafe' : 'white',
-              borderRadius: '8px',
-              borderLeft: `4px solid ${msg.role === 'user' ? '#2563eb' : '#10b981'}`,
-            }}
+            className={`mb-4 p-4 rounded-xl border max-w-[90%] ${
+              msg.role === 'user'
+                ? 'ml-auto bg-terracotta/10 border-terracotta/20 text-sage-100 rounded-tr-none'
+                : 'mr-auto bg-sage-800/60 border-white/5 text-sage-200 rounded-tl-none'
+            }`}
           >
-            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#374151' }}>
+            <div className={`font-bold text-xs mb-2 uppercase tracking-wider ${msg.role === 'user' ? 'text-terracotta' : 'text-ochre'}`}>
               {msg.role === 'user' ? 'You' : 'Coach'}
             </div>
-            <div style={{ whiteSpace: 'pre-wrap', color: '#1f2937' }}>{msg.content}</div>
+            <div className="whitespace-pre-wrap leading-relaxed">{msg.content}</div>
             {msg.boardSvg && (
-              <div style={{ marginTop: '15px' }}>
+              <div className="mt-4 bg-sage-900 p-2 rounded-lg inline-block">
                 <ChessBoard svg={msg.boardSvg} />
               </div>
             )}
@@ -167,7 +146,7 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
         ))}
 
         {loading && (
-          <div style={{ color: '#6b7280', fontStyle: 'italic' }}>Coach is thinking...</div>
+          <div className="text-sage-500 text-sm animate-pulse ml-4 mb-4">Coach is thinking...</div>
         )}
 
         <div ref={messagesEndRef} />
@@ -179,17 +158,21 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
         disabled={loading}
       />
 
-      <div style={{ display: 'flex', gap: '10px' }}>
+      <div className="flex gap-2 mt-2">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend(input)}
-          placeholder="Ask your coach"
-          className="input"
+          placeholder="Ask your coach..."
+          className="flex-1 bg-sage-900/50 border border-sage-700/50 rounded-lg px-4 py-3 text-sage-100 placeholder-sage-500 focus:outline-none focus:border-terracotta/50 focus:ring-1 focus:ring-terracotta/20 transition-all"
           disabled={loading}
         />
-        <button onClick={() => handleSend(input)} disabled={loading || !input.trim()} className="button">
+        <button
+            onClick={() => handleSend(input)}
+            disabled={loading || !input.trim()}
+            className="btn-primary"
+        >
           Send
         </button>
       </div>
