@@ -32,90 +32,101 @@ export default function DesktopHome({
   onGameSelect,
 }: DesktopHomeProps) {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar
-        onGamesProcessed={onGamesProcessed}
-        onGameSelect={onGameSelect}
-        selectedGameId={selectedGameId}
-        refreshKey={refreshKey}
-      />
+    <div className="flex min-h-screen bg-sage-900 text-sage-100">
+      <div className="w-80 flex-shrink-0 z-20">
+        <Sidebar
+          onGamesProcessed={onGamesProcessed}
+          onGameSelect={onGameSelect}
+          selectedGameId={selectedGameId}
+          refreshKey={refreshKey}
+        />
+      </div>
 
-      <main style={{ flex: 1, padding: '20px', marginLeft: '300px' }}>
-        <div
-          style={{
-            marginBottom: '20px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '10px',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <button
+      <main className="flex-1 p-6 overflow-x-hidden">
+        <div className="mb-6 flex flex-wrap justify-between items-center gap-4">
+          <div className="flex flex-wrap gap-2">
+            <TabButton
+              active={activeTab === 'chat'}
               onClick={() => setActiveTab('chat')}
-              style={tabStyle(activeTab === 'chat')}
-            >
-              Dashboard & Chat
-            </button>
-            <button
+              label="Dashboard & Chat"
+            />
+            <TabButton
+              active={activeTab === 'replay'}
               onClick={() => setActiveTab('replay')}
-              style={tabStyle(activeTab === 'replay')}
-            >
-              Game Inspector (Replay)
-            </button>
-            <button
+              label="Game Inspector"
+            />
+            <TabButton
+              active={activeTab === 'openings'}
               onClick={() => setActiveTab('openings')}
-              style={{ ...tabStyle(activeTab === 'openings'), marginLeft: '10px' }}
-            >
-              Opening Explorer
-            </button>
-            <button
+              label="Opening Explorer"
+            />
+            <TabButton
+              active={activeTab === 'lichess'}
               onClick={() => setActiveTab('lichess')}
-              style={{ ...tabStyle(activeTab === 'lichess'), marginLeft: '10px', background: activeTab === 'lichess' ? '#8b5cf6' : '#e5e7eb' }}
-            >
-              Lichess Live
-            </button>
-            <button
+              label="Lichess Live"
+              special="lichess"
+            />
+            <TabButton
+              active={activeTab === 'dna'}
               onClick={() => setActiveTab('dna')}
-              style={{ ...tabStyle(activeTab === 'dna'), marginLeft: '10px', background: activeTab === 'dna' ? '#111827' : '#e5e7eb' }}
-            >
-              Blunder DNA
-            </button>
+              label="Blunder DNA"
+              special="dna"
+            />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="flex items-center gap-4 flex-wrap justify-end">
             <EngineCoverageWidget compact active={Boolean(importStatus || engineStatus)} />
 
             {importStatus && (
-              <div style={{ color: '#059669', fontSize: '14px' }}>{importStatus}</div>
+              <div className="text-sm font-medium text-emerald-400 animate-pulse">{importStatus}</div>
             )}
 
             {engineStatus && (
-              <div style={{ color: '#7c3aed', fontSize: '14px' }}>{engineStatus}</div>
+              <div className="text-sm font-medium text-ochre animate-pulse">{engineStatus}</div>
             )}
           </div>
         </div>
 
-        {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} currentPage={activeTab} />}
-        {activeTab === 'replay' && <GameInspector key={refreshKey} />}
-        {activeTab === 'openings' && <OpeningExplorer />}
-        {activeTab === 'lichess' && <LichessLiveTab />}
-        {activeTab === 'dna' && <BlunderDnaTab />}
+        <div className="relative">
+          {activeTab === 'chat' && <ChatTab selectedGameId={selectedGameId} currentPage={activeTab} />}
+          {activeTab === 'replay' && <GameInspector key={refreshKey} />}
+          {activeTab === 'openings' && <OpeningExplorer />}
+          {activeTab === 'lichess' && <LichessLiveTab />}
+          {activeTab === 'dna' && <BlunderDnaTab />}
+        </div>
       </main>
     </div>
   )
 }
 
-function tabStyle(active: boolean): React.CSSProperties {
-  return {
-    padding: '10px 20px',
-    marginRight: '10px',
-    background: active ? '#2563eb' : '#e5e7eb',
-    color: active ? 'white' : '#374151',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  }
-}
+function TabButton({
+  active,
+  onClick,
+  label,
+  special
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  special?: 'lichess' | 'dna'
+}) {
+  let baseClass = "px-4 py-2 rounded-lg font-medium transition-all duration-200 border"
 
+  if (active) {
+    if (special === 'lichess') {
+      baseClass += " bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-900/50"
+    } else if (special === 'dna') {
+      baseClass += " bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-900/50"
+    } else {
+      baseClass += " bg-terracotta text-sage-900 border-terracotta shadow-lg shadow-terracotta/20"
+    }
+  } else {
+    baseClass += " bg-sage-800/50 text-sage-300 border-white/5 hover:bg-sage-700/70 hover:text-sage-100 hover:border-white/10"
+  }
+
+  return (
+    <button onClick={onClick} className={baseClass}>
+      {label}
+    </button>
+  )
+}

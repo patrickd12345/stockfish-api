@@ -160,183 +160,81 @@ export default function MobileGameDrawer({
 
   const hasPreview = moveHistory.length > 0 && currentMoveIdx >= 0
 
-  const overlayStyle = useMemo<React.CSSProperties>(
-    () => ({
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.35)',
-      zIndex: 1000,
-      display: 'flex',
-      justifyContent: 'flex-start',
-      alignItems: 'stretch',
-      paddingTop: 'env(safe-area-inset-top)',
-      paddingBottom: 'env(safe-area-inset-bottom)',
-    }),
-    []
-  )
-
-  const panelStyle = useMemo<React.CSSProperties>(
-    () => ({
-      width: 'min(92vw, 420px)',
-      height: '100%',
-      background: '#111827',
-      color: 'white',
-      boxShadow: '4px 0 18px rgba(0,0,0,0.25)',
-      display: 'flex',
-      flexDirection: 'column',
-    }),
-    []
-  )
-
   if (!open) {
     return null
   }
 
   return (
-    <div style={overlayStyle} onClick={onClose} role="dialog" aria-label="Games drawer">
-      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
-        <div
-          style={{
-            padding: '14px 14px 10px 14px',
-            borderBottom: '1px solid rgba(255,255,255,0.12)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-          }}
-        >
-          <div style={{ fontWeight: 800, fontSize: '16px' }}>Games</div>
+    <div className="fixed inset-0 bg-sage-950/80 backdrop-blur-sm z-[1000] flex justify-start items-stretch pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" onClick={onClose} role="dialog" aria-label="Games drawer">
+      <div
+        className="w-[min(92vw,420px)] h-full bg-sage-900 text-sage-100 shadow-2xl flex flex-col border-r border-white/5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-white/5 flex items-center justify-between gap-3">
+          <div className="font-bold text-lg text-terracotta tracking-tight">Games</div>
           <button
             onClick={onClose}
-            className="button"
-            style={{
-              padding: '8px 12px',
-              background: '#374151',
-              fontSize: '14px',
-            }}
+            className="btn-secondary py-2 px-3 text-sm"
           >
             Close
           </button>
         </div>
 
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="p-4 border-b border-white/5 bg-sage-800/20">
           <input
             type="text"
             placeholder="Search white, black, opening..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 10px',
-              borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: '#0b1220',
-              color: 'white',
-              outline: 'none',
-            }}
+            className="w-full bg-sage-900 border border-sage-700/50 rounded-lg px-3 py-2.5 text-sage-100 placeholder-sage-500 focus:outline-none focus:border-terracotta/50 focus:ring-1 focus:ring-terracotta/20 transition-all"
           />
 
-          <div style={{ marginTop: '10px' }}>
-            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '10px' }}>
+          <div className="mt-4">
+            <div className="text-xs font-bold text-sage-400 uppercase tracking-widest mb-2 opacity-80">
               Preview
             </div>
-            <div style={{ background: '#0b1220', borderRadius: '12px', padding: '10px' }}>
+            <div className="bg-sage-800 rounded-xl p-3 shadow-inner border border-white/5 flex justify-center">
               <ChessBoard fen={boardFen} size="240px" />
             </div>
 
-            <div
-              style={{
-                marginTop: '10px',
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '6px',
-                flexWrap: 'wrap',
-              }}
-            >
-              <button
-                onClick={() => navigateTo(0)}
-                disabled={!hasPreview || currentMoveIdx === 0}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === 0)}
-                title="Start"
-              >
-                «
-              </button>
-              <button
-                onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))}
-                disabled={!hasPreview || currentMoveIdx === 0}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === 0)}
-                title="Back 5"
-              >
-                -5
-              </button>
-              <button
-                onClick={() => navigateTo(currentMoveIdx - 1)}
-                disabled={!hasPreview || currentMoveIdx === 0}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === 0)}
-                title="Back"
-              >
-                ‹
-              </button>
-              <button
-                onClick={() => navigateTo(currentMoveIdx + 1)}
-                disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === moveHistory.length - 1)}
-                title="Forward"
-              >
-                ›
-              </button>
-              <button
-                onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))}
-                disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === moveHistory.length - 1)}
-                title="Forward 5"
-              >
-                +5
-              </button>
-              <button
-                onClick={() => navigateTo(moveHistory.length - 1)}
-                disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1}
-                style={navBtnStyle(!hasPreview || currentMoveIdx === moveHistory.length - 1)}
-                title="End"
-              >
-                »
-              </button>
+            <div className="mt-3 flex justify-center gap-1.5 flex-wrap">
+              <NavButton onClick={() => navigateTo(0)} disabled={!hasPreview || currentMoveIdx === 0} label="«" title="Start" />
+              <NavButton onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))} disabled={!hasPreview || currentMoveIdx === 0} label="-5" title="Back 5" />
+              <NavButton onClick={() => navigateTo(currentMoveIdx - 1)} disabled={!hasPreview || currentMoveIdx === 0} label="‹" title="Back" />
+              <NavButton onClick={() => navigateTo(currentMoveIdx + 1)} disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1} label="›" title="Forward" />
+              <NavButton onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))} disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1} label="+5" title="Forward 5" />
+              <NavButton onClick={() => navigateTo(moveHistory.length - 1)} disabled={!hasPreview || currentMoveIdx === moveHistory.length - 1} label="»" title="End" />
             </div>
 
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>
+            <div className="mt-2 text-xs text-sage-500 text-center font-mono">
               {hasPreview ? `Move ${Math.floor(currentMoveIdx / 2) + 1}` : 'Select a game to preview'}
             </div>
           </div>
-
-          {/* Manual Stockfish queue controls removed: analysis runs automatically after startup import. */}
         </div>
 
-        <div style={{ padding: '12px 14px', flex: 1, overflowY: 'auto' }}>
-          {searching && <div style={{ fontSize: '12px', color: '#9ca3af' }}>Searching...</div>}
-          {error && <div style={{ fontSize: '12px', color: '#fca5a5' }}>{error}</div>}
+        <div className="p-4 flex-1 overflow-y-auto scrollbar-hide bg-sage-900/50">
+          {searching && <div className="text-sm text-sage-400 text-center py-4">Searching...</div>}
+          {error && <div className="text-sm text-rose-400 text-center py-4">{error}</div>}
           {!searching && !error && games.length === 0 && (
-            <div style={{ fontSize: '12px', color: '#9ca3af' }}>No games found.</div>
+            <div className="text-sm text-sage-500 text-center py-4 italic">No games found.</div>
           )}
 
-          <div style={{ display: 'grid', gap: '10px' }}>
+          <div className="flex flex-col gap-3">
             {games.map((game) => {
               const isSelected = selectedGameId === game.id
               const status = getGameStatus(game)
               const origin = inferGameOriginFromPgn(game.pgn_text)
 
-              let bgColor = '#0b1220'
-              let borderColor = 'rgba(255,255,255,0.12)'
-              let subTextColor = '#9ca3af'
+              let cardClass = "w-full text-left p-3 rounded-xl border transition-all duration-200 relative group active:scale-[0.98] "
 
               if (isSelected) {
-                bgColor = '#1d4ed8'
-                borderColor = '#60a5fa'
-                subTextColor = '#dbeafe'
+                cardClass += "bg-terracotta text-sage-900 border-terracotta shadow-lg shadow-terracotta/20"
               } else if (status === 'win') {
-                bgColor = '#065f46'
+                cardClass += "bg-emerald-900/20 text-emerald-100 border-emerald-800/30 active:bg-emerald-900/30"
               } else if (status === 'loss') {
-                bgColor = '#991b1b'
-                subTextColor = '#fecaca'
+                cardClass += "bg-rose-900/20 text-rose-100 border-rose-800/30 active:bg-rose-900/30"
+              } else {
+                cardClass += "bg-sage-800/40 text-sage-300 border-white/5 active:bg-sage-800/60"
               }
 
               return (
@@ -344,42 +242,20 @@ export default function MobileGameDrawer({
                   key={game.id}
                   type="button"
                   onClick={() => onGameSelect(game.id)}
-                  style={{
-                    textAlign: 'left',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    border: `1px solid ${borderColor}`,
-                    background: bgColor,
-                    color: 'white',
-                    cursor: 'pointer',
-                  }}
+                  className={cardClass}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                    <div style={{ fontWeight: 800, fontSize: '14px' }}>
-                      {game.white || 'White'} vs {game.black || 'Black'}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="font-bold text-sm truncate">
+                      {game.white || 'White'} <span className="text-xs opacity-70 font-normal">vs</span> {game.black || 'Black'}
                     </div>
-                    <div
-                      aria-label={`Game origin: ${formatOriginLabel(origin)}`}
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        padding: '2px 6px',
-                        borderRadius: '999px',
-                        letterSpacing: '0.06em',
-                        textTransform: 'uppercase',
-                        background: 'rgba(0,0,0,0.22)',
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        color: subTextColor,
-                        flexShrink: 0,
-                      }}
-                    >
+                    <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${isSelected ? 'border-sage-900/20 bg-sage-900/10 text-sage-900' : 'border-white/10 bg-black/20 text-sage-400'}`}>
                       {formatOriginLabel(origin)}
                     </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: subTextColor, marginTop: '4px' }}>
+                  <div className={`text-xs truncate mb-1 ${isSelected ? 'text-sage-900/80' : 'text-sage-400'}`}>
                     {game.opening_name || 'Unknown Opening'}
                   </div>
-                  <div style={{ fontSize: '12px', color: subTextColor, marginTop: '4px' }}>
+                  <div className={`text-[10px] ${isSelected ? 'text-sage-900/70' : 'text-sage-500'}`}>
                     {(game.date || 'Unknown date') + ' • ' + (game.result || '*')}
                   </div>
                 </button>
@@ -392,16 +268,15 @@ export default function MobileGameDrawer({
   )
 }
 
-function navBtnStyle(disabled: boolean): React.CSSProperties {
-  return {
-    padding: '8px 10px',
-    borderRadius: '10px',
-    border: '1px solid rgba(255,255,255,0.12)',
-    background: '#374151',
-    color: 'white',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.55 : 1,
-    minWidth: '42px',
-  }
+function NavButton({ onClick, disabled, label, title }: { onClick: () => void, disabled: boolean, label: string, title: string }) {
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            title={title}
+            className="w-10 h-10 flex items-center justify-center bg-sage-800 text-sage-300 rounded-lg hover:bg-sage-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium border border-white/5 active:scale-95"
+        >
+            {label}
+        </button>
+    )
 }
-

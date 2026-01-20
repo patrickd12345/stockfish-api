@@ -132,190 +132,95 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
 
   const extractTimeFromPgn = (pgnText: string | undefined): string | null => {
     if (!pgnText) return null
-    
-    // Try to extract time from PGN headers
-    // Common formats: [UTCTime "19:42:48"], [StartTime "19:42:48"], [Time "19:42:48"]
     const timeMatch = pgnText.match(/\[(?:UTC|Start)?Time\s+"([^"]+)"\]/i)
     if (timeMatch && timeMatch[1]) {
       return timeMatch[1]
     }
-    
     return null
   }
 
   const formatDateWithEST = (dateStr: string | undefined, pgnText: string | undefined): string => {
     if (!dateStr) return 'Unknown date'
-    
     const timeStr = extractTimeFromPgn(pgnText)
     if (timeStr) {
-      // Parse time string (format: "HH:MM:SS" or "HH:MM")
       const timeParts = timeStr.split(':')
       if (timeParts.length >= 2) {
         const hours = parseInt(timeParts[0], 10)
         const minutes = parseInt(timeParts[1], 10)
-        
-        // Parse date string (format: "2026.01.17")
         const dateParts = dateStr.split('.')
         if (dateParts.length === 3) {
           const year = parseInt(dateParts[0], 10)
-          const month = parseInt(dateParts[1], 10) - 1 // Month is 0-indexed
+          const month = parseInt(dateParts[1], 10) - 1
           const day = parseInt(dateParts[2], 10)
-          
-          // Create a date object with the game date and UTC time
           const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, 0))
-          
-          // Convert to EST
           const estTime = utcDate.toLocaleTimeString('en-US', {
             timeZone: 'America/New_York',
             hour: 'numeric',
             minute: '2-digit',
             hour12: true
           })
-          
           return `${dateStr} ${estTime} EST`
         }
       }
     }
-    
     return dateStr
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        width: '280px',
-        height: '100vh',
-        background: '#1f2937',
-        color: 'white',
-        padding: '20px',
-        overflowY: 'auto',
-      }}
-    >
-      <div style={{ marginTop: '10px' }}>
-        <h2 style={{ marginBottom: '20px', fontSize: '18px' }}>Game Preview</h2>
-        <div style={{ marginBottom: '15px', background: '#374151', padding: '10px', borderRadius: '8px' }}>
+    <div className="fixed left-0 top-0 h-full w-80 bg-sage-900/95 backdrop-blur-xl border-r border-white/5 flex flex-col z-30 shadow-2xl">
+      <div className="p-4 bg-sage-900/50 border-b border-white/5">
+        <h2 className="text-sm font-semibold text-sage-300 uppercase tracking-wider mb-3">Game Preview</h2>
+        <div className="mb-3 bg-sage-800 rounded-lg p-2 shadow-inner border border-white/5">
           <ChessBoard fen={boardFen} size="200px" />
         </div>
         
         {/* CD Player Controls */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          gap: '4px', 
-          marginBottom: '15px',
-          background: '#111827',
-          padding: '8px',
-          borderRadius: '8px'
-        }}>
-          <button
-            onClick={() => navigateTo(0)}
-            disabled={moveHistory.length === 0 || currentMoveIdx === 0}
-            title="Go to Beginning"
-            aria-label="Go to Beginning"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
-          >
-            «
-          </button>
-          <button
-            onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))}
-            disabled={moveHistory.length === 0 || currentMoveIdx === 0}
-            title="Back 5"
-            aria-label="Back 5 moves"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
-          >
-            -5
-          </button>
-          <button
-            onClick={() => navigateTo(currentMoveIdx - 1)}
-            disabled={moveHistory.length === 0 || currentMoveIdx === 0}
-            title="Back"
-            aria-label="Back one move"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === 0 ? 0.5 : 1 }}
-          >
-            ‹
-          </button>
-          <button
-            onClick={() => navigateTo(currentMoveIdx + 1)}
-            disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
-            title="Forward"
-            aria-label="Forward one move"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
-          >
-            ›
-          </button>
-          <button
-            onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))}
-            disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
-            title="Forward 5"
-            aria-label="Forward 5 moves"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
-          >
-            +5
-          </button>
-          <button
-            onClick={() => navigateTo(moveHistory.length - 1)}
-            disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1}
-            title="End"
-            aria-label="Go to End"
-            style={{ padding: '4px 8px', background: '#374151', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', opacity: currentMoveIdx === moveHistory.length - 1 ? 0.5 : 1 }}
-          >
-            »
-          </button>
+        <div className="flex justify-center gap-1 bg-sage-950/50 p-2 rounded-lg border border-white/5">
+          <ControlButton onClick={() => navigateTo(0)} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="«" title="Start" />
+          <ControlButton onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="-5" title="Back 5" />
+          <ControlButton onClick={() => navigateTo(currentMoveIdx - 1)} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="‹" title="Back" />
+          <ControlButton onClick={() => navigateTo(currentMoveIdx + 1)} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="›" title="Forward" />
+          <ControlButton onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="+5" title="Forward 5" />
+          <ControlButton onClick={() => navigateTo(moveHistory.length - 1)} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="»" title="End" />
         </div>
 
-        <div style={{ fontSize: '12px', textAlign: 'center', color: '#9ca3af', marginBottom: '10px' }}>
-          {moveHistory.length > 0 ? `Move ${Math.floor(currentMoveIdx / 2) + 1} (${currentMoveIdx}/${moveHistory.length - 1})` : 'Select a game to preview'}
+        <div className="mt-2 text-xs text-center text-sage-500 font-mono">
+          {moveHistory.length > 0 ? `Move ${Math.floor(currentMoveIdx / 2) + 1} (${currentMoveIdx}/${moveHistory.length - 1})` : 'Select a game'}
         </div>
       </div>
 
-      <div style={{ marginTop: '40px', borderTop: '1px solid #4b5563', paddingTop: '20px' }}>
-        <h2 style={{ marginBottom: '20px', fontSize: '20px' }}>Search Games</h2>
-        <input
-          type="text"
-          placeholder="Search white, black, opening..."
-          aria-label="Search games"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '8px',
-            marginBottom: '15px',
-            border: '1px solid #4b5563',
-            borderRadius: '6px',
-            background: '#374151',
-            color: 'white',
-          }}
-        />
+      <div className="flex-1 flex flex-col min-h-0 bg-sage-900/30">
+        <div className="p-4 pb-2">
+            <h2 className="text-sm font-semibold text-sage-300 uppercase tracking-wider mb-2">History</h2>
+            <input
+            type="text"
+            placeholder="Search opponent, opening..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-sage-800/50 border border-sage-700/50 text-sage-200 text-sm rounded-md px-3 py-2 placeholder-sage-600 focus:outline-none focus:border-terracotta/50 transition-colors"
+            />
+        </div>
         
-        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-          {searching && <div style={{ fontSize: '12px', color: '#9ca3af' }}>Searching...</div>}
+        <div className="flex-1 overflow-y-auto px-2 pb-4 scrollbar-hide">
+          {searching && <div className="text-xs text-sage-500 text-center py-4">Searching...</div>}
           {!searching && games.length === 0 && (
-            <div style={{ fontSize: '12px', color: '#9ca3af' }}>No games found.</div>
+            <div className="text-xs text-sage-500 text-center py-4">No games found.</div>
           )}
           {games.map((game) => {
             const status = getGameStatus(game)
             const isSelected = selectedGameId === game.id
             const origin = inferGameOriginFromPgn(game.pgn_text)
             
-            let bgColor = '#374151'
-            let textColor = 'white'
-            let subTextColor = '#9ca3af'
+            let cardClass = "mb-2 p-3 rounded-lg cursor-pointer border transition-all duration-200 relative group overflow-hidden "
 
             if (isSelected) {
-              bgColor = '#2563eb'
-              textColor = 'white'
-              subTextColor = '#dbeafe'
+              cardClass += "bg-terracotta text-sage-900 border-terracotta shadow-md shadow-terracotta/10"
             } else if (status === 'win') {
-              bgColor = '#047857' // Softer Emerald 700
-              textColor = 'white'
-              subTextColor = '#d1d5db'
+              cardClass += "bg-emerald-900/20 text-emerald-100 border-emerald-800/30 hover:bg-emerald-900/30"
             } else if (status === 'loss') {
-              bgColor = '#b91c1c' // Softer Red 700
-              textColor = 'white'
-              subTextColor = '#fecaca'
+              cardClass += "bg-rose-900/20 text-rose-100 border-rose-800/30 hover:bg-rose-900/30"
+            } else {
+              cardClass += "bg-sage-800/40 text-sage-300 border-white/5 hover:bg-sage-800/60"
             }
 
             return (
@@ -331,44 +236,20 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                style={{
-                  padding: '10px',
-                  marginBottom: '8px',
-                  background: bgColor,
-                  color: textColor,
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  border: isSelected ? '1px solid #60a5fa' : '1px solid transparent',
-                  transition: 'background 0.2s'
-                }}
+                className={cardClass}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <div style={{ fontWeight: 'bold' }}>
-                    {game.white} vs {game.black}
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="font-semibold text-sm truncate">
+                    {game.white} <span className="text-xs opacity-70">vs</span> {game.black}
                   </div>
-                  <div
-                    aria-label={`Game origin: ${formatOriginLabel(origin)}`}
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      padding: '2px 6px',
-                      borderRadius: '999px',
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
-                      background: 'rgba(0,0,0,0.22)',
-                      border: '1px solid rgba(255,255,255,0.18)',
-                      color: subTextColor,
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${isSelected ? 'border-sage-900/20 bg-sage-900/10 text-sage-900' : 'border-white/10 bg-black/20 text-sage-400'}`}>
                     {formatOriginLabel(origin)}
                   </div>
                 </div>
-                <div style={{ fontSize: '11px', color: subTextColor }}>
+                <div className={`text-xs truncate ${isSelected ? 'text-sage-800' : 'text-sage-400'}`}>
                   {game.opening_name || 'Unknown Opening'}
                 </div>
-                <div style={{ fontSize: '11px', color: subTextColor }}>
+                <div className={`text-[10px] mt-1 ${isSelected ? 'text-sage-800/70' : 'text-sage-500'}`}>
                   {formatDateWithEST(game.date, game.pgn_text)} • {game.result}
                 </div>
               </div>
@@ -376,8 +257,19 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
           })}
         </div>
       </div>
-
-      {/* Manual Stockfish queue controls removed: analysis runs automatically after startup import. */}
     </div>
   )
+}
+
+function ControlButton({ onClick, disabled, label, title }: { onClick: () => void, disabled: boolean, label: string, title: string }) {
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            title={title}
+            className="w-8 h-8 flex items-center justify-center bg-sage-800 text-sage-300 rounded hover:bg-sage-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+        >
+            {label}
+        </button>
+    )
 }
