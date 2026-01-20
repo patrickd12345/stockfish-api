@@ -138,6 +138,7 @@ export default function LichessLiveTab() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [session, setSession] = useState<LichessSession | null>(null)
   const [myAccount, setMyAccount] = useState<LichessAccount | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
   const [seeking, setSeeking] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [isResigning, setIsResigning] = useState(false)
@@ -310,6 +311,38 @@ export default function LichessLiveTab() {
       setActionError(err instanceof Error ? err.message : 'Failed to stop session')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    if (disconnecting) return
+    setDisconnecting(true)
+    setActionError(null)
+    try {
+      // Best-effort stop first (avoids leaving stream handlers running).
+      try {
+        await fetch('/api/lichess/board/session/stop', { method: 'POST' })
+      } catch {
+        // ignore
+      }
+
+      const res = await fetch('/api/lichess/oauth/revoke', { method: 'POST' })
+      let data: any = {}
+      try {
+        data = await res.json()
+      } catch {
+        data = { error: await res.text() }
+      }
+      if (!res.ok) throw new Error(data.error || 'Failed to disconnect')
+
+      // Cookie is cleared server-side; update UI state immediately.
+      setSession(null)
+      setMyAccount(null)
+      await refreshState()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to disconnect')
+    } finally {
+      setDisconnecting(false)
     }
   }
 
@@ -605,6 +638,15 @@ export default function LichessLiveTab() {
           {(!session || session.status === 'error') && (
             <button onClick={handleConnect} className="btn-secondary">
               Reconnect Lichess
+            </button>
+          )}
+          {session && session.status !== 'idle' && (
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting || loading}
+              className="btn-secondary bg-rose-900/30 text-rose-200 border-rose-800/50 hover:bg-rose-900/50 disabled:opacity-50"
+            >
+              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
             </button>
           )}
           {!session || session.status === 'idle' ? (
