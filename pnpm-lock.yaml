@@ -25,7 +25,7 @@ importers:
         version: 14.2.35(@babel/core@7.28.6)(@playwright/test@1.57.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       openai:
         specifier: ^4.47.0
-        version: 4.104.0(ws@8.19.0)(zod@4.3.5)
+        version: 4.104.0(ws@8.19.0)(zod@3.23.8)
       react:
         specifier: ^18.3.0
         version: 18.3.1
@@ -42,8 +42,8 @@ importers:
         specifier: ^20.2.0
         version: 20.2.0(@types/node@20.19.30)
       zod:
-        specifier: ^4.3.5
-        version: 4.3.5
+        specifier: ^3.23.8
+        version: 3.23.8
     devDependencies:
       '@playwright/test':
         specifier: ^1.57.0
@@ -3105,8 +3105,8 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  zod@4.3.5:
-    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
+  zod@3.23.8:
+    resolution: {integrity: sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==}
 
 snapshots:
 
@@ -5409,7 +5409,7 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@4.104.0(ws@8.19.0)(zod@4.3.5):
+  openai@4.104.0(ws@8.19.0)(zod@3.23.8):
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13
@@ -5420,7 +5420,7 @@ snapshots:
       node-fetch: 2.7.0
     optionalDependencies:
       ws: 8.19.0
-      zod: 4.3.5
+      zod: 3.23.8
     transitivePeerDependencies:
       - encoding
 
@@ -6252,4 +6252,4 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod@4.3.5: {}
+  zod@3.23.8: {}
