@@ -1,8 +1,9 @@
 'use client'
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react'
-import { Chess } from 'chess.js'
+import { Chess, Move } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
+import { getSquareCoordinates, getSquareFromCoordinates, moveToSpeech } from '@/lib/accessibility'
 
 interface ChessBoardProps {
   fen?: string
@@ -139,6 +140,8 @@ export default function ChessBoard({
   const [game, setGame] = useState(() => buildGame(fen))
   const [position, setPosition] = useState(game.fen())
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
+  const [focusedSquare, setFocusedSquare] = useState<string | null>(null)
+  const [announcement, setAnnouncement] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
   const themeStyles = useMemo(() => getThemeStyles(theme), [theme])
@@ -151,6 +154,7 @@ export default function ChessBoard({
     setGame(nextGame)
     setPosition(nextGame.fen())
     setSelectedSquare(null)
+    setAnnouncement('')
   }, [fen])
 
   useEffect(() => {
@@ -212,6 +216,9 @@ export default function ChessBoard({
         promotion: 'q',
       })
       if (!move) return false
+
+      // Announce the move
+      setAnnouncement(moveToSpeech(move))
     } catch {
       return false
     }
@@ -250,10 +257,19 @@ export default function ChessBoard({
     const styles: Record<string, CSSProperties> = { ...(highlightSquares ?? {}) }
     const isWood = theme === 'wood'
 
+    if (focusedSquare) {
+      styles[focusedSquare] = {
+        ...(styles[focusedSquare] ?? {}),
+        // High contrast focus ring (Double border: Black outer, White inner) to pass WCAG on any color
+        boxShadow: 'inset 0 0 0 2px #ffffff, inset 0 0 0 4px #000000',
+        zIndex: 10,
+      }
+    }
+
     if (selectedSquare) {
       styles[selectedSquare] = {
         ...(styles[selectedSquare] ?? {}),
-        boxShadow: 'inset 0 0 0 4px rgba(59, 130, 246, 0.95)',
+        boxShadow: (styles[selectedSquare]?.boxShadow ? styles[selectedSquare].boxShadow + ', ' : '') + 'inset 0 0 0 4px rgba(59, 130, 246, 0.95)',
       }
     }
 
@@ -326,7 +342,66 @@ export default function ChessBoard({
 
     // Otherwise attempt move from selectedSquare to clicked square.
     const ok = applyLocalMove(selectedSquare, square)
-    if (!ok) setSelectedSquare(null)
+    if (!ok) {
+        setSelectedSquare(null)
+        setAnnouncement('Illegal move')
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!canInteract) return
+
+    // If no focus yet, start at sensible default (e4 for white, e5 for black usually, or just a1/h8)
+    if (!focusedSquare) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Tab') {
+        // Default to center-ish
+        setFocusedSquare('e4')
+        return
+      }
+      return
+    }
+
+    const { row, col } = getSquareCoordinates(focusedSquare)
+    let nextRow = row
+    let nextCol = col
+    let handled = true
+
+    // Flip controls if orientation is black
+    const isFlipped = orientation === 'black'
+
+    switch (e.key) {
+      case 'ArrowUp':
+        nextRow = isFlipped ? row - 1 : row + 1
+        break
+      case 'ArrowDown':
+        nextRow = isFlipped ? row + 1 : row - 1
+        break
+      case 'ArrowLeft':
+        nextCol = isFlipped ? col + 1 : col - 1
+        break
+      case 'ArrowRight':
+        nextCol = isFlipped ? col - 1 : col + 1
+        break
+      case ' ':
+      case 'Enter':
+        e.preventDefault() // prevent scrolling
+        handleSquareClick(focusedSquare)
+        return
+      case 'Escape':
+        setSelectedSquare(null)
+        setFocusedSquare(null) // Optional: lose focus or just clear selection? Contract says "cancel selection / clear active piece"
+        return
+      default:
+        handled = false
+    }
+
+    if (handled) {
+      e.preventDefault()
+      const nextSquare = getSquareFromCoordinates(nextRow, nextCol)
+      if (nextSquare) {
+        setFocusedSquare(nextSquare)
+      }
+    }
   }
 
   const maxWidth = toCssSize(size)
@@ -349,8 +424,22 @@ export default function ChessBoard({
     <div
       data-testid="chessboard-interactive"
       ref={containerRef}
-      style={{ maxWidth, width: '100%', margin: '0 auto' }}
+      style={{ maxWidth, width: '100%', margin: '0 auto', outline: 'none' }}
+      tabIndex={0}
+      role="grid"
+      aria-label={`Chess Board. ${isMyTurn ? 'Your turn.' : 'Waiting for opponent.'}`}
+      onKeyDown={handleKeyDown}
+      onFocus={() => {
+        if (!focusedSquare) setFocusedSquare('e4')
+      }}
+      onBlur={() => {
+        // Optional: clear focusedSquare on blur if desired, but keeping it can be useful
+        // setFocusedSquare(null)
+      }}
     >
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </div>
       <Chessboard
         position={position}
         boardWidth={boardWidth}

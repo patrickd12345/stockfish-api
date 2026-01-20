@@ -375,6 +375,8 @@ export default function MobileGameDrawer({
                   key={game.id}
                   type="button"
                   onClick={() => onGameSelect(game.id)}
+                  aria-current={isSelected ? 'true' : undefined}
+                  aria-label={`Game: ${game.white} versus ${game.black}, Result: ${game.result}, Date: ${game.date}`}
                   style={{
                     textAlign: 'left',
                     padding: '12px',
@@ -386,7 +388,7 @@ export default function MobileGameDrawer({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                    <div style={{ fontWeight: 800, fontSize: '14px' }}>
+                    <div style={{ fontWeight: 800, fontSize: '14px' }} aria-hidden="true">
                       {game.white || 'White'} vs {game.black || 'Black'}
                     </div>
                     <div
