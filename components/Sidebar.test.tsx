@@ -84,20 +84,9 @@ describe('components/Sidebar', () => {
       )
     })
 
-    // Click game row (using keyboard now)
+    // Select game row (keyboard activation)
     const row = await screen.findByText(/Alice/i)
-    // Find the parent button (since we added role="button" to the row)
-    // Actually the text is inside the div with role="button"
-
-    // We can focus it. It should have tabIndex 0
-    // user.tab() is a bit tricky, but we can try to find the element and focus it or click it.
-
-    // Check if it is focusable?
-    // The element containing "Alice vs Bob" is a child of the row.
-    // The row itself has the click handler.
-
-    // Let's verify we can trigger it with Enter key
-    const gameRow = row.closest('[role="button"]')
+    const gameRow = row.closest('button,[role="button"]')
     if (!gameRow) throw new Error('Game row not found')
 
     ;(gameRow as HTMLElement).focus()
