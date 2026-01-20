@@ -325,6 +325,12 @@ export default function LichessLiveTab() {
       } catch {
         // ignore
       }
+      // Ensure we don't "resume" a stale active game after reconnect.
+      try {
+        await fetch('/api/lichess/board/session/clear-active', { method: 'POST' })
+      } catch {
+        // ignore
+      }
 
       const res = await fetch('/api/lichess/oauth/revoke', { method: 'POST' })
       let data: any = {}
@@ -860,9 +866,23 @@ export default function LichessLiveTab() {
                 <div className="min-w-0 truncate">
                   Game over: {formatStatus(liveGameState.status)} vs {liveGameState.opponentName || 'Opponent'}
                 </div>
-                <button onClick={() => refreshState()} className="text-amber-300 hover:text-white">
-                  Refresh
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/lichess/board/session/clear-active', { method: 'POST' })
+                      } finally {
+                        refreshState()
+                      }
+                    }}
+                    className="text-amber-300 hover:text-white"
+                  >
+                    Back to lobby
+                  </button>
+                  <button onClick={() => refreshState()} className="text-amber-300 hover:text-white">
+                    Refresh
+                  </button>
+                </div>
               </div>
             ) : null}
             <div className="w-full max-w-[500px] flex justify-between items-center">

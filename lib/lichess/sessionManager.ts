@@ -353,6 +353,39 @@ export async function setSessionStatus(lichessUserId: string, status: LichessBoa
   `
 }
 
+export async function clearActiveGame(lichessUserId: string): Promise<{ clearedGameId: string | null }> {
+  await connectToDb()
+  const sql = getSql()
+
+  const rows = (await sql`
+    SELECT active_game_id
+    FROM lichess_board_sessions
+    WHERE lichess_user_id = ${lichessUserId}
+    LIMIT 1
+  `) as Array<{ active_game_id: string | null }>
+
+  const activeGameId = rows[0]?.active_game_id ?? null
+
+  await sql`
+    UPDATE lichess_board_sessions
+    SET active_game_id = null, status = 'connected', last_error = null, updated_at = now()
+    WHERE lichess_user_id = ${lichessUserId}
+  `
+
+  // If we had a "playing" row stuck, mark it as aborted so it won't be treated as live forever.
+  if (activeGameId) {
+    await sql`
+      UPDATE lichess_game_states
+      SET status = 'aborted', updated_at = now()
+      WHERE lichess_user_id = ${lichessUserId}
+        AND game_id = ${activeGameId}
+        AND status IN ('started', 'playing')
+    `
+  }
+
+  return { clearedGameId: activeGameId }
+}
+
 export async function getSession(lichessUserId: string): Promise<LichessBoardSession | null> {
   await connectToDb()
   const sql = getSql()
