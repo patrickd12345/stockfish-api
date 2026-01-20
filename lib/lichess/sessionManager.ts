@@ -4,10 +4,112 @@ import {
   LichessChatLineEvent,
   LichessGameFinishEvent,
   LichessGameStartEvent,
+  LichessGameFullEvent,
   LichessGameStateEvent,
   LichessGameState,
   LichessBoardSession
 } from '@/lib/lichess/types'
+
+function normalizeLichessId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return trimmed.toLowerCase()
+}
+
+function inferMyColorFromGameFull(lichessUserId: string, event: LichessGameFullEvent): 'white' | 'black' | null {
+  const me = normalizeLichessId(lichessUserId)
+  if (!me) return null
+
+  const whiteId = normalizeLichessId(event.white?.id ?? event.white?.name)
+  const blackId = normalizeLichessId(event.black?.id ?? event.black?.name)
+
+  if (whiteId && whiteId === me) return 'white'
+  if (blackId && blackId === me) return 'black'
+  return null
+}
+
+export async function recordGameFull(
+  lichessUserId: string,
+  event: LichessGameFullEvent,
+  gameIdOverride?: string
+): Promise<void> {
+  await connectToDb()
+  const sql = getSql()
+
+  const gameId = gameIdOverride ?? event.id
+  if (!gameId) return
+
+  const inferredMyColor = inferMyColorFromGameFull(lichessUserId, event)
+  const myColor = inferredMyColor ?? 'white'
+
+  const opponent =
+    myColor === 'white'
+      ? event.black
+      : event.white
+
+  const initialTimeMs = typeof event.clock?.initial === 'number' ? event.clock.initial * 1000 : null
+  const initialIncrementMs = typeof event.clock?.increment === 'number' ? event.clock.increment * 1000 : null
+
+  // Ensure session points at this game if we're reconnecting mid-game.
+  await sql`
+    INSERT INTO lichess_board_sessions (lichess_user_id, status, active_game_id, last_event_at)
+    VALUES (${lichessUserId}, 'playing', ${gameId}, now())
+    ON CONFLICT (lichess_user_id)
+    DO UPDATE SET
+      status = 'playing',
+      active_game_id = ${gameId},
+      last_event_at = now(),
+      updated_at = now()
+  `
+
+  // Upsert metadata (color/opponent/initial clock). Don't clobber existing initial values once set.
+  await sql`
+    INSERT INTO lichess_game_states (
+      game_id,
+      lichess_user_id,
+      status,
+      moves,
+      fen,
+      wtime,
+      btime,
+      winc,
+      binc,
+      last_move_at,
+      last_clock_update_at,
+      my_color,
+      opponent_name,
+      opponent_rating,
+      initial_time_ms,
+      initial_increment_ms
+    ) VALUES (
+      ${gameId},
+      ${lichessUserId},
+      'started',
+      ${event.state?.moves ?? ''},
+      ${deriveFenFromMoves(event.state?.moves ?? '')},
+      ${event.state?.wtime ?? 0},
+      ${event.state?.btime ?? 0},
+      ${event.state?.winc ?? 0},
+      ${event.state?.binc ?? 0},
+      null,
+      now(),
+      ${myColor},
+      ${opponent?.name ?? opponent?.id ?? null},
+      ${typeof opponent?.rating === 'number' ? opponent.rating : null},
+      ${initialTimeMs},
+      ${initialIncrementMs}
+    )
+    ON CONFLICT (game_id)
+    DO UPDATE SET
+      my_color = COALESCE(lichess_game_states.my_color, EXCLUDED.my_color),
+      opponent_name = COALESCE(lichess_game_states.opponent_name, EXCLUDED.opponent_name),
+      opponent_rating = COALESCE(lichess_game_states.opponent_rating, EXCLUDED.opponent_rating),
+      initial_time_ms = COALESCE(lichess_game_states.initial_time_ms, EXCLUDED.initial_time_ms),
+      initial_increment_ms = COALESCE(lichess_game_states.initial_increment_ms, EXCLUDED.initial_increment_ms),
+      updated_at = now()
+  `
+}
 
 export async function ensureBoardSession(lichessUserId: string): Promise<LichessBoardSession> {
   await connectToDb()

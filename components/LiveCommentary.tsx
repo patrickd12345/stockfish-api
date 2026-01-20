@@ -7,6 +7,7 @@ import EvalGauge, { formatEvalLabel } from '@/components/EvalGauge'
 interface LiveCommentaryProps {
   fen: string
   moves: string
+  myColor?: 'white' | 'black' | null
 }
 
 const MIN_DEPTH_FOR_COMMENT = 8
@@ -45,7 +46,7 @@ const describeSwing = (delta: number) => {
   return 'shift'
 }
 
-export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
+export default function LiveCommentary({ fen, moves, myColor }: LiveCommentaryProps) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 16, lines: 1 })
   const [position, setPosition] = useState({ x: 24, y: 120 })
   const [isDragging, setIsDragging] = useState(false)
@@ -94,7 +95,13 @@ export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
     } else {
       const swingLabel = formatSwing(swing)
       const descriptor = describeSwing(swing)
-      const direction = swing > 0 ? 'toward White' : 'toward Black'
+      const directionSide = swing > 0 ? 'white' : 'black'
+      const direction =
+        myColor === 'white'
+          ? (directionSide === 'white' ? 'toward you' : 'toward your opponent')
+          : myColor === 'black'
+            ? (directionSide === 'black' ? 'toward you' : 'toward your opponent')
+            : (directionSide === 'white' ? 'toward White' : 'toward Black')
       setCommentary(
         `After ${lastMove}, evaluation moved ${swingLabel} pawns ${direction} (${descriptor}). Now ${evalLabelCompact}.`
       )
@@ -109,6 +116,7 @@ export default function LiveCommentary({ fen, moves }: LiveCommentaryProps) {
     const payload = {
       fen,
       moves,
+      myColor: myColor ?? null,
       lastMove,
       evaluation: engineState.evaluation,
       mate: engineState.mate,

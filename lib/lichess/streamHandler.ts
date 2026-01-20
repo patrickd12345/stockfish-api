@@ -1,6 +1,6 @@
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { LichessStreamEvent, LichessGameStateEvent, LichessGameFullEvent, LichessChatLineEvent } from '@/lib/lichess/types'
-import { recordGameStart, recordGameState, recordGameFinish, recordChatMessage, updateSessionError, ensureBoardSession, getSession } from '@/lib/lichess/sessionManager'
+import { recordGameStart, recordGameState, recordGameFinish, recordChatMessage, updateSessionError, ensureBoardSession, getSession, recordGameFull } from '@/lib/lichess/sessionManager'
 
 const RECONNECT_DELAY_MS = 2000
 
@@ -129,6 +129,7 @@ export class BoardStreamHandler {
         return
       case 'gameFull':
         console.log(`[Lichess Stream] Game full state received.`)
+        await recordGameFull(this.lichessUserId, event, this.activeGameId ?? undefined)
         await this.safeRecordGameState(event.state)
         return
       case 'gameFinish':
@@ -197,6 +198,7 @@ export class BoardStreamHandler {
         try {
           const event = JSON.parse(line) as LichessGameFullEvent | LichessGameStateEvent | LichessChatLineEvent
           if (event.type === 'gameFull') {
+            await recordGameFull(this.lichessUserId, event, gameId)
             await this.safeRecordGameState(event.state)
           } else if (event.type === 'gameState') {
             await this.safeRecordGameState(event)

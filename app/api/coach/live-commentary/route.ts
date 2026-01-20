@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
 
   const fen = typeof body.fen === 'string' ? body.fen : ''
   const moves = typeof body.moves === 'string' ? body.moves : ''
+  const myColor = body.myColor === 'white' || body.myColor === 'black' ? (body.myColor as 'white' | 'black') : null
   const lastMove = typeof body.lastMove === 'string' ? body.lastMove : null
   const evaluation = typeof body.evaluation === 'number' ? body.evaluation : null
   const mate = typeof body.mate === 'number' ? body.mate : null
@@ -49,6 +50,9 @@ export async function POST(request: NextRequest) {
           role: 'system',
           content:
             'You are an onboard chess coach. Write helpful, human-friendly live feedback.\n' +
+            `- The player you are coaching is playing as: ${myColor ?? 'unknown'}.\n` +
+            '- Use that POV: when you say "you", you mean that player; recommend moves for that side.\n' +
+            '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
             '- Use ALL preceding moves and the current Stockfish output.\n' +
             '- Keep it concise: 1–3 short sentences.\n' +
             '- Focus on plans/tactics and the most important mistake or opportunity.\n' +
@@ -61,6 +65,7 @@ export async function POST(request: NextRequest) {
             {
               fen,
               moves,
+              myColor,
               lastMove,
               stockfish: { evaluation, mate, depth, bestMove, bestLine, evalLabel }
             },

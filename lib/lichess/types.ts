@@ -58,6 +58,21 @@ export interface LichessChatLineEvent {
 
 export interface LichessGameFullEvent {
   type: 'gameFull'
+  id?: string
+  clock?: {
+    initial: number
+    increment: number
+  }
+  white?: {
+    id?: string
+    name?: string
+    rating?: number
+  }
+  black?: {
+    id?: string
+    name?: string
+    rating?: number
+  }
   state: LichessGameStateEvent
 }
 

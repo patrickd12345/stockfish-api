@@ -54,7 +54,11 @@ export async function POST(request: NextRequest) {
       try {
         const pgnText = await fetchQueuedGamePgn(job.gameId)
         if (!pgnText) {
-          throw new Error('Missing PGN for queued game')
+          // This can happen if the queue contains an orphaned job (game deleted) or a row with empty PGN.
+          // Do NOT attempt to write into engine_analysis (will violate FK); just fail the queue entry and move on.
+          await markEngineAnalysisJobFailed(job.id, 'Missing game/PGN for queued job')
+          failed++
+          continue
         }
 
         const result = await analyzeGameWithEngine(pgnText, stockfishPath, playerNames, analysisDepth)
@@ -63,7 +67,25 @@ export async function POST(request: NextRequest) {
         succeeded++
       } catch (e: any) {
         const reason = e?.message || 'Unknown engine analysis error'
-        await markAnalysisFailed(job.gameId, reason, 'stockfish', null, analysisDepth)
+        const code = e?.code ? String(e.code) : null
+        const reasonLower = String(reason).toLowerCase()
+
+        // If the game row is missing, engine_analysis writes will violate FK. Keep the worker healthy by
+        // only marking the queue entry failed.
+        const isMissingGame =
+          code === '23503' ||
+          reasonLower.includes('is not present in table') ||
+          reasonLower.includes('violates foreign key') ||
+          reasonLower.includes('missing game')
+
+        if (!isMissingGame) {
+          try {
+            await markAnalysisFailed(job.gameId, reason, 'stockfish', null, analysisDepth)
+          } catch (err) {
+            console.warn('Failed to record engine_analysis failure (continuing):', err)
+          }
+        }
+
         await markEngineAnalysisJobFailed(job.id, reason)
         failed++
       }

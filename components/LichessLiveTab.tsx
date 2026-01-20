@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import { useLichessBoard } from '@/hooks/useLichessBoard'
+import type { LichessAccount } from '@/lib/lichess/account'
 
 interface LichessSession {
   status: 'idle' | 'connected' | 'waiting' | 'playing' | 'finished' | 'error'
@@ -40,6 +41,13 @@ function formatClockTime(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function getPerfKeyFromMinutes(minutes: number): string {
+  if (minutes < 3) return 'bullet'
+  if (minutes < 8) return 'blitz'
+  if (minutes < 25) return 'rapid'
+  return 'classical'
 }
 
 type TimeControlPreset = { label: string; t: number; i: number }
@@ -128,6 +136,7 @@ export default function LichessLiveTab() {
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [session, setSession] = useState<LichessSession | null>(null)
+  const [myAccount, setMyAccount] = useState<LichessAccount | null>(null)
   const [seeking, setSeeking] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [isResigning, setIsResigning] = useState(false)
@@ -141,6 +150,11 @@ export default function LichessLiveTab() {
 
   const [seekTime, setSeekTime] = useState(3)
   const [seekIncrement, setSeekIncrement] = useState(2)
+  const [seekAny, setSeekAny] = useState(false)
+
+  const [ratingDiffLower, setRatingDiffLower] = useState<number | null>(null)
+  const [ratingDiffUpper, setRatingDiffUpper] = useState<number | null>(null)
+  const [ratingPreset, setRatingPreset] = useState<'any' | '0' | '100' | '200' | '300' | '500' | 'custom'>('any')
 
   const groupedTimeControls = useMemo(() => {
     const presets: TimeControlPreset[] = [
@@ -173,6 +187,28 @@ export default function LichessLiveTab() {
     ].filter((group) => group.presets.length > 0)
   }, [])
 
+  const applyRatingPreset = useCallback(
+    (preset: 'any' | '0' | '100' | '200' | '300' | '500' | 'custom') => {
+      setRatingPreset(preset)
+      if (preset === 'custom') return
+      if (preset === 'any') {
+        setRatingDiffLower(null)
+        setRatingDiffUpper(null)
+        return
+      }
+      const value = Number(preset)
+      setRatingDiffLower(value)
+      setRatingDiffUpper(value)
+    },
+    []
+  )
+
+  const ratingPayload = useMemo(() => {
+    const isAny = ratingDiffLower === null && ratingDiffUpper === null
+    if (isAny) return {}
+    return { ratingDiffLower, ratingDiffUpper }
+  }, [ratingDiffLower, ratingDiffUpper])
+
   useEffect(() => {
     const fetchSession = async () => {
       try {
@@ -188,6 +224,21 @@ export default function LichessLiveTab() {
     fetchSession()
     const interval = setInterval(fetchSession, 2000)
     return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    const fetchAccount = async () => {
+      try {
+        const res = await fetch('/api/lichess/account')
+        if (!res.ok) return
+        const data = await res.json()
+        setMyAccount(data)
+      } catch {
+        // Ignore; UI falls back to cookie id / '?'
+      }
+    }
+
+    fetchAccount()
   }, [])
 
   useEffect(() => {
@@ -269,11 +320,12 @@ export default function LichessLiveTab() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          time: seekTime,
-          increment: seekIncrement,
+          any: seekAny,
+          ...(seekAny ? {} : { time: seekTime, increment: seekIncrement }),
           rated: false,
           variant: 'standard',
-          color: 'random'
+          color: 'random',
+          ...ratingPayload,
         })
       })
       let data: any = {}
@@ -557,9 +609,11 @@ export default function LichessLiveTab() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-terracotta tracking-tight">Lichess Live Mode</h2>
         <div className="flex gap-3">
-          <button onClick={handleConnect} className="btn-secondary">
-            Reconnect Lichess
-          </button>
+          {(!session || session.status === 'error') && (
+            <button onClick={handleConnect} className="btn-secondary">
+              Reconnect Lichess
+            </button>
+          )}
           {!session || session.status === 'idle' ? (
             <button onClick={handleStartSession} disabled={loading} className="btn-primary bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500">
               {loading ? 'Starting...' : 'Start Live Session'}
@@ -604,6 +658,26 @@ export default function LichessLiveTab() {
           )}
           
           <div className="mb-8 w-full max-w-lg flex flex-col gap-4">
+            <div className="w-full flex flex-col items-center gap-2">
+              <div className="text-[11px] font-black tracking-widest uppercase text-sage-400 text-center">
+                Time control
+              </div>
+              <button
+                type="button"
+                onClick={() => setSeekAny(true)}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
+                  seekAny
+                    ? 'bg-terracotta text-sage-900 border-terracotta'
+                    : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                }`}
+              >
+                Any (first available)
+              </button>
+              <div className="text-[12px] text-sage-500 text-center">
+                Picks a very common time control to maximize match speed.
+              </div>
+            </div>
+
             {groupedTimeControls.map((group) => (
               <div key={group.category} className="w-full">
                 <div className="mb-2 text-[11px] font-black tracking-widest uppercase text-sage-400 text-center">
@@ -613,12 +687,17 @@ export default function LichessLiveTab() {
                   {group.presets.map((tc) => (
                     <button
                       key={tc.label}
-                      onClick={() => { setSeekTime(tc.t); setSeekIncrement(tc.i); }}
+                      onClick={() => {
+                        setSeekAny(false)
+                        setSeekTime(tc.t)
+                        setSeekIncrement(tc.i)
+                      }}
+                      disabled={seekAny}
                       className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
-                        seekTime === tc.t && seekIncrement === tc.i
-                        ? 'bg-terracotta text-sage-900 border-terracotta'
-                        : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
-                      }`}
+                        !seekAny && seekTime === tc.t && seekIncrement === tc.i
+                          ? 'bg-terracotta text-sage-900 border-terracotta'
+                          : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                      } ${seekAny ? 'opacity-40 cursor-not-allowed hover:bg-sage-800' : ''}`}
                     >
                       {tc.label}
                     </button>
@@ -626,6 +705,111 @@ export default function LichessLiveTab() {
                 </div>
               </div>
             ))}
+
+            <div className="w-full pt-2 border-t border-white/5">
+              <div className="mb-2 text-[11px] font-black tracking-widest uppercase text-sage-400 text-center">
+                Rating difference
+              </div>
+
+              <div className="flex flex-wrap gap-2 justify-center">
+                {[
+                  { key: 'any', label: '∞' },
+                  { key: '0', label: '0' },
+                  { key: '100', label: '±100' },
+                  { key: '200', label: '±200' },
+                  { key: '300', label: '±300' },
+                  { key: '500', label: '±500' },
+                  { key: 'custom', label: 'Custom' },
+                ].map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => applyRatingPreset(p.key as any)}
+                    className={`px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all ${
+                      ratingPreset === p.key
+                        ? 'bg-terracotta text-sage-900 border-terracotta'
+                        : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {ratingPreset === 'custom' ? (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-sage-950/30 border border-white/5 rounded-xl p-3">
+                    <div className="text-xs font-bold text-sage-300 mb-2">Lower (below)</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={ratingDiffLower ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value.trim()
+                          setRatingDiffLower(v === '' ? null : Math.max(0, Number(v)))
+                        }}
+                        placeholder="∞"
+                        className="w-full bg-sage-900/50 border border-sage-700/50 text-sage-100 text-sm rounded-lg px-3 py-2 placeholder-sage-600 focus:outline-none focus:border-terracotta/50 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary px-3"
+                        onClick={() => setRatingDiffLower(0)}
+                        title="0"
+                      >
+                        0
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary px-3"
+                        onClick={() => setRatingDiffLower(null)}
+                        title="∞"
+                      >
+                        ∞
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-sage-950/30 border border-white/5 rounded-xl p-3">
+                    <div className="text-xs font-bold text-sage-300 mb-2">Upper (above)</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={ratingDiffUpper ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value.trim()
+                          setRatingDiffUpper(v === '' ? null : Math.max(0, Number(v)))
+                        }}
+                        placeholder="∞"
+                        className="w-full bg-sage-900/50 border border-sage-700/50 text-sage-100 text-sm rounded-lg px-3 py-2 placeholder-sage-600 focus:outline-none focus:border-terracotta/50 transition-colors"
+                      />
+                      <button
+                        type="button"
+                        className="btn-secondary px-3"
+                        onClick={() => setRatingDiffUpper(0)}
+                        title="0"
+                      >
+                        0
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary px-3"
+                        onClick={() => setRatingDiffUpper(null)}
+                        title="∞"
+                      >
+                        ∞
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-2 text-[12px] text-sage-500 text-center">
+                Filters opponents by rating range relative to the selected time control rating.
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 w-full max-w-lg">
@@ -662,7 +846,20 @@ export default function LichessLiveTab() {
 
               <div className="flex items-center gap-2">
                 <div className="text-xs font-bold text-sage-300 mr-2">
-                  {getPerfName(liveGameState.initialTimeMs || 0)} {Math.floor((liveGameState.initialTimeMs || 0) / 60000)}+{Math.floor((liveGameState.initialIncrementMs || 0) / 1000)}
+                  {(() => {
+                    const baseMs =
+                      typeof liveGameState.initialTimeMs === 'number' && liveGameState.initialTimeMs > 0
+                        ? liveGameState.initialTimeMs
+                        : Math.max(liveGameState.wtime ?? 0, liveGameState.btime ?? 0)
+                    const incMs =
+                      typeof liveGameState.initialIncrementMs === 'number' && liveGameState.initialIncrementMs >= 0
+                        ? liveGameState.initialIncrementMs
+                        : Math.max(liveGameState.winc ?? 0, liveGameState.binc ?? 0)
+
+                    const minutes = Math.floor(baseMs / 60000)
+                    const incrementSeconds = Math.floor(incMs / 1000)
+                    return `${getPerfName(baseMs)} ${minutes}+${incrementSeconds}`
+                  })()}
                 </div>
                 <button onClick={handleBack} disabled={fullPly === 0 || (viewPly ?? fullPly) <= 0} className="p-1.5 bg-sage-800 text-sage-300 rounded hover:bg-sage-700 disabled:opacity-30">
                   ◀
@@ -713,7 +910,29 @@ export default function LichessLiveTab() {
               />
             </div>
 
-            <div className="w-full max-w-[500px] flex justify-end items-start">
+            <div className="w-full max-w-[500px] flex justify-between items-start gap-4">
+              <div className="flex items-center gap-3 text-sage-200 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-sage-800 flex items-center justify-center text-2xl shadow-inner border border-white/5 shrink-0">
+                  {myColor === 'black' ? '😎' : '👤'}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-sm truncate">
+                    {myAccount?.username || liveGameState.lichessUserId || 'Me'}
+                    <span className="font-normal text-sage-400 ml-1">
+                      {(() => {
+                        const baseMs =
+                          typeof liveGameState.initialTimeMs === 'number' && liveGameState.initialTimeMs > 0
+                            ? liveGameState.initialTimeMs
+                            : Math.max(liveGameState.wtime ?? 0, liveGameState.btime ?? 0)
+                        const minutes = Math.floor(baseMs / 60000)
+                        const key = getPerfKeyFromMinutes(minutes)
+                        const rating = (myAccount?.perfs as any)?.[key]?.rating
+                        return typeof rating === 'number' ? `(${rating})` : '(?)'
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </div>
               <div className={`bg-black px-6 py-2 rounded-lg text-white font-mono text-4xl font-bold shadow-lg transition-all ${isGameActive && isMyTurn ? 'border-b-4 border-b-emerald-500 scale-105' : 'border-b-4 border-b-transparent opacity-90'}`}>
                 {formatClockTime(myTime)}
               </div>
@@ -804,7 +1023,7 @@ export default function LichessLiveTab() {
             <div className="flex-1 min-h-0 bg-sage-900/40 rounded-xl p-4 border border-white/5 overflow-hidden flex flex-col">
                <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider shrink-0">Live Commentary</h4>
                <div className="flex-1 overflow-y-auto">
-                 <LiveCommentary fen={view.fen} moves={view.moves} />
+                 <LiveCommentary fen={view.fen} moves={view.moves} myColor={myColor} />
                </div>
             </div>
           </div>
