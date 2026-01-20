@@ -46,6 +46,31 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
 
   const USER_USERNAMES = ['patrickd1234567', 'patrickd12345678', 'anonymous19670705']
 
+  const buildFenHistoryFromUciMoves = useCallback((movesUci: string): string[] => {
+    const trimmed = (movesUci || '').trim()
+    if (!trimmed) return []
+
+    const tokens = trimmed.split(/\s+/).filter(Boolean)
+    const fens: string[] = ['rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1']
+    const tmpChess = new Chess()
+
+    for (const token of tokens) {
+      if (token.length < 4) break
+      const from = token.slice(0, 2)
+      const to = token.slice(2, 4)
+      const promotion = token.length >= 5 ? token.slice(4, 5) : undefined
+      try {
+        const move = tmpChess.move({ from, to, promotion: promotion as any })
+        if (!move) break
+        fens.push(tmpChess.fen())
+      } catch {
+        break
+      }
+    }
+
+    return fens
+  }, [])
+
   const loadGameHistory = useCallback((pgn: string) => {
     const chess = new Chess()
     try {
@@ -72,9 +97,22 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
       const selectedGame = games.find(g => g.id === selectedGameId)
       if (selectedGame && selectedGame.pgn_text) {
         loadGameHistory(selectedGame.pgn_text)
+        return
+      }
+      if (selectedGame && typeof selectedGame.moves_uci === 'string' && selectedGame.moves_uci.trim()) {
+        const fens = buildFenHistoryFromUciMoves(selectedGame.moves_uci)
+        if (fens.length > 0) {
+          setMoveHistory(fens)
+          setCurrentMoveIdx(fens.length - 1)
+          setBoardFen(fens[fens.length - 1])
+        } else {
+          setMoveHistory([])
+          setCurrentMoveIdx(-1)
+          setBoardFen('start')
+        }
       }
     }
-  }, [selectedGameId, games, loadGameHistory])
+  }, [selectedGameId, games, loadGameHistory, buildFenHistoryFromUciMoves])
 
   const navigateTo = (idx: number) => {
     if (idx >= 0 && idx < moveHistory.length) {
@@ -209,7 +247,10 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
           {games.map((game) => {
             const status = getGameStatus(game)
             const isSelected = selectedGameId === game.id
-            const origin = inferGameOriginFromPgn(game.pgn_text)
+            const origin =
+              game?.id && String(game.id).startsWith('lichess:')
+                ? 'lichess'
+                : inferGameOriginFromPgn(game.pgn_text)
             
             let cardClass = "mb-2 p-3 rounded-lg cursor-pointer border transition-all duration-200 relative group overflow-hidden "
 
@@ -240,7 +281,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
               >
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="font-semibold text-sm truncate">
-                    {game.white} <span className="text-xs opacity-70">vs</span> {game.black}
+                    {game.white || 'White'} <span className="text-xs opacity-70">vs</span> {game.black || 'Black'}
                   </div>
                   <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${isSelected ? 'border-sage-900/20 bg-sage-900/10 text-sage-900' : 'border-white/10 bg-black/20 text-sage-400'}`}>
                     {formatOriginLabel(origin)}

@@ -8,6 +8,15 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './vitest.setup.ts',
+    // Keep Vitest unit tests separate from Playwright E2E tests in `tests/**`.
+    include: ['**/*.{test,spec}.{ts,tsx}'],
+    exclude: [
+      'tests/**',
+      'node_modules/**',
+      '.next/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
     alias: {
       '@': resolve(__dirname, './')
     }

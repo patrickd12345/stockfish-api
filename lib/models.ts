@@ -73,6 +73,24 @@ export interface OpeningStatsRow {
 
 type DbRow = Record<string, unknown>
 
+export type LichessGameSummary = {
+  id: string
+  lichess_game_id: string
+  lichess_user_id: string
+  status: string
+  moves_uci: string
+  fen: string
+  // UI compatibility fields (matches `games` table shape where possible).
+  date?: string
+  white?: string
+  black?: string
+  result?: string
+  opening_name?: string
+  winner?: string
+  last_move_at?: string
+  createdAt: Date
+}
+
 export async function getGames(limit = 100) {
   const sql = getSql()
   const rows = (await sql`
@@ -512,6 +530,97 @@ export async function getOpeningStats(limit = 100): Promise<OpeningStatsRow[]> {
       losses,
       draws,
       whiteScore,
+    }
+  })
+}
+
+export async function getLichessGameSummaries(limit = 50): Promise<LichessGameSummary[]> {
+  const sql = getSql()
+  const rows = (await sql`
+    SELECT
+      game_id,
+      lichess_user_id,
+      status,
+      moves,
+      fen,
+      winner,
+      last_move_at,
+      updated_at
+    FROM lichess_game_states
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `) as DbRow[]
+
+  return rows.map((r: DbRow) => {
+    const lastMoveAt = r.last_move_at ? String(r.last_move_at) : undefined
+    const date = lastMoveAt ? lastMoveAt.split('T')[0] : undefined
+    const lichessUserId = String(r.lichess_user_id ?? '')
+    const status = String(r.status ?? 'unknown')
+    const winner = r.winner ? String(r.winner) : undefined
+    const result = winner ?? status
+
+    return {
+    id: `lichess:${String(r.game_id)}`,
+    lichess_game_id: String(r.game_id),
+    lichess_user_id: lichessUserId,
+    status,
+    moves_uci: String(r.moves ?? ''),
+    fen: String(r.fen ?? 'start'),
+    date,
+    white: lichessUserId || 'Me',
+    black: 'Lichess',
+    result,
+    winner,
+    last_move_at: lastMoveAt,
+    createdAt: (r.updated_at as Date) ?? new Date(),
+    }
+  })
+}
+
+export async function searchLichessGameSummaries(query: string, limit = 50): Promise<LichessGameSummary[]> {
+  const sql = getSql()
+  const term = `%${query}%`
+  const rows = (await sql`
+    SELECT
+      game_id,
+      lichess_user_id,
+      status,
+      moves,
+      fen,
+      winner,
+      last_move_at,
+      updated_at
+    FROM lichess_game_states
+    WHERE
+      game_id ILIKE ${term}
+      OR lichess_user_id ILIKE ${term}
+      OR status ILIKE ${term}
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `) as DbRow[]
+
+  return rows.map((r: DbRow) => {
+    const lastMoveAt = r.last_move_at ? String(r.last_move_at) : undefined
+    const date = lastMoveAt ? lastMoveAt.split('T')[0] : undefined
+    const lichessUserId = String(r.lichess_user_id ?? '')
+    const status = String(r.status ?? 'unknown')
+    const winner = r.winner ? String(r.winner) : undefined
+    const result = winner ?? status
+
+    return {
+    id: `lichess:${String(r.game_id)}`,
+    lichess_game_id: String(r.game_id),
+    lichess_user_id: lichessUserId,
+    status,
+    moves_uci: String(r.moves ?? ''),
+    fen: String(r.fen ?? 'start'),
+    date,
+    white: lichessUserId || 'Me',
+    black: 'Lichess',
+    result,
+    winner,
+    last_move_at: lastMoveAt,
+    createdAt: (r.updated_at as Date) ?? new Date(),
     }
   })
 }

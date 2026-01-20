@@ -42,6 +42,16 @@ function formatClockTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
+type TimeControlPreset = { label: string; t: number; i: number }
+type TimeControlCategory = 'Bullet' | 'Blitz' | 'Rapid' | 'Classical'
+
+function getTimeControlCategory(minutes: number): TimeControlCategory {
+  if (minutes < 3) return 'Bullet'
+  if (minutes < 8) return 'Blitz'
+  if (minutes < 25) return 'Rapid'
+  return 'Classical'
+}
+
 function uciMovesToMovePairs(uciMoves: string): Array<{ moveNumber: number; white?: string; black?: string }> {
   const trimmed = (uciMoves || '').trim()
   if (!trimmed) return []
@@ -131,6 +141,37 @@ export default function LichessLiveTab() {
 
   const [seekTime, setSeekTime] = useState(3)
   const [seekIncrement, setSeekIncrement] = useState(2)
+
+  const groupedTimeControls = useMemo(() => {
+    const presets: TimeControlPreset[] = [
+      { label: '1+0', t: 1, i: 0 },
+      { label: '2+1', t: 2, i: 1 },
+      { label: '3+0', t: 3, i: 0 },
+      { label: '3+2', t: 3, i: 2 },
+      { label: '5+0', t: 5, i: 0 },
+      { label: '5+3', t: 5, i: 3 },
+      { label: '10+0', t: 10, i: 0 },
+      { label: '10+5', t: 10, i: 5 },
+    ]
+
+    const groups: Record<TimeControlCategory, TimeControlPreset[]> = {
+      Bullet: [],
+      Blitz: [],
+      Rapid: [],
+      Classical: [],
+    }
+
+    for (const preset of presets) {
+      groups[getTimeControlCategory(preset.t)].push(preset)
+    }
+
+    return [
+      { category: 'Bullet' as const, presets: groups.Bullet },
+      { category: 'Blitz' as const, presets: groups.Blitz },
+      { category: 'Rapid' as const, presets: groups.Rapid },
+      { category: 'Classical' as const, presets: groups.Classical },
+    ].filter((group) => group.presets.length > 0)
+  }, [])
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -562,28 +603,28 @@ export default function LichessLiveTab() {
             </div>
           )}
           
-          <div className="mb-8 flex flex-wrap gap-2 justify-center max-w-lg">
-            {[
-              { label: '1+0', t: 1, i: 0 },
-              { label: '2+1', t: 2, i: 1 },
-              { label: '3+0', t: 3, i: 0 },
-              { label: '3+2', t: 3, i: 2 },
-              { label: '5+0', t: 5, i: 0 },
-              { label: '5+3', t: 5, i: 3 },
-              { label: '10+0', t: 10, i: 0 },
-              { label: '10+5', t: 10, i: 5 },
-            ].map((tc) => (
-              <button
-                key={tc.label}
-                onClick={() => { setSeekTime(tc.t); setSeekIncrement(tc.i); }}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
-                  seekTime === tc.t && seekIncrement === tc.i
-                  ? 'bg-terracotta text-sage-900 border-terracotta'
-                  : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
-                }`}
-              >
-                {tc.label}
-              </button>
+          <div className="mb-8 w-full max-w-lg flex flex-col gap-4">
+            {groupedTimeControls.map((group) => (
+              <div key={group.category} className="w-full">
+                <div className="mb-2 text-[11px] font-black tracking-widest uppercase text-sage-400 text-center">
+                  {group.category}
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {group.presets.map((tc) => (
+                    <button
+                      key={tc.label}
+                      onClick={() => { setSeekTime(tc.t); setSeekIncrement(tc.i); }}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-all ${
+                        seekTime === tc.t && seekIncrement === tc.i
+                        ? 'bg-terracotta text-sage-900 border-terracotta'
+                        : 'bg-sage-800 text-sage-300 border-sage-700 hover:bg-sage-700'
+                      }`}
+                    >
+                      {tc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 

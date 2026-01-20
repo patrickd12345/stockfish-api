@@ -12,6 +12,7 @@ type GameRow = {
   date?: string
   result?: string
   pgn_text?: string
+  moves_uci?: string
 }
 
 type GameOrigin = 'lichess' | 'chess.com' | 'pgn' | 'unknown'
@@ -69,6 +70,28 @@ const buildFenHistoryFromPgn = (pgn: string): string[] => {
     fens.push(tmp.fen())
   }
 
+  return fens
+}
+
+const buildFenHistoryFromUciMoves = (movesUci: string): string[] => {
+  const trimmed = (movesUci || '').trim()
+  if (!trimmed) return []
+  const tokens = trimmed.split(/\s+/).filter(Boolean)
+  const fens: string[] = ['rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1']
+  const tmp = new Chess()
+  for (const token of tokens) {
+    if (token.length < 4) break
+    const from = token.slice(0, 2)
+    const to = token.slice(2, 4)
+    const promotion = token.length >= 5 ? token.slice(4, 5) : undefined
+    try {
+      const move = tmp.move({ from, to, promotion: promotion as any })
+      if (!move) break
+      fens.push(tmp.fen())
+    } catch {
+      break
+    }
+  }
   return fens
 }
 
@@ -133,14 +156,19 @@ export default function MobileGameDrawer({
       return
     }
     const selected = games.find((g) => g.id === selectedGameId)
-    if (!selected?.pgn_text) {
-      setMoveHistory([])
-      setCurrentMoveIdx(-1)
-      setBoardFen('start')
-      return
-    }
     try {
-      const fens = buildFenHistoryFromPgn(selected.pgn_text)
+      let fens: string[] = []
+      if (selected?.pgn_text) {
+        fens = buildFenHistoryFromPgn(selected.pgn_text)
+      } else if (typeof selected?.moves_uci === 'string' && selected.moves_uci.trim()) {
+        fens = buildFenHistoryFromUciMoves(selected.moves_uci)
+      }
+      if (fens.length === 0) {
+        setMoveHistory([])
+        setCurrentMoveIdx(-1)
+        setBoardFen('start')
+        return
+      }
       setMoveHistory(fens)
       setCurrentMoveIdx(fens.length - 1)
       setBoardFen(fens[fens.length - 1])
@@ -322,7 +350,10 @@ export default function MobileGameDrawer({
             {games.map((game) => {
               const isSelected = selectedGameId === game.id
               const status = getGameStatus(game)
-              const origin = inferGameOriginFromPgn(game.pgn_text)
+              const origin =
+                game?.id && String(game.id).startsWith('lichess:')
+                  ? 'lichess'
+                  : inferGameOriginFromPgn(game.pgn_text)
 
               let bgColor = '#0b1220'
               let borderColor = 'rgba(255,255,255,0.12)'

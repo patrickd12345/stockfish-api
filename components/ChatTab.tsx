@@ -42,12 +42,17 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
     setLoading(true)
 
     try {
+      // Lichess live games use `lichess:<gameId>` ids in the UI list.
+      // Those aren't stored in the `games` table yet, so don't pass them as DB game context.
+      const safeGameId =
+        selectedGameId && selectedGameId.startsWith('lichess:') ? null : selectedGameId
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           message,
-          gameId: selectedGameId 
+          gameId: safeGameId 
         }),
       })
 
