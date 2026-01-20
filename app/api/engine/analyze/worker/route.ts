@@ -10,6 +10,7 @@ import {
   markEngineAnalysisJobDone,
   markEngineAnalysisJobFailed,
   fetchQueuedGamePgn,
+  enqueueEngineAnalysisJobs,
 } from '@/lib/engineQueue'
 
 export const dynamic = 'force-dynamic'
@@ -42,9 +43,16 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDb()
 
-    const jobs = await claimEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
+    let jobs = await claimEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
+    let autoEnqueued = 0
     if (jobs.length === 0) {
-      return NextResponse.json({ ok: true, processed: 0 })
+      // Self-heal: if nothing is queued but there is pending work in coverage, enqueue a small batch and try once.
+      const enq = await enqueueEngineAnalysisJobs(25, 'stockfish', analysisDepth).catch(() => null)
+      autoEnqueued = enq?.enqueued ?? 0
+      jobs = await claimEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
+      if (jobs.length === 0) {
+        return NextResponse.json({ ok: true, processed: 0, autoEnqueued })
+      }
     }
 
     let succeeded = 0
@@ -106,6 +114,7 @@ export async function POST(request: NextRequest) {
       succeeded,
       failed,
       analysisDepth,
+      autoEnqueued,
     })
   } catch (error: any) {
     console.error('Engine analyze worker failed:', error)

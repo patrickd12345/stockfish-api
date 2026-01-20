@@ -111,11 +111,12 @@ export async function enqueueEngineAnalysisJobs(
   limit: number,
   engineName: string,
   analysisDepth: number
-): Promise<{ enqueued: number; skipped: number }> {
+): Promise<{ enqueued: number; inserted: number; requeued: number; skipped: number }> {
   await ensureQueueTable()
   const sql = getSql()
   const games = await getGamesNeedingAnalysis(limit, engineName, analysisDepth)
-  let enqueued = 0
+  let inserted = 0
+  let requeued = 0
   let skipped = 0
 
   for (const game of games) {
@@ -131,18 +132,25 @@ export async function enqueueEngineAnalysisJobs(
         ${analysisDepth},
         'pending'
       )
-      ON CONFLICT (game_id, engine_name, analysis_depth) DO NOTHING
-      RETURNING id
+      ON CONFLICT (game_id, engine_name, analysis_depth)
+      DO UPDATE SET
+        status = 'pending',
+        updated_at = now(),
+        last_error = null
+      WHERE engine_analysis_queue.status <> 'pending'
+      RETURNING id, (xmax = 0) AS inserted
     `
     const result = Array.isArray(raw) ? raw : []
     if (result.length > 0) {
-      enqueued += 1
+      const wasInserted = Boolean((result[0] as any)?.inserted)
+      if (wasInserted) inserted += 1
+      else requeued += 1
     } else {
       skipped += 1
     }
   }
 
-  return { enqueued, skipped }
+  return { enqueued: inserted + requeued, inserted, requeued, skipped }
 }
 
 export async function claimEngineAnalysisJobs(

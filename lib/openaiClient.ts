@@ -1,14 +1,26 @@
 import OpenAI from 'openai'
 
 export function getOpenAIConfig(): { apiKey: string; baseURL?: string } | null {
+  const provider = (process.env.OPENAI_PROVIDER || '').trim().toLowerCase()
   const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
   const virtualKey = process.env.VERCEL_VIRTUAL_KEY?.replace(/[\n\r]/g, '').trim()
 
-  if (gatewayId && virtualKey) {
+  const directKey = process.env.OPENAI_API_KEY?.replace(/[\n\r]/g, '').trim()
+
+  // Explicit selection (useful when both gateway + direct are present).
+  if (provider === 'direct') {
+    if (!directKey) return null
+    return { apiKey: directKey }
+  }
+  if (provider === 'gateway') {
+    if (!gatewayId || !virtualKey) return null
     return { apiKey: virtualKey, baseURL: 'https://ai-gateway.vercel.sh/v1' }
   }
 
-  const directKey = process.env.OPENAI_API_KEY?.replace(/[\n\r]/g, '').trim()
+  // Default behavior: prefer gateway when configured; otherwise fallback to direct.
+  if (gatewayId && virtualKey) {
+    return { apiKey: virtualKey, baseURL: 'https://ai-gateway.vercel.sh/v1' }
+  }
   if (directKey) {
     return { apiKey: directKey }
   }

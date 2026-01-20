@@ -24,6 +24,8 @@
     "engine:analyze": "npx tsx scripts/run-engine-analysis.ts",
     "engine:progress": "npx tsx scripts/engine-coverage.ts",
     "engine:worker": "npx tsx scripts/engine-worker.ts",
+    "embeddings:backfill": "npx tsx scripts/backfill-embeddings.ts",
+    "embeddings:test": "npx tsx scripts/test-embedding.ts",
     "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts",
     "migrate:analysis-blunders": "npx tsx scripts/migrate-analysis-blunders.ts",
     "prepare": "husky"

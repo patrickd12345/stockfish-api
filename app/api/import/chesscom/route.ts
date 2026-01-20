@@ -4,6 +4,7 @@ import { fetchChessComArchives, fetchGamesFromArchive } from '@/lib/chesscom'
 import { analyzePgn, parsePgnWithoutEngine } from '@/lib/analysis'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame, gameExists, gameExistsByPgnText } from '@/lib/models'
+import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
 import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
 import { storeEngineAnalysis } from '@/lib/engineStorage'
@@ -130,6 +131,9 @@ export async function POST(request: NextRequest) {
     let savedCount = 0
     let processedCount = 0
     const newlySaved: Array<{ id: string; pgnText: string }> = []
+    const shouldEmbed = process.env.EMBEDDINGS_ON_IMPORT !== 'false'
+    const embedMax = Math.max(0, Math.min(500, Number(process.env.EMBEDDINGS_ON_IMPORT_MAX ?? 200)))
+    let embeddedSoFar = 0
 
     // Chess.com game arrays are not guaranteed to be ordered oldest→newest.
     // Always process the most recent games first.
@@ -173,11 +177,23 @@ export async function POST(request: NextRequest) {
               ? await gameExistsByPgnText(pgnText)
               : await gameExists(entry.game.date, entry.game.white, entry.game.black)
             if (!exists) {
-                    const id = await createGame({
+              let embedding: number[] | null = null
+              if (shouldEmbed && embeddedSoFar < embedMax) {
+                try {
+                  const embeddingText = buildEmbeddingText(entry.game)
+                  embedding = await getEmbedding(embeddingText)
+                  if (embedding && embedding.length > 0) embeddedSoFar += 1
+                } catch (e) {
+                  console.warn('Embedding generation failed:', e)
+                }
+              }
+
+              const id = await createGame({
                 ...entry.game,
                 moves: entry.moves,
+                embedding,
               })
-                    newlySaved.push({ id, pgnText: entry.game.pgn_text })
+              newlySaved.push({ id, pgnText: entry.game.pgn_text })
               savedCount++
             }
           }

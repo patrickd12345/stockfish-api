@@ -51,16 +51,28 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
       const embedding = response.data?.[0]?.embedding
       return Array.isArray(embedding) ? embedding : null
     } catch (error: any) {
-      const isRetryable = 
+      const status = typeof error?.status === 'number' ? error.status : null
+      const message = String(error?.message ?? '')
+
+      // Vercel AI gateway can return 429 "free credits temporarily have rate limits..."
+      // Treat as retryable with a longer backoff.
+      const isRateLimited =
+        status === 429 ||
+        message.includes('429') ||
+        message.toLowerCase().includes('rate limit')
+
+      const isRetryable =
         error.code === 'ECONNRESET' ||
         error.code === 'ETIMEDOUT' ||
         error.code === 'ECONNREFUSED' ||
         error.type === 'system' ||
-        (error.message && error.message.includes('Connection error'))
+        (message && message.includes('Connection error')) ||
+        isRateLimited
       
       if (isRetryable && attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
-        console.log(`Retry embedding attempt ${attempt}/${maxRetries} after ${delay}ms due to:`, error.message || error.code)
+        const baseDelay = isRateLimited ? 15_000 : 1000
+        const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), isRateLimited ? 120_000 : 5000)
+        console.log(`Retry embedding attempt ${attempt}/${maxRetries} after ${delay}ms due to:`, message || error.code)
         await new Promise(resolve => setTimeout(resolve, delay))
         continue
       }
