@@ -17,9 +17,6 @@ vi.mock('./ChessBoard', () => ({
 vi.mock('./LiveCommentary', () => ({
   default: () => <div data-testid="live-commentary">LiveCommentary</div>
 }))
-vi.mock('./PostGameReview', () => ({
-  default: () => <div data-testid="post-game-review">PostGameReview</div>
-}))
 
 describe('components/LichessLiveTab', () => {
   beforeEach(() => {
@@ -115,7 +112,7 @@ describe('components/LichessLiveTab', () => {
     })
   })
 
-  it('stays on chessboard and shows post-game review when game is over', async () => {
+  it('stays on chessboard and shows coach overlay when game is over', async () => {
     mockUseLichessBoard.mockReturnValue({
       state: {
         gameId: '123',
@@ -147,7 +144,7 @@ describe('components/LichessLiveTab', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('chess-board')).toBeInTheDocument()
-      expect(screen.getByTestId('post-game-review')).toBeInTheDocument()
+      expect(screen.getByTestId('live-commentary')).toBeInTheDocument()
     })
   })
 })

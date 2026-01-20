@@ -10,6 +10,9 @@ interface LiveCommentaryProps {
   moves: string
   myColor?: 'white' | 'black' | null
   variant?: 'live' | 'postGame'
+  status?: string | null
+  winner?: 'white' | 'black' | null
+  opponentName?: string | null
 }
 
 const MIN_DEPTH_FOR_COMMENT = 8
@@ -48,7 +51,36 @@ const describeSwing = (delta: number) => {
   return 'shift'
 }
 
-export default function LiveCommentary({ fen, moves, myColor, variant = 'live' }: LiveCommentaryProps) {
+function getMaterialPointDiffFromFen(fen: string): number {
+  // Returns (whitePoints - blackPoints), using standard material values.
+  const placement = (fen || '').split(' ')[0] || ''
+  if (!placement.includes('/')) return 0
+
+  const values: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
+  let white = 0
+  let black = 0
+
+  for (const ch of placement) {
+    if (ch === '/' || (ch >= '1' && ch <= '8')) continue
+    const lower = ch.toLowerCase()
+    const value = values[lower]
+    if (typeof value !== 'number') continue
+    if (ch === lower) black += value
+    else white += value
+  }
+
+  return white - black
+}
+
+export default function LiveCommentary({
+  fen,
+  moves,
+  myColor,
+  variant = 'live',
+  status = null,
+  winner = null,
+  opponentName = null,
+}: LiveCommentaryProps) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 16, lines: 1 })
   const { tone } = useAgentTone()
   const [position, setPosition] = useState({ x: variant === 'postGame' ? 24 : 24, y: variant === 'postGame' ? 84 : 120 })
@@ -69,12 +101,14 @@ export default function LiveCommentary({ fen, moves, myColor, variant = 'live' }
   }, [moves])
 
   useEffect(() => {
+    if (variant === 'postGame') return
     if (!lastMove || lastMove === lastMoveRef.current) return
     lastMoveRef.current = lastMove
     startAnalysis(fen, parseTurnFromFen(fen))
-  }, [fen, lastMove, startAnalysis])
+  }, [fen, lastMove, startAnalysis, variant])
 
   useEffect(() => {
+    if (variant === 'postGame') return
     if (!lastMove || lastMove === lastCommentedMoveRef.current) {
       return
     }
@@ -91,7 +125,6 @@ export default function LiveCommentary({ fen, moves, myColor, variant = 'live' }
       ? currentEval - previousEval
       : null
 
-    const evalLabel = formatEval(engineState.evaluation, engineState.mate)
     const evalLabelCompact = formatEvalLabel(engineState.evaluation, engineState.mate)
     if (swing === null) {
       setCommentary(`After ${lastMove}, evaluation is ${evalLabelCompact}.`)
@@ -148,7 +181,95 @@ export default function LiveCommentary({ fen, moves, myColor, variant = 'live' }
       lastEvalRef.current = currentEval
     }
     lastCommentedMoveRef.current = lastMove
-  }, [engineState.bestLine, engineState.bestMove, engineState.depth, engineState.evaluation, engineState.mate, fen, lastMove, moves])
+  }, [
+    engineState.bestLine,
+    engineState.bestMove,
+    engineState.depth,
+    engineState.evaluation,
+    engineState.mate,
+    fen,
+    lastMove,
+    moves,
+    myColor,
+    tone,
+    variant
+  ])
+
+  useEffect(() => {
+    if (variant !== 'postGame') return
+
+    llmAbortRef.current?.abort()
+    lastMoveRef.current = null
+    lastCommentedMoveRef.current = null
+
+    // Analyze final position and generate recap in this same overlay.
+    startAnalysis(fen, parseTurnFromFen(fen))
+
+    const diff = getMaterialPointDiffFromFen(fen)
+    const leader = diff === 0 ? null : diff > 0 ? 'White' : 'Black'
+    const points = Math.abs(diff)
+    const materialLine = leader ? `Material: ${leader} +${points}.` : 'Material is equal.'
+
+    setCommentary(`Post-game recap… ${materialLine}`)
+    setCommentarySource('fallback')
+  }, [fen, startAnalysis, variant])
+
+  useEffect(() => {
+    if (variant !== 'postGame') return
+    if (!fen || fen === 'start') return
+    if (engineState.depth < 10) return
+    if (engineState.evaluation === null && engineState.mate === null) return
+
+    llmAbortRef.current?.abort()
+    const ac = new AbortController()
+    llmAbortRef.current = ac
+
+    const evalLabelCompact = formatEvalLabel(engineState.evaluation, engineState.mate)
+
+    fetch('/api/coach/post-game-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: ac.signal,
+      body: JSON.stringify({
+        fen,
+        moves,
+        myColor: myColor ?? null,
+        tone,
+        status,
+        winner,
+        opponentName,
+        evaluation: engineState.evaluation,
+        mate: engineState.mate,
+        depth: engineState.depth,
+        bestLine: engineState.bestLine,
+        bestMove: engineState.bestMove,
+        evalLabel: evalLabelCompact
+      })
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null)
+        if (!json || typeof json.review !== 'string') return
+        setCommentary(json.review)
+        setCommentarySource(json.source === 'llm' ? 'llm' : 'fallback')
+      })
+      .catch(() => null)
+
+    return () => ac.abort()
+  }, [
+    engineState.bestLine,
+    engineState.bestMove,
+    engineState.depth,
+    engineState.evaluation,
+    engineState.mate,
+    fen,
+    moves,
+    myColor,
+    tone,
+    status,
+    winner,
+    opponentName,
+    variant
+  ])
 
   useEffect(() => {
     const handleMove = (event: globalThis.MouseEvent) => {

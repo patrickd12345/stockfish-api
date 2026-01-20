@@ -4,7 +4,6 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
-import PostGameReview from './PostGameReview'
 import { useLichessBoard } from '@/hooks/useLichessBoard'
 import type { LichessAccount } from '@/lib/lichess/account'
 
@@ -42,6 +41,36 @@ function formatClockTime(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function getMaterialPointDiffFromFen(fen: string): number {
+  // Returns (whitePoints - blackPoints), using standard material values.
+  // Example: if White is up a pawn, returns +1. If Black is up a rook, returns -5.
+  const placement = (fen || '').split(' ')[0] || ''
+  if (!placement.includes('/')) return 0
+
+  const values: Record<string, number> = {
+    p: 1,
+    n: 3,
+    b: 3,
+    r: 5,
+    q: 9,
+    k: 0,
+  }
+
+  let white = 0
+  let black = 0
+
+  for (const ch of placement) {
+    if (ch === '/' || (ch >= '1' && ch <= '8')) continue
+    const lower = ch.toLowerCase()
+    const value = values[lower]
+    if (typeof value !== 'number') continue
+    if (ch === lower) black += value
+    else white += value
+  }
+
+  return white - black
 }
 
 function getPerfKeyFromMinutes(minutes: number): string {
@@ -140,6 +169,8 @@ export default function LichessLiveTab() {
   const [myAccount, setMyAccount] = useState<LichessAccount | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
   const [seeking, setSeeking] = useState(false)
+  const [returningToLobby, setReturningToLobby] = useState(false)
+  const [dismissedGameId, setDismissedGameId] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
   const [isResigning, setIsResigning] = useState(false)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -157,6 +188,37 @@ export default function LichessLiveTab() {
   const [ratingDiffLower, setRatingDiffLower] = useState<number | null>(null)
   const [ratingDiffUpper, setRatingDiffUpper] = useState<number | null>(null)
   const [ratingPreset, setRatingPreset] = useState<'any' | '0' | '100' | '200' | '300' | '500' | 'custom'>('any')
+
+  const DISMISSED_GAME_STORAGE_KEY = 'lichess_dismissed_game_id_v1'
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DISMISSED_GAME_STORAGE_KEY)
+      setDismissedGameId(stored || null)
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // If a new live game starts, clear any previous dismissal.
+  useEffect(() => {
+    if (!liveGameState?.gameId) return
+    if (liveGameState.status !== 'started' && liveGameState.status !== 'playing') return
+    try {
+      localStorage.removeItem(DISMISSED_GAME_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    setDismissedGameId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveGameState?.gameId, liveGameState?.status])
+
+  const displayGame = useMemo(() => {
+    if (!liveGameState) return null
+    if (dismissedGameId && liveGameState.gameId === dismissedGameId) return null
+    return liveGameState
+  }, [dismissedGameId, liveGameState])
 
   const groupedTimeControls = useMemo(() => {
     const presets: TimeControlPreset[] = [
@@ -350,6 +412,12 @@ export default function LichessLiveTab() {
     setSeeking(true)
     setActionError(null)
     try {
+      localStorage.removeItem(DISMISSED_GAME_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    setDismissedGameId(null)
+    try {
       const res = await fetch('/api/lichess/board/seek', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -374,6 +442,41 @@ export default function LichessLiveTab() {
       setSeeking(false)
     } finally {
       refreshState()
+    }
+  }
+
+  const handleReturnToLobby = async () => {
+    if (returningToLobby) return
+    setReturningToLobby(true)
+    setActionError(null)
+    try {
+      // Hide the current finished game immediately (and persist across reload).
+      const currentGameId = liveGameState?.gameId ?? null
+      if (currentGameId) {
+        try {
+          localStorage.setItem(DISMISSED_GAME_STORAGE_KEY, currentGameId)
+        } catch {
+          // ignore
+        }
+        setDismissedGameId(currentGameId)
+      }
+
+      const res = await fetch('/api/lichess/board/session/clear-active', { method: 'POST' })
+      let data: any = {}
+      try {
+        data = await res.json()
+      } catch {
+        data = { error: await res.text() }
+      }
+      if (!res.ok) throw new Error(data.error || 'Failed to return to lobby')
+
+      setViewPly(null)
+      await refreshState()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to return to lobby')
+      await refreshState()
+    } finally {
+      setReturningToLobby(false)
     }
   }
 
@@ -403,6 +506,13 @@ export default function LichessLiveTab() {
     if (!liveGameState?.opponentName) return
     setIsChallenging(true)
     try {
+      try {
+        localStorage.removeItem(DISMISSED_GAME_STORAGE_KEY)
+      } catch {
+        // ignore
+      }
+      setDismissedGameId(null)
+
       const res = await fetch(`/api/lichess/board/challenge/${liveGameState.opponentName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -555,8 +665,8 @@ export default function LichessLiveTab() {
     }
   }
 
-  const isGameActive = !!(liveGameState?.status === 'started' || liveGameState?.status === 'playing')
-  const isPostGame = !!liveGameState && !isGameActive
+  const isGameActive = !!(displayGame?.status === 'started' || displayGame?.status === 'playing')
+  const isPostGame = !!displayGame && !isGameActive
 
   useEffect(() => {
     if (isGameActive) {
@@ -564,35 +674,45 @@ export default function LichessLiveTab() {
     }
   }, [isGameActive])
 
-  const turnColor = liveGameState?.fen.split(' ')[1] === 'w' ? 'white' : 'black'
-  const myColor = liveGameState?.myColor ?? 'white'
+  const turnColor = displayGame?.fen.split(' ')[1] === 'w' ? 'white' : 'black'
+  const myColor = displayGame?.myColor ?? 'white'
   
   const opponentTime = myColor === 'white' 
-    ? (displayClock?.btime ?? liveGameState?.btime ?? 0) 
-    : (displayClock?.wtime ?? liveGameState?.wtime ?? 0)
+    ? (displayClock?.btime ?? displayGame?.btime ?? 0) 
+    : (displayClock?.wtime ?? displayGame?.wtime ?? 0)
     
   const myTime = myColor === 'white' 
-    ? (displayClock?.wtime ?? liveGameState?.wtime ?? 0) 
-    : (displayClock?.btime ?? liveGameState?.btime ?? 0)
+    ? (displayClock?.wtime ?? displayGame?.wtime ?? 0) 
+    : (displayClock?.btime ?? displayGame?.btime ?? 0)
 
   const isOpponentTurn = turnColor !== myColor
   const isMyTurn = turnColor === myColor
 
   const liveMoveTokens = useMemo(
-    () => (liveGameState?.moves || '').trim().split(/\s+/).filter(Boolean),
-    [liveGameState?.moves]
+    () => (displayGame?.moves || '').trim().split(/\s+/).filter(Boolean),
+    [displayGame?.moves]
   )
   const fullPly = liveMoveTokens.length
   const isReviewMode = viewPly !== null && viewPly >= 0 && viewPly < fullPly
 
   const view = useMemo(() => {
-    if (!liveGameState) return { fen: 'start', moves: '' }
-    if (!isReviewMode) return { fen: liveGameState.fen, moves: liveGameState.moves }
-    const { fen, appliedMoves } = uciMovesToFenAtPly(liveGameState.moves, viewPly ?? 0)
+    if (!displayGame) return { fen: 'start', moves: '' }
+    if (!isReviewMode) return { fen: displayGame.fen, moves: displayGame.moves }
+    const { fen, appliedMoves } = uciMovesToFenAtPly(displayGame.moves, viewPly ?? 0)
     return { fen, moves: appliedMoves }
-  }, [isReviewMode, liveGameState, viewPly])
+  }, [displayGame, isReviewMode, viewPly])
 
-  const movePairs = useMemo(() => uciMovesToMovePairs(liveGameState?.moves || ''), [liveGameState?.moves])
+  const materialLeader = useMemo(() => {
+    const diff = getMaterialPointDiffFromFen(view.fen)
+    if (diff === 0) return { leader: null as 'white' | 'black' | null, points: 0 }
+    return { leader: diff > 0 ? ('white' as const) : ('black' as const), points: Math.abs(diff) }
+  }, [view.fen])
+
+  const opponentColor = myColor === 'white' ? 'black' : 'white'
+  const myMaterialBadge = materialLeader.leader === myColor ? materialLeader.points : 0
+  const opponentMaterialBadge = materialLeader.leader === opponentColor ? materialLeader.points : 0
+
+  const movePairs = useMemo(() => uciMovesToMovePairs(displayGame?.moves || ''), [displayGame?.moves])
   const lastMoveHighlights = useMemo(() => {
     const lastOne = getLastPlyUciMoves(view.moves || '', 1)
     const uci = lastOne[0]
@@ -675,7 +795,7 @@ export default function LichessLiveTab() {
             Connect your Lichess account and start a session to play and get real-time AI commentary.
           </p>
         </div>
-      ) : !liveGameState ? (
+      ) : !displayGame ? (
         <div className="flex-1 flex flex-col items-center justify-center bg-sage-900/30 rounded-xl p-10 border border-white/5">
           <div className="text-6xl mb-6">♟️</div>
           <h3 className="text-lg font-bold text-sage-200 mb-2">Ready to Play</h3>
@@ -858,7 +978,7 @@ export default function LichessLiveTab() {
             {isPostGame ? (
               <div className="w-full max-w-[500px] bg-amber-900/30 border border-amber-700/50 text-amber-200 px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-between gap-3">
                 <div className="min-w-0 truncate">
-                  Game over: {formatStatus(liveGameState.status)} vs {liveGameState.opponentName || 'Opponent'}
+                  Game over: {formatStatus(displayGame!.status)} vs {displayGame!.opponentName || 'Opponent'}
                 </div>
                 <button onClick={() => refreshState()} className="text-amber-300 hover:text-white">
                   Refresh
@@ -881,13 +1001,13 @@ export default function LichessLiveTab() {
                 <div className="text-xs font-bold text-sage-300 mr-2">
                   {(() => {
                     const baseMs =
-                      typeof liveGameState.initialTimeMs === 'number' && liveGameState.initialTimeMs > 0
-                        ? liveGameState.initialTimeMs
-                        : Math.max(liveGameState.wtime ?? 0, liveGameState.btime ?? 0)
+                      typeof displayGame!.initialTimeMs === 'number' && displayGame!.initialTimeMs > 0
+                        ? displayGame!.initialTimeMs
+                        : Math.max(displayGame!.wtime ?? 0, displayGame!.btime ?? 0)
                     const incMs =
-                      typeof liveGameState.initialIncrementMs === 'number' && liveGameState.initialIncrementMs >= 0
-                        ? liveGameState.initialIncrementMs
-                        : Math.max(liveGameState.winc ?? 0, liveGameState.binc ?? 0)
+                      typeof displayGame!.initialIncrementMs === 'number' && displayGame!.initialIncrementMs >= 0
+                        ? displayGame!.initialIncrementMs
+                        : Math.max(displayGame!.winc ?? 0, displayGame!.binc ?? 0)
 
                     const minutes = Math.floor(baseMs / 60000)
                     const incrementSeconds = Math.floor(incMs / 1000)
@@ -911,16 +1031,19 @@ export default function LichessLiveTab() {
             <div className="w-full max-w-[500px] flex justify-between items-end text-sage-200">
               <div className="flex gap-3 items-center">
                 <div className="w-10 h-10 rounded-lg bg-sage-800 flex items-center justify-center text-2xl shadow-inner border border-white/5">
-                  {liveGameState.myColor === 'black' ? '😎' : '👤'}
+                  {displayGame!.myColor === 'black' ? '😎' : '👤'}
                 </div>
                 <div>
                   <div className="font-bold text-sm">
-                    {liveGameState.opponentName || 'Opponent'} 
-                    <span className="font-normal text-sage-400 ml-1">({liveGameState.opponentRating || '?'})</span>
+                    {displayGame!.opponentName || 'Opponent'}
+                    {opponentMaterialBadge > 0 ? (
+                      <span className="ml-2 text-emerald-300 font-black">{`(+${opponentMaterialBadge})`}</span>
+                    ) : null}{' '}
+                    <span className="font-normal text-sage-400 ml-1">({displayGame!.opponentRating || '?'})</span>
                   </div>
                   {!isGameActive && (
                     <div className="text-[10px] font-bold text-amber-400 mt-0.5">
-                      {formatStatus(liveGameState.status)}
+                      {formatStatus(displayGame!.status)}
                     </div>
                   )}
                 </div>
@@ -950,13 +1073,16 @@ export default function LichessLiveTab() {
                 </div>
                 <div className="min-w-0">
                   <div className="font-bold text-sm truncate">
-                    {myAccount?.username || liveGameState.lichessUserId || 'Me'}
+                    {myAccount?.username || displayGame!.lichessUserId || 'Me'}
+                    {myMaterialBadge > 0 ? (
+                      <span className="ml-2 text-emerald-300 font-black">{`(+${myMaterialBadge})`}</span>
+                    ) : null}
                     <span className="font-normal text-sage-400 ml-1">
                       {(() => {
                         const baseMs =
-                          typeof liveGameState.initialTimeMs === 'number' && liveGameState.initialTimeMs > 0
-                            ? liveGameState.initialTimeMs
-                            : Math.max(liveGameState.wtime ?? 0, liveGameState.btime ?? 0)
+                          typeof displayGame!.initialTimeMs === 'number' && displayGame!.initialTimeMs > 0
+                            ? displayGame!.initialTimeMs
+                            : Math.max(displayGame!.wtime ?? 0, displayGame!.btime ?? 0)
                         const minutes = Math.floor(baseMs / 60000)
                         const key = getPerfKeyFromMinutes(minutes)
                         const rating = (myAccount?.perfs as any)?.[key]?.rating
@@ -987,10 +1113,10 @@ export default function LichessLiveTab() {
                   </>
                 ) : (
                   <>
-                    <button onClick={handleSeekMatch} disabled={seeking} className="btn-primary w-full">
-                      {seeking ? 'Seeking...' : 'New Match'}
+                    <button onClick={handleReturnToLobby} disabled={returningToLobby} className="btn-primary w-full">
+                      {returningToLobby ? 'Returning…' : 'Return to lobby'}
                     </button>
-                    {liveGameState.opponentName && (
+                    {displayGame!.opponentName && (
                       <button onClick={handleRematch} disabled={isChallenging || seeking} className="btn-secondary w-full bg-blue-900/30 text-blue-200 border-blue-800/50">
                         {isChallenging ? 'Challenging...' : 'Rematch Opponent'}
                       </button>
@@ -1024,9 +1150,9 @@ export default function LichessLiveTab() {
             <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5 flex flex-col h-56">
               <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider">Chat</h4>
               <div ref={chatScrollRef} className="flex-1 bg-sage-950/30 rounded-lg p-2 overflow-y-auto border border-white/5 mb-2 flex flex-col gap-2">
-                {((liveGameState.chatMessages && liveGameState.chatMessages.length > 0) || optimisticChatMessages.length > 0) ? (
-                  [...(liveGameState.chatMessages || []), ...optimisticChatMessages].map((msg: any, i) => {
-                    const isMe = (msg.username || '').toLowerCase() === (liveGameState.lichessUserId || '').toLowerCase()
+                {((displayGame!.chatMessages && displayGame!.chatMessages.length > 0) || optimisticChatMessages.length > 0) ? (
+                  [...(displayGame!.chatMessages || []), ...optimisticChatMessages].map((msg: any, i) => {
+                    const isMe = (msg.username || '').toLowerCase() === (displayGame!.lichessUserId || '').toLowerCase()
                     return (
                       <div key={i} className={`max-w-[90%] px-2 py-1.5 rounded-lg text-xs ${isMe ? 'self-end bg-terracotta/20 text-terracotta-light border border-terracotta/30' : 'self-start bg-sage-800 text-sage-300 border border-sage-700'}`}>
                         <span className="font-bold mr-1 opacity-70">{msg.username}:</span>
@@ -1055,29 +1181,21 @@ export default function LichessLiveTab() {
 
             <div className="flex-1 min-h-0 bg-sage-900/40 rounded-xl p-4 border border-white/5 overflow-hidden flex flex-col">
               <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider shrink-0">
-                {isPostGame ? 'Post-game review' : 'Live Commentary'}
+                Coach
               </h4>
               <div className="flex-1 overflow-y-auto">
-                {isPostGame ? (
-                  <PostGameReview
-                    fen={view.fen}
-                    moves={view.moves}
-                    myColor={myColor}
-                    status={liveGameState.status}
-                    winner={liveGameState.winner}
-                    opponentName={liveGameState.opponentName}
-                  />
-                ) : (
-                  <div className="text-sage-500 text-sm">
-                    The coach overlay will update after each move.
-                  </div>
-                )}
+                <div className="text-sage-500 text-sm">
+                  {isPostGame ? 'Post-game recap is shown in the overlay on the board.' : 'The coach overlay will update after each move.'}
+                </div>
                 {/* Keep the coach flyover visible; in post-game we enlarge it. */}
                 <LiveCommentary
                   fen={view.fen}
                   moves={view.moves}
                   myColor={myColor}
                   variant={isPostGame ? 'postGame' : 'live'}
+                  status={isPostGame ? String(displayGame!.status ?? '') : null}
+                  winner={displayGame!.winner ?? null}
+                  opponentName={displayGame!.opponentName ?? null}
                 />
               </div>
             </div>
