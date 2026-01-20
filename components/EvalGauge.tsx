@@ -47,11 +47,21 @@ export default function EvalGauge({
       ? 'White'
       : 'Black'
 
+  const advantageLabel = useMemo(() => {
+    if (typeof mate === 'number') {
+      if (mate === 0) return 'Mate'
+      return mate > 0 ? `Mate in ${mate}` : `Mate in ${Math.abs(mate)}`
+    }
+    if (typeof evaluationCp !== 'number') return '0.00'
+    const pawns = (Math.abs(evaluationCp) / 100).toFixed(2)
+    return `+${pawns}`
+  }, [evaluationCp, mate])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
       {showLabel ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5f5' }}>
-          <div style={{ fontWeight: 700 }}>{favored} ahead</div>
+          <div style={{ fontWeight: 700 }}>{favored} ahead {advantageLabel}</div>
           <div style={{ fontFamily: 'monospace', opacity: 0.95 }}>{label}</div>
         </div>
       ) : null}

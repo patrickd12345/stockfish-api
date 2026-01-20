@@ -559,29 +559,20 @@ export default function LichessLiveTab() {
 
   const movePairs = useMemo(() => uciMovesToMovePairs(liveGameState?.moves || ''), [liveGameState?.moves])
   const lastMoveHighlights = useMemo(() => {
-    const lastTwo = getLastPlyUciMoves(view.moves || '', 2)
-    if (lastTwo.length === 0) return undefined
+    const lastOne = getLastPlyUciMoves(view.moves || '', 1)
+    const uci = lastOne[0]
+    if (!uci) return undefined
 
     const highlights: Record<string, React.CSSProperties> = {}
-    const styles = [
-      {
-        backgroundColor: 'rgba(250, 204, 21, 0.45)',
-        boxShadow: 'inset 0 0 0 4px rgba(245, 158, 11, 0.9)'
-      },
-      {
-        backgroundColor: 'rgba(34, 197, 94, 0.30)',
-        boxShadow: 'inset 0 0 0 4px rgba(22, 163, 74, 0.75)'
-      }
-    ]
-
-    const ordered = lastTwo.length === 2 ? [lastTwo[1], lastTwo[0]] : [lastTwo[0]]
-    ordered.forEach((uci, idx) => {
-      if (uci.length < 4) return
-      const from = uci.slice(0, 2)
-      const to = uci.slice(2, 4)
-      highlights[from] = styles[idx] ?? styles[0]
-      highlights[to] = styles[idx] ?? styles[0]
-    })
+    if (uci.length < 4) return undefined
+    const from = uci.slice(0, 2)
+    const to = uci.slice(2, 4)
+    const style: React.CSSProperties = {
+      backgroundColor: 'rgba(34, 197, 94, 0.30)',
+      boxShadow: 'inset 0 0 0 4px rgba(22, 163, 74, 0.75)'
+    }
+    highlights[from] = style
+    highlights[to] = style
 
     return highlights
   }, [view.moves])
