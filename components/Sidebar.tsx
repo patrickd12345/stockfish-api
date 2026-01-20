@@ -265,22 +265,17 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
             }
 
             return (
-              <div
+              <button
                 key={game.id}
+                type="button"
                 onClick={() => onGameSelect(game.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    onGameSelect(game.id)
-                  }
-                }}
-                tabIndex={0}
-                role="button"
                 aria-pressed={isSelected}
-                className={cardClass}
+                aria-current={isSelected ? 'true' : undefined}
+                aria-label={`Game: ${game.white} versus ${game.black}, Result: ${game.result}, Date: ${game.date}`}
+                className={cardClass + " w-full text-left"}
               >
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="font-semibold text-sm truncate">
+                  <div className="font-semibold text-sm truncate" aria-hidden="true">
                     {game.white || 'White'} <span className="text-xs opacity-70">vs</span> {game.black || 'Black'}
                   </div>
                   <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider border ${isSelected ? 'border-sage-900/20 bg-sage-900/10 text-sage-900' : 'border-white/10 bg-black/20 text-sage-400'}`}>
@@ -293,7 +288,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
                 <div className={`text-[10px] mt-1 ${isSelected ? 'text-sage-800/70' : 'text-sage-500'}`}>
                   {formatDateWithEST(game.date, game.pgn_text)} • {game.result}
                 </div>
-              </div>
+              </button>
             )
           })}
         </div>
