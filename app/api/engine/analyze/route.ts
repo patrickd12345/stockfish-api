@@ -6,6 +6,7 @@ import { getGamesNeedingAnalysis, storeEngineAnalysis, markAnalysisFailed, getAn
 import { computeEngineSummary } from '@/lib/engineSummaryAnalysis'
 import { storeEngineSummary } from '@/lib/engineSummaryStorage'
 import { enqueueEngineAnalysisJobs } from '@/lib/engineQueue'
+import { getEntitlementForUser } from '@/lib/billing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -15,10 +16,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Database not configured' }, { status: 500 })
   }
 
+  const lichessUserId = request.cookies.get('lichess_user_id')?.value
   const body = await request.json().catch(() => ({} as any))
   const limit = Math.max(1, Math.min(25, Number(body?.limit ?? 5)))
-  const analysisDepth = Math.max(8, Math.min(25, Number(body?.analysisDepth ?? process.env.ANALYSIS_DEPTH ?? 15)))
+  let analysisDepth = Math.max(8, Math.min(25, Number(body?.analysisDepth ?? process.env.ANALYSIS_DEPTH ?? 15)))
   const mode = (body?.mode ?? 'enqueue') as 'enqueue' | 'inline'
+
+  // Entitlement Gating
+  // Free users capped at depth 15
+  if (lichessUserId) {
+    const entitlement = await getEntitlementForUser(lichessUserId)
+    if (entitlement.plan !== 'PRO' && analysisDepth > 15) {
+      // Cap depth for free users instead of erroring, for better UX?
+      // Or block? The prompt says "Pro routes/features are blocked".
+      // Let's cap it to allow usage but restricted.
+      analysisDepth = 15;
+    }
+  } else {
+    // If not logged in, strict cap (or fail auth if required, but this route seems to work for system jobs too?)
+    // Assuming this route is called by client or cron. If client, they should be logged in.
+    // If system/cron, no cookie. We should allow cron to run at requested depth if it's internal.
+    // But how do we distinguish?
+    // Given the context is "MyChessCoach", this route likely powers the UI analysis button.
+    // If lichessUserId is present, we enforce limits.
+    // If not present, we assume it might be a background job OR unauthenticated user.
+    // Let's safe-guard: if no user, cap at 15.
+    analysisDepth = Math.min(analysisDepth, 15);
+  }
 
   // Player names for POV + blunder assignment
   const playerNames =

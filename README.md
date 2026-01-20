@@ -9,6 +9,7 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 - **Game Inspector**: Replay and analyze games move by move
 - **Stockfish Integration**: Chess engine analysis with centipawn loss and blunder detection
 - **Semantic Game Search**: Vector embeddings for game retrieval
+- **Billing**: Stripe integration for Pro subscriptions (Monthly/Annual) with entitlement gating
 
 ## Deployment to Vercel
 
@@ -17,12 +18,13 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 1. A Vercel account
 2. A Vercel Postgres database
 3. A Vercel AI Gateway + Virtual Key
+4. A Stripe Account
 
 ### Setup Steps
 
 1. **Install Dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. **Set up Postgres**
@@ -38,15 +40,42 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
   - `VERCEL_AI_GATEWAY_ID`: Your Vercel AI Gateway ID
   - `VERCEL_VIRTUAL_KEY`: Your Vercel AI Gateway virtual key
 
-4. **Initialize Database**
-   - Run the SQL from `lib/sql/schema.sql` in your Postgres database (Vercel Postgres SQL Editor, Neon SQL Editor, or `psql`)
+  **Stripe Billing Variables:**
+  - `STRIPE_SECRET_KEY`: Stripe Secret Key (e.g. `sk_live_...`)
+  - `STRIPE_WEBHOOK_SECRET`: Stripe Webhook Secret (e.g. `whsec_...`)
+  - `STRIPE_PRO_PRICE_ID_MONTHLY`: Price ID for Monthly Pro Plan (e.g. `price_...`)
+  - `STRIPE_PRO_PRICE_ID_YEARLY`: Price ID for Yearly Pro Plan (e.g. `price_...`)
+  - `STRIPE_CUSTOMER_PORTAL_RETURN_URL`: `https://your-domain.com/account`
+  - `STRIPE_CHECKOUT_SUCCESS_URL`: `https://your-domain.com/billing/success?session_id={CHECKOUT_SESSION_ID}`
+  - `STRIPE_CHECKOUT_CANCEL_URL`: `https://your-domain.com/billing/cancelled`
 
-5. **Deploy to Vercel**
+4. **Initialize Database**
+   - Run the SQL from `lib/sql/schema.sql` and `lib/sql/migrations/001_billing.sql` in your Postgres database.
+   - Or run `npx tsx scripts/migrate-billing.ts` if you have local access with correct env vars.
+
+5. **Billing Setup (Stripe)**
+   - **Create Product**: Create a "Pro" product in Stripe Dashboard.
+   - **Create Prices**: Add two recurring prices (Monthly and Yearly) to the product. Copy their IDs (`price_...`) to your env vars.
+   - **Enable Payments**: Enable Apple Pay and Google Pay in Stripe Dashboard (Settings -> Payments).
+   - **Configure Webhooks**:
+     - Add a webhook endpoint pointing to `https://your-domain.com/api/billing/webhook`.
+     - Select events:
+       - `checkout.session.completed`
+       - `customer.subscription.created`
+       - `customer.subscription.updated`
+       - `customer.subscription.deleted`
+       - `invoice.payment_succeeded`
+       - `invoice.payment_failed`
+     - Copy the Signing Secret (`whsec_...`) to `STRIPE_WEBHOOK_SECRET`.
+   - **Customer Portal**: Enable Customer Portal in Stripe Settings. Allow customers to manage subscriptions and update payment methods.
+   - **Apple Pay**: Verify your domain in Stripe if required (Settings -> Payments -> Apple Pay).
+
+6. **Deploy to Vercel**
    ```bash
    vercel --prod
    ```
 
-6. **Configure Custom Domain**
+7. **Configure Custom Domain**
    - In Vercel dashboard, go to your project settings
    - Add custom domain: `mychesscoach.bookiji.com`
    - Follow DNS configuration instructions
@@ -55,50 +84,43 @@ A chess analysis and coaching application built with Next.js and deployed on Ver
 
 1. **Install Dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. **Set Environment Variables**
-   Create a `.env.local` file:
-   ```
-  POSTGRES_URL=postgresql://...   # Neon, Vercel Postgres, or any Postgres
-  OPENAI_MODEL=gpt-4o-mini
-  OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-  STOCKFISH_TIME_LIMIT_MS=100
-  VERCEL_AI_GATEWAY_ID=your_gateway_id
-  VERCEL_VIRTUAL_KEY=your_virtual_key
-  ```
+   Create a `.env.local` file with all the variables mentioned above.
 
 3. **Run Development Server**
    ```bash
-   npm run dev
+   pnpm dev
    ```
 
-4. **Initialize Database**
-   Run the SQL from `lib/sql/schema.sql` in your Postgres database before using the API.
+4. **Stripe Webhook Testing**
+   Use Stripe CLI to forward webhooks:
+   ```bash
+   stripe listen --forward-to localhost:3000/api/billing/webhook
+   ```
 
 ## Project Structure
 
 ```
 ├── app/                 # Next.js app directory
 │   ├── api/            # API routes
+│   │   ├── billing/    # Billing routes (checkout, portal, webhook)
 │   ├── page.tsx        # Main page
+│   ├── pricing/        # Pricing page
+│   ├── account/        # Account page
 │   └── layout.tsx      # Root layout
 ├── components/         # React components
 ├── lib/               # Library functions
 │   ├── agent.ts       # LangChain agent setup
 │   ├── analysis.ts    # PGN analysis
+│   ├── billing.ts     # Billing logic and helpers
 │   ├── database.ts    # Database utilities
+│   ├── env.ts         # Environment validation
 │   └── visualizer.ts  # Chess board visualization
 └── vercel.json        # Vercel configuration
 ```
-
-## Notes
-
-- **Stockfish**: Runs the bundled Stockfish binary for engine evaluation. Increase `STOCKFISH_TIME_LIMIT_MS` for deeper analysis.
-- **Vector Search**: Requires `pgvector` (`CREATE EXTENSION vector;`). See `lib/sql/schema.sql`.
-- **Database**: PostgreSQL via `POSTGRES_URL` (Neon, Vercel Postgres, or any Postgres). Use `@neondatabase/serverless` for serverless.
-- **Chess Engine**: The app uses `chess.js` for move validation and board representation.
 
 ## License
 
