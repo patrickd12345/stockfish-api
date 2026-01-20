@@ -79,11 +79,10 @@ export async function exchangeCodeForToken(params: {
 }
 
 export async function revokeToken(accessToken: string): Promise<void> {
-  await lichessFetch('/api/token/revoke', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({ token: accessToken }).toString()
+  // Lichess revokes the *current* token via DELETE /api/token (no /revoke endpoint).
+  // The Authorization header must use the token being revoked.
+  await lichessFetch('/api/token', {
+    method: 'DELETE',
+    token: accessToken,
   })
 }

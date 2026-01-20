@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Lichess Seek] Seeking match: ${time}+${increment}, rated=${rated}, variant=${variant}, color=${color}`)
+    console.log(`[Lichess Seek] Payload: ${formData.toString()}`)
 
     try {
       const response = await lichessFetch('/api/board/seek', {
