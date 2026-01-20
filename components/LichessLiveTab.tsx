@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
+import PostGameReview from './PostGameReview'
 import { useLichessBoard } from '@/hooks/useLichessBoard'
 import type { LichessAccount } from '@/lib/lichess/account'
 
@@ -522,6 +523,7 @@ export default function LichessLiveTab() {
   }
 
   const isGameActive = !!(liveGameState?.status === 'started' || liveGameState?.status === 'playing')
+  const isPostGame = !!liveGameState && !isGameActive
 
   useEffect(() => {
     if (isGameActive) {
@@ -631,22 +633,10 @@ export default function LichessLiveTab() {
             Connect your Lichess account and start a session to play and get real-time AI commentary.
           </p>
         </div>
-      ) : !liveGameState || !isGameActive ? (
+      ) : !liveGameState ? (
         <div className="flex-1 flex flex-col items-center justify-center bg-sage-900/30 rounded-xl p-10 border border-white/5">
           <div className="text-6xl mb-6">♟️</div>
           <h3 className="text-lg font-bold text-sage-200 mb-2">Ready to Play</h3>
-          
-          {liveGameState && !isGameActive && (
-            <div className="mb-5 px-4 py-2 bg-amber-900/30 border border-amber-700/50 text-amber-200 rounded-lg text-sm font-semibold flex items-center gap-3">
-              <span>Last Game: {formatStatus(liveGameState.status)} vs {liveGameState.opponentName || 'Unknown'}</span>
-              <button 
-                onClick={() => { refreshState() }}
-                className="text-amber-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-          )}
           
           <div className="mb-8 w-full max-w-lg flex flex-col gap-4">
             <div className="w-full flex flex-col items-center gap-2">
@@ -823,6 +813,16 @@ export default function LichessLiveTab() {
       ) : (
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           <div className="relative bg-[#1f1306] rounded-xl p-8 flex flex-col items-center justify-center gap-4 shadow-2xl border border-orange-900/30">
+            {isPostGame ? (
+              <div className="w-full max-w-[500px] bg-amber-900/30 border border-amber-700/50 text-amber-200 px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-between gap-3">
+                <div className="min-w-0 truncate">
+                  Game over: {formatStatus(liveGameState.status)} vs {liveGameState.opponentName || 'Opponent'}
+                </div>
+                <button onClick={() => refreshState()} className="text-amber-300 hover:text-white">
+                  Refresh
+                </button>
+              </div>
+            ) : null}
             <div className="w-full max-w-[500px] flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="text-xs font-black text-amber-400 uppercase tracking-widest">
@@ -1012,10 +1012,32 @@ export default function LichessLiveTab() {
             </div>
 
             <div className="flex-1 min-h-0 bg-sage-900/40 rounded-xl p-4 border border-white/5 overflow-hidden flex flex-col">
-               <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider shrink-0">Live Commentary</h4>
-               <div className="flex-1 overflow-y-auto">
-                 <LiveCommentary fen={view.fen} moves={view.moves} myColor={myColor} />
-               </div>
+              <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider shrink-0">
+                {isPostGame ? 'Post-game review' : 'Live Commentary'}
+              </h4>
+              <div className="flex-1 overflow-y-auto">
+                {isPostGame ? (
+                  <PostGameReview
+                    fen={view.fen}
+                    moves={view.moves}
+                    myColor={myColor}
+                    status={liveGameState.status}
+                    winner={liveGameState.winner}
+                    opponentName={liveGameState.opponentName}
+                  />
+                ) : (
+                  <div className="text-sage-500 text-sm">
+                    The coach overlay will update after each move.
+                  </div>
+                )}
+                {/* Keep the coach flyover visible; in post-game we enlarge it. */}
+                <LiveCommentary
+                  fen={view.fen}
+                  moves={view.moves}
+                  myColor={myColor}
+                  variant={isPostGame ? 'postGame' : 'live'}
+                />
+              </div>
             </div>
           </div>
         </div>

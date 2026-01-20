@@ -8,6 +8,7 @@ import MobileGameDrawer from '@/components/MobileGameDrawer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
+import ParametersTab from '@/components/ParametersTab'
 import type { HomeTab } from '@/components/DesktopHome'
 
 interface MobileHomeProps {
@@ -61,6 +62,7 @@ export default function MobileHome({
           <MobileTabButton active={activeTab === 'openings'} onClick={() => setActiveTab('openings')} label="Openings" />
           <MobileTabButton active={activeTab === 'lichess'} onClick={() => setActiveTab('lichess')} label="Lichess" special="lichess" />
           <MobileTabButton active={activeTab === 'dna'} onClick={() => setActiveTab('dna')} label="DNA" special="dna" />
+          <MobileTabButton active={activeTab === 'params'} onClick={() => setActiveTab('params')} label="Params" />
         </div>
 
         <div className="px-3 pb-3">
@@ -79,6 +81,7 @@ export default function MobileHome({
             {activeTab === 'openings' && <OpeningExplorer />}
             {activeTab === 'lichess' && <LichessLiveTab />}
             {activeTab === 'dna' && <BlunderDnaTab />}
+            {activeTab === 'params' && <ParametersTab />}
           </div>
         )}
       </div>

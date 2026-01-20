@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useStockfish } from '@/hooks/useStockfish'
 import EvalGauge, { formatEvalLabel } from '@/components/EvalGauge'
+import { useAgentTone } from '@/hooks/useAgentTone'
 
 interface LiveCommentaryProps {
   fen: string
   moves: string
   myColor?: 'white' | 'black' | null
+  variant?: 'live' | 'postGame'
 }
 
 const MIN_DEPTH_FOR_COMMENT = 8
@@ -46,9 +48,10 @@ const describeSwing = (delta: number) => {
   return 'shift'
 }
 
-export default function LiveCommentary({ fen, moves, myColor }: LiveCommentaryProps) {
+export default function LiveCommentary({ fen, moves, myColor, variant = 'live' }: LiveCommentaryProps) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 16, lines: 1 })
-  const [position, setPosition] = useState({ x: 24, y: 120 })
+  const { tone } = useAgentTone()
+  const [position, setPosition] = useState({ x: variant === 'postGame' ? 24 : 24, y: variant === 'postGame' ? 84 : 120 })
   const [isDragging, setIsDragging] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const [commentary, setCommentary] = useState<string>('Waiting for the next move…')
@@ -117,6 +120,7 @@ export default function LiveCommentary({ fen, moves, myColor }: LiveCommentaryPr
       fen,
       moves,
       myColor: myColor ?? null,
+      tone,
       lastMove,
       evaluation: engineState.evaluation,
       mate: engineState.mate,
@@ -173,19 +177,23 @@ export default function LiveCommentary({ fen, moves, myColor }: LiveCommentaryPr
     }
   }
 
+  const panelWidth = variant === 'postGame' ? 380 : 260
+  const panelPadding = variant === 'postGame' ? '14px 16px 16px' : '12px 14px 14px'
+  const fontSize = variant === 'postGame' ? '14px' : '13px'
+
   return (
     <div
       style={{
         position: 'fixed',
         left: position.x,
         top: position.y,
-        width: '260px',
+        width: `${panelWidth}px`,
         background: 'rgba(15, 23, 42, 0.95)',
         color: '#f8fafc',
         borderRadius: '14px',
         boxShadow: '0 12px 30px rgba(15, 23, 42, 0.45)',
         border: '1px solid rgba(148, 163, 184, 0.25)',
-        padding: '12px 14px 14px',
+        padding: panelPadding,
         zIndex: 60,
       }}
     >
@@ -210,10 +218,14 @@ export default function LiveCommentary({ fen, moves, myColor }: LiveCommentaryPr
           marginBottom: '8px',
         }}
       >
-        <span>{commentarySource === 'llm' ? 'Coach' : 'Stockfish Coach'}</span>
+        <span>
+          {variant === 'postGame'
+            ? (commentarySource === 'llm' ? 'Post-game coach' : 'Post-game (Stockfish)')
+            : (commentarySource === 'llm' ? 'Coach' : 'Stockfish Coach')}
+        </span>
         <span style={{ fontSize: '10px', opacity: 0.7 }}>Drag</span>
       </button>
-      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>{commentary}</div>
+      <div style={{ fontSize, lineHeight: 1.45 }}>{commentary}</div>
       <div style={{ marginTop: '10px' }}>
         <EvalGauge evaluationCp={engineState.evaluation} mate={engineState.mate} />
       </div>

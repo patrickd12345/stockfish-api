@@ -7,8 +7,9 @@ import OpeningExplorer from '@/components/OpeningExplorer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
+import ParametersTab from '@/components/ParametersTab'
 
-export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna'
+export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna' | 'params'
 
 interface DesktopHomeProps {
   activeTab: HomeTab
@@ -72,6 +73,11 @@ export default function DesktopHome({
               label="Blunder DNA"
               special="dna"
             />
+            <TabButton
+              active={activeTab === 'params'}
+              onClick={() => setActiveTab('params')}
+              label="Parameters"
+            />
           </div>
 
           <div className="flex items-center gap-4 flex-wrap justify-end">
@@ -93,6 +99,7 @@ export default function DesktopHome({
           {activeTab === 'openings' && <OpeningExplorer />}
           {activeTab === 'lichess' && <LichessLiveTab />}
           {activeTab === 'dna' && <BlunderDnaTab />}
+          {activeTab === 'params' && <ParametersTab />}
         </div>
       </main>
     </div>

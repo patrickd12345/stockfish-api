@@ -17,6 +17,9 @@ vi.mock('./ChessBoard', () => ({
 vi.mock('./LiveCommentary', () => ({
   default: () => <div data-testid="live-commentary">LiveCommentary</div>
 }))
+vi.mock('./PostGameReview', () => ({
+  default: () => <div data-testid="post-game-review">PostGameReview</div>
+}))
 
 describe('components/LichessLiveTab', () => {
   beforeEach(() => {
@@ -109,6 +112,42 @@ describe('components/LichessLiveTab', () => {
     await waitFor(() => {
       expect(screen.queryByText('Seek Match')).not.toBeInTheDocument()
       expect(screen.getByTestId('chess-board')).toBeInTheDocument()
+    })
+  })
+
+  it('stays on chessboard and shows post-game review when game is over', async () => {
+    mockUseLichessBoard.mockReturnValue({
+      state: {
+        gameId: '123',
+        fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        moves: 'e2e4 e7e5',
+        status: 'mate',
+        myColor: 'black',
+        wtime: 10000,
+        btime: 10000,
+        winc: 0,
+        binc: 0
+      },
+      error: null,
+      refreshState: mockRefreshState
+    })
+
+    const fetchSpy = vi.fn().mockImplementation((url) => {
+      if (url === '/api/lichess/board/session') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'connected' })
+        })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    render(<LichessLiveTab />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chess-board')).toBeInTheDocument()
+      expect(screen.getByTestId('post-game-review')).toBeInTheDocument()
     })
   })
 })

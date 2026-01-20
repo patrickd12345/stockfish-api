@@ -5,16 +5,20 @@ import { normalizeAgentTone } from '@/lib/agentTone'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function fallbackCommentary(input: {
-  lastMove?: string | null
+function fallbackReview(input: {
+  status?: string | null
+  winner?: string | null
+  myColor?: 'white' | 'black' | null
   evalLabel?: string | null
   bestMove?: string | null
 }): string {
-  const parts: string[] = []
-  if (input.lastMove) parts.push(`After ${input.lastMove},`)
-  if (input.evalLabel) parts.push(`eval is ${input.evalLabel}.`)
-  if (input.bestMove) parts.push(`Best move idea: ${input.bestMove}.`)
-  return parts.join(' ').trim() || 'Waiting for the next move…'
+  const resultBits: string[] = []
+  if (input.winner) resultBits.push(`Winner: ${input.winner}.`)
+  if (input.status) resultBits.push(`End: ${input.status}.`)
+  const evalBit = input.evalLabel ? `Final eval: ${input.evalLabel}.` : ''
+  const bestBit = input.bestMove ? `Idea to remember: ${input.bestMove}.` : ''
+  const pov = input.myColor ? `You were ${input.myColor}.` : ''
+  return [pov, ...resultBits, evalBit, bestBit].filter(Boolean).join(' ').trim() || 'Game over.'
 }
 
 export async function POST(request: NextRequest) {
@@ -24,18 +28,19 @@ export async function POST(request: NextRequest) {
   const moves = typeof body.moves === 'string' ? body.moves : ''
   const myColor = body.myColor === 'white' || body.myColor === 'black' ? (body.myColor as 'white' | 'black') : null
   const tone = normalizeAgentTone(body.tone)
-  const lastMove = typeof body.lastMove === 'string' ? body.lastMove : null
+  const status = typeof body.status === 'string' ? body.status : null
+  const winner = body.winner === 'white' || body.winner === 'black' ? (body.winner as 'white' | 'black') : null
   const evaluation = typeof body.evaluation === 'number' ? body.evaluation : null
   const mate = typeof body.mate === 'number' ? body.mate : null
   const depth = typeof body.depth === 'number' ? body.depth : null
   const bestLine = typeof body.bestLine === 'string' ? body.bestLine : null
   const bestMove = typeof body.bestMove === 'string' ? body.bestMove : null
   const evalLabel = typeof body.evalLabel === 'string' ? body.evalLabel : null
+  const opponentName = typeof body.opponentName === 'string' ? body.opponentName : null
 
-  // Always return usable output, even if no LLM configured.
   if (!getOpenAIConfig()) {
     return NextResponse.json({
-      commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
+      review: fallbackReview({ status, winner, myColor, evalLabel, bestMove }),
       source: 'fallback'
     })
   }
@@ -51,21 +56,21 @@ export async function POST(request: NextRequest) {
         {
           role: 'system',
           content:
-            'You are an onboard chess coach. Write helpful, human-friendly live feedback.\n' +
-            `- The player you are coaching is playing as: ${myColor ?? 'unknown'}.\n` +
+            'You are an onboard chess coach. Write a concise post-game review.\n' +
+            `- The player you are coaching played as: ${myColor ?? 'unknown'}.\n` +
             `- Your tone must be: ${tone}.\n` +
             '- Tone rules:\n' +
             '  - neutral: direct, calm, analytical.\n' +
             '  - empathic: supportive, encouraging, never patronizing.\n' +
             '  - jockey: playful hype + light banter (never rude).\n' +
             '  - sarcastic: dry witty humor (never mean-spirited).\n' +
-            '- Use that POV: when you say "you", you mean that player; recommend moves for that side.\n' +
-            '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
-            '- Use ALL preceding moves and the current Stockfish output.\n' +
-            '- Keep it concise: 1–3 short sentences.\n' +
-            '- Focus on plans/tactics and the most important mistake or opportunity.\n' +
-            '- Do NOT dump engine lines verbatim; interpret them.\n' +
-            "- If uncertain, say what to look for next rather than hallucinating.\n"
+            '- Stockfish evaluation is from White POV (positive = White better).\n' +
+            '- Keep it short and actionable.\n' +
+            '- Format:\n' +
+            '  1) Result (1 line)\n' +
+            '  2) 2–4 bullet points: biggest turning point(s), key mistake(s), key lesson(s)\n' +
+            '  3) One concrete next-step drill or focus\n' +
+            '- Do NOT invent moves or lines that are not supported.\n'
         },
         {
           role: 'user',
@@ -73,8 +78,9 @@ export async function POST(request: NextRequest) {
             {
               fen,
               moves,
-              myColor,
-              lastMove,
+              status,
+              winner,
+              opponentName,
               stockfish: { evaluation, mate, depth, bestMove, bestLine, evalLabel }
             },
             null,
@@ -84,19 +90,19 @@ export async function POST(request: NextRequest) {
       ]
     })
 
-    const commentary = completion.choices[0]?.message?.content?.trim()
-    if (!commentary) {
+    const review = completion.choices[0]?.message?.content?.trim()
+    if (!review) {
       return NextResponse.json({
-        commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
+        review: fallbackReview({ status, winner, myColor, evalLabel, bestMove }),
         source: 'fallback'
       })
     }
 
-    return NextResponse.json({ commentary, source: 'llm' })
+    return NextResponse.json({ review, source: 'llm' })
   } catch (error: any) {
-    console.error('[Live Commentary] LLM failed:', error)
+    console.error('[Post Game Review] LLM failed:', error)
     return NextResponse.json({
-      commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
+      review: fallbackReview({ status, winner, myColor, evalLabel, bestMove }),
       source: 'fallback'
     })
   }
