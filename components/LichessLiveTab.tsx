@@ -217,9 +217,14 @@ export default function LichessLiveTab() {
 
   const displayGame = useMemo(() => {
     if (!liveGameState) return null
+
+    // While we're actively seeking/challenging, don't "fall back" to showing the last finished game.
+    // This avoids the UX where the board loads, then resets a few seconds later when a real match begins.
+    if (seeking && liveGameState.status !== 'started' && liveGameState.status !== 'playing') return null
+
     if (dismissedGameId && liveGameState.gameId === dismissedGameId) return null
     return liveGameState
-  }, [dismissedGameId, liveGameState])
+  }, [dismissedGameId, liveGameState, seeking])
 
   const groupedTimeControls = useMemo(() => {
     const presets: TimeControlPreset[] = [
@@ -419,12 +424,6 @@ export default function LichessLiveTab() {
     setSeeking(true)
     setActionError(null)
     try {
-      localStorage.removeItem(DISMISSED_GAME_STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-    setDismissedGameId(null)
-    try {
       const res = await fetch('/api/lichess/board/seek', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -513,13 +512,6 @@ export default function LichessLiveTab() {
     if (!liveGameState?.opponentName) return
     setIsChallenging(true)
     try {
-      try {
-        localStorage.removeItem(DISMISSED_GAME_STORAGE_KEY)
-      } catch {
-        // ignore
-      }
-      setDismissedGameId(null)
-
       const res = await fetch(`/api/lichess/board/challenge/${liveGameState.opponentName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -563,7 +555,8 @@ export default function LichessLiveTab() {
         body: JSON.stringify({ 
           time: seekTime, 
           increment: seekIncrement,
-          rated: seekRated
+          // Bots are always casual; Elo never changes vs bots.
+          rated: false
         })
       })
       let data: any = {}

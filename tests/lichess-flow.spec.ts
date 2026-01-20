@@ -32,6 +32,31 @@ test.describe('Lichess Live Mode Flow', () => {
   });
 
   test('should handle seek match flow', async ({ page }) => {
+    // Simulate a finished game lingering in state while matchmaking happens.
+    // The UI should stay in the lobby (and not render the old board) until a real match starts.
+    await page.route('**/api/lichess/board/state', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          gameId: 'finished-game',
+          lichessUserId: 'me',
+          status: 'mate',
+          fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+          moves: '',
+          wtime: 0,
+          btime: 0,
+          winc: 0,
+          binc: 0,
+          myColor: 'white',
+          opponentName: 'OldOpponent',
+          opponentRating: 1500,
+          initialTimeMs: 180000,
+          initialIncrementMs: 0,
+        }),
+      })
+    })
+
     // Mock the seek API
     await page.route('**/api/lichess/board/seek', async (route) => {
       await route.fulfill({
@@ -46,6 +71,10 @@ test.describe('Lichess Live Mode Flow', () => {
     
     // It should show "Seeking..." state
     await expect(page.getByRole('button', { name: 'Seeking...' })).toBeVisible();
+
+    // Should remain in lobby while waiting for real game start
+    await expect(page.getByText('Ready to Play')).toBeVisible()
+    await expect(page.getByText('Game over:')).toHaveCount(0)
   });
 
   test('should transition to active game when game starts', async ({ page }) => {

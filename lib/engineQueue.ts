@@ -31,6 +31,82 @@ async function ensureQueueTable(): Promise<void> {
   queueReady = true
 }
 
+export async function requeueStaleProcessingJobs(opts: {
+  engineName: string
+  analysisDepth: number
+  staleMinutes?: number
+}): Promise<{ requeued: number }> {
+  await ensureQueueTable()
+  const sql = getSql()
+  const staleMinutes = Math.max(1, Math.min(120, Math.trunc(opts.staleMinutes ?? 15)))
+
+  // If a worker crashes / times out, jobs can get stuck in "processing" forever.
+  // Requeue anything older than the stale threshold so progress can resume.
+  const raw = await sql`
+    UPDATE engine_analysis_queue
+    SET
+      status = 'pending',
+      updated_at = now(),
+      last_error = COALESCE(last_error, '') || ${`\n[auto] requeued stale processing job (> ${staleMinutes}m)`}
+    WHERE status = 'processing'
+      AND engine_name = ${opts.engineName}
+      AND analysis_depth = ${opts.analysisDepth}
+      AND updated_at < now() - (${staleMinutes} * INTERVAL '1 minute')
+    RETURNING id
+  `
+  const rows = Array.isArray(raw) ? raw : []
+  return { requeued: rows.length }
+}
+
+export async function getEngineQueueStats(engineName: string, analysisDepth: number): Promise<{
+  total: number
+  pending: number
+  processing: number
+  done: number
+  failed: number
+  staleProcessing: number
+}> {
+  await ensureQueueTable()
+  const sql = getSql()
+
+  const raw = (await sql`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+      COUNT(*) FILTER (WHERE status = 'processing')::int AS processing,
+      COUNT(*) FILTER (WHERE status = 'done')::int AS done,
+      COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+      COUNT(*) FILTER (WHERE status = 'processing' AND updated_at < now() - (15 * INTERVAL '1 minute'))::int AS stale_processing
+    FROM engine_analysis_queue
+    WHERE engine_name = ${engineName}
+      AND analysis_depth = ${analysisDepth}
+  `) as Array<{
+    total: number
+    pending: number
+    processing: number
+    done: number
+    failed: number
+    stale_processing: number
+  }>
+
+  const row = raw[0] ?? {
+    total: 0,
+    pending: 0,
+    processing: 0,
+    done: 0,
+    failed: 0,
+    stale_processing: 0,
+  }
+  return {
+    total: Number(row.total) || 0,
+    pending: Number(row.pending) || 0,
+    processing: Number(row.processing) || 0,
+    done: Number(row.done) || 0,
+    failed: Number(row.failed) || 0,
+    staleProcessing: Number(row.stale_processing) || 0,
+  }
+}
+
 export async function enqueueEngineAnalysisJobs(
   limit: number,
   engineName: string,
@@ -76,6 +152,10 @@ export async function claimEngineAnalysisJobs(
 ): Promise<EngineAnalysisJob[]> {
   await ensureQueueTable()
   const sql = getSql()
+
+  // Keep the queue flowing even if a previous worker died mid-batch.
+  await requeueStaleProcessingJobs({ engineName, analysisDepth }).catch(() => null)
+
   const raw = await sql`
     WITH next_jobs AS (
       SELECT id
