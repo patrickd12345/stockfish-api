@@ -30,12 +30,6 @@ function getConnectionStringSource(): 'POSTGRES_URL' | 'DATABASE_URL' | 'POSTGRE
   return 'none'
 }
 
-const CONNECTION_STRING = getConnectionString()
-
-if (!CONNECTION_STRING) {
-  console.warn('No database connection string found. Please define one of: POSTGRES_URL, DATABASE_URL, or POSTGRES_PRISMA_URL in .env.local')
-}
-
 type SqlClient = NeonQueryFunction<false, false>
 
 let _sql: SqlClient | null = null
