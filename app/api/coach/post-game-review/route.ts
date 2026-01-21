@@ -38,7 +38,10 @@ export async function POST(request: NextRequest) {
   const evalLabel = typeof body.evalLabel === 'string' ? body.evalLabel : null
   const opponentName = typeof body.opponentName === 'string' ? body.opponentName : null
 
-  if (!getOpenAIConfig()) {
+  // Check for BYOK header
+  const byokKey = request.headers.get('x-openai-key')
+
+  if (!getOpenAIConfig(byokKey)) {
     return NextResponse.json({
       review: fallbackReview({ status, winner, myColor, evalLabel, bestMove }),
       source: 'fallback'
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const openai = getOpenAIClient()
+    const openai = getOpenAIClient(byokKey)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     const completion = await openai.chat.completions.create({

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useStockfish } from '@/hooks/useStockfish'
 import EvalGauge, { formatEvalLabel } from '@/components/EvalGauge'
 import { useAgentTone } from '@/hooks/useAgentTone'
+import { useOpenAIKey } from '@/hooks/useOpenAIKey'
 
 interface LiveCommentaryProps {
   fen: string
@@ -83,6 +84,7 @@ export default function LiveCommentary({
 }: LiveCommentaryProps) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 16, lines: 1 })
   const { tone } = useAgentTone()
+  const byokKey = useOpenAIKey()
   const [position, setPosition] = useState({ x: variant === 'postGame' ? 24 : 24, y: variant === 'postGame' ? 84 : 120 })
   const [isDragging, setIsDragging] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
@@ -163,9 +165,14 @@ export default function LiveCommentary({
       evalLabel: evalLabelCompact,
     }
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (byokKey) {
+      headers['x-openai-key'] = byokKey
+    }
+
     fetch('/api/coach/live-commentary', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
       signal: ac.signal,
     })
@@ -192,7 +199,8 @@ export default function LiveCommentary({
     moves,
     myColor,
     tone,
-    variant
+    variant,
+    byokKey
   ])
 
   useEffect(() => {
@@ -226,9 +234,14 @@ export default function LiveCommentary({
 
     const evalLabelCompact = formatEvalLabel(engineState.evaluation, engineState.mate)
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (byokKey) {
+      headers['x-openai-key'] = byokKey
+    }
+
     fetch('/api/coach/post-game-review', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: ac.signal,
       body: JSON.stringify({
         fen,
@@ -268,7 +281,8 @@ export default function LiveCommentary({
     status,
     winner,
     opponentName,
-    variant
+    variant,
+    byokKey
   ])
 
   useEffect(() => {

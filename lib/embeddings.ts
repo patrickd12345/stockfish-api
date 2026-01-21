@@ -26,10 +26,10 @@ export function buildEmbeddingText(input: {
   return header ? `${header}\n${pgn}` : pgn
 }
 
-export async function getEmbedding(text: string): Promise<number[] | null> {
+export async function getEmbedding(text: string, apiKeyOverride?: string | null): Promise<number[] | null> {
   let openai
   try {
-    openai = getOpenAIClient()
+    openai = getOpenAIClient(apiKeyOverride)
   } catch {
     return null
   }

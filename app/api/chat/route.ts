@@ -12,13 +12,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
+    // Check for BYOK header
+    const byokKey = request.headers.get('x-openai-key')
+
     // Resolve time window from full message. This is:
     // - Rule-based for common expressions
     // - LLM-assisted for fuzzy phrases ("around christmas")
-    const resolution = await resolveTimeWindowFromMessage(message)
+    const resolution = await resolveTimeWindowFromMessage(message, byokKey)
     const timeWindowStr = resolution ? `${resolution.window.start} to ${resolution.window.end}` : null
 
-    const agent = await buildAgent(null)
+    const agent = await buildAgent(null, byokKey)
     const response = await agent.invoke({ 
       input: message, 
       gameId,

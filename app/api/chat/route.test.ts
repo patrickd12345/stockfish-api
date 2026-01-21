@@ -29,6 +29,7 @@ describe('app/api/chat', () => {
 
     const res = await POST({
       json: async () => ({ message: 'hi', gameId: 'g1' }),
+      headers: { get: () => null }
     } as any)
 
     expect(res.status).toBe(200)
@@ -45,6 +46,7 @@ describe('app/api/chat', () => {
 
     const res = await POST({
       json: async () => ({ message: 'hi' }),
+      headers: { get: () => null }
     } as any)
 
     expect(res.status).toBe(500)

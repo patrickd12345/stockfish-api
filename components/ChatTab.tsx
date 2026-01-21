@@ -5,6 +5,7 @@ import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import SuggestionBubbles from './SuggestionBubbles'
 import FirstInsightsPanel from '@/components/FirstInsightsPanel'
+import { useOpenAIKey } from '@/hooks/useOpenAIKey'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -24,6 +25,7 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
   const [loading, setLoading] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const byokKey = useOpenAIKey()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -47,9 +49,14 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
       const safeGameId =
         selectedGameId && selectedGameId.startsWith('lichess:') ? null : selectedGameId
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (byokKey) {
+        headers['x-openai-key'] = byokKey
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ 
           message,
           gameId: safeGameId 
@@ -83,9 +90,14 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
     const fetchSuggestions = async () => {
       const lastMessage = messages[messages.length - 1]?.content ?? ''
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (byokKey) {
+          headers['x-openai-key'] = byokKey
+        }
+
         const res = await fetch('/api/coach/suggestions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             page: currentPage || 'chat',
             gameState: null,
@@ -103,7 +115,7 @@ export default function ChatTab({ selectedGameId, fill = false, currentPage }: C
     }
 
     fetchSuggestions()
-  }, [currentPage, selectedGameId, messages])
+  }, [currentPage, selectedGameId, messages, byokKey])
 
   return (
     <div

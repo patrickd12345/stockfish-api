@@ -15,9 +15,9 @@ export type TimeWindowResolution =
     }
   | null
 
-function getResolverClient() {
+function getResolverClient(apiKey: string | null = null) {
   try {
-    return getOpenAIClient()
+    return getOpenAIClient(apiKey)
   } catch {
     return null
   }
@@ -49,6 +49,7 @@ function safeParseJsonObject(text: string): any | null {
 
 export async function resolveTimeWindowFromMessage(
   message: string,
+  byokKey: string | null = null,
   now: Date = new Date()
 ): Promise<TimeWindowResolution> {
   // 1) Fast deterministic parse.
@@ -65,7 +66,7 @@ export async function resolveTimeWindowFromMessage(
   }
 
   // 2) LLM-assisted fuzzy resolution.
-  const openai = getResolverClient()
+  const openai = getResolverClient(byokKey)
   if (!openai) return null
 
   const nowIso = toIsoDate(now)

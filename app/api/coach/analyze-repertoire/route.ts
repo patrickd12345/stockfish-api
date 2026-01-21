@@ -5,9 +5,14 @@ import { getRecentBlunders } from '@/lib/blunderStorage'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST() {
+import { NextRequest } from 'next/server'
+
+export async function POST(request: NextRequest) {
   try {
-    const openai = getOpenAIClient()
+    // Check for BYOK header
+    const byokKey = request.headers.get('x-openai-key')
+
+    const openai = getOpenAIClient(byokKey)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     const openings = await getOpeningStats(50)

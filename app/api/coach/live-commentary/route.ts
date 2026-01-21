@@ -32,8 +32,11 @@ export async function POST(request: NextRequest) {
   const bestMove = typeof body.bestMove === 'string' ? body.bestMove : null
   const evalLabel = typeof body.evalLabel === 'string' ? body.evalLabel : null
 
-  // Always return usable output, even if no LLM configured.
-  if (!getOpenAIConfig()) {
+  // Check for BYOK header
+  const byokKey = request.headers.get('x-openai-key')
+
+  // Always return usable output, even if no LLM configured (and no BYOK key).
+  if (!getOpenAIConfig(byokKey)) {
     return NextResponse.json({
       commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
       source: 'fallback'
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const openai = getOpenAIClient()
+    const openai = getOpenAIClient(byokKey)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     const completion = await openai.chat.completions.create({
