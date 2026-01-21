@@ -16,6 +16,8 @@ export interface IGame {
   time?: string
   white?: string
   black?: string
+  white_elo?: number | null
+  black_elo?: number | null
   result?: string
   opening_name?: string
   my_accuracy?: number
@@ -30,6 +32,8 @@ export interface CreateGameInput {
   time?: string
   white?: string
   black?: string
+  white_elo?: number | null
+  black_elo?: number | null
   result?: string
   opening_name?: string
   my_accuracy?: number
@@ -73,6 +77,232 @@ export interface OpeningStatsRow {
 
 type DbRow = Record<string, unknown>
 
+export type RatingBandRow = {
+  bandStart: number
+  bandEnd: number
+  games: number
+  wins: number
+  losses: number
+  draws: number
+  winRate: number
+}
+
+export async function getOpponentRatingBandPerformance(
+  bandSize: number = 200,
+  minGamesPerBand: number = 50
+): Promise<
+  | {
+      note: string
+      overallWinRate: number
+      overallGames: number
+      bands: RatingBandRow[]
+    }
+  | {
+      overallWinRate: number
+      overallGames: number
+      bands: RatingBandRow[]
+      note?: undefined
+    }
+> {
+  const sql = getSql()
+  const rawBand = Number(bandSize)
+  const band = Number.isFinite(rawBand) && rawBand > 0 ? Math.trunc(rawBand) : 200
+
+  const playerNames = [
+    process.env.CHESS_PLAYER_NAMES?.split(',') || [],
+    ['patrickd1234567', 'patrickd12345678', 'anonymous19670705'],
+  ]
+    .flat()
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean)
+  const playerPatterns = playerNames.map((name) => `%${name}%`)
+
+  // If Elo columns are missing (migration not run), fail gracefully.
+  const colCheck = (await sql`
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'games'
+          AND column_name = 'white_elo'
+      ) AS has_white_elo,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'games'
+          AND column_name = 'black_elo'
+      ) AS has_black_elo
+  `) as Array<{ has_white_elo: boolean; has_black_elo: boolean }>
+
+  if (!colCheck[0]?.has_white_elo || !colCheck[0]?.has_black_elo) {
+    return {
+      note: 'Ratings are not stored yet (missing games.white_elo / games.black_elo).',
+      overallWinRate: 0,
+      overallGames: 0,
+      bands: [],
+    }
+  }
+
+  const rows = (await sql`
+    WITH mine AS (
+      SELECT
+        id,
+        result,
+        CASE
+          WHEN white ILIKE ANY(${playerPatterns}) THEN 'white'
+          WHEN black ILIKE ANY(${playerPatterns}) THEN 'black'
+          ELSE NULL
+        END AS my_color,
+        white_elo,
+        black_elo
+      FROM games
+      WHERE (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+        AND pgn_text IS NOT NULL
+        AND pgn_text != ''
+    ),
+    with_opp AS (
+      SELECT
+        CASE
+          WHEN my_color = 'white' THEN black_elo
+          WHEN my_color = 'black' THEN white_elo
+          ELSE NULL
+        END AS opp_elo,
+        CASE
+          WHEN my_color = 'white' AND result = '1-0' THEN 1
+          WHEN my_color = 'black' AND result = '0-1' THEN 1
+          WHEN result = '1/2-1/2' THEN 0.5
+          WHEN result IS NULL THEN NULL
+          ELSE 0
+        END AS score,
+        CASE
+          WHEN my_color = 'white' AND result = '1-0' THEN 1
+          WHEN my_color = 'black' AND result = '0-1' THEN 1
+          ELSE 0
+        END AS is_win,
+        CASE
+          WHEN my_color = 'white' AND result = '0-1' THEN 1
+          WHEN my_color = 'black' AND result = '1-0' THEN 1
+          ELSE 0
+        END AS is_loss,
+        CASE WHEN result = '1/2-1/2' THEN 1 ELSE 0 END AS is_draw
+      FROM mine
+      WHERE my_color IS NOT NULL
+    ),
+    filtered AS (
+      SELECT *
+      FROM with_opp
+      WHERE opp_elo IS NOT NULL
+        AND score IS NOT NULL
+        AND opp_elo BETWEEN 0 AND 10000
+    ),
+    overall AS (
+      SELECT
+        COUNT(*)::int AS games,
+        COALESCE(AVG(score), 0)::float AS win_rate
+      FROM filtered
+    ),
+    bands AS (
+      SELECT
+        (FLOOR(opp_elo::float / ${band}) * ${band})::int AS band_start,
+        COUNT(*)::int AS games,
+        SUM(is_win)::int AS wins,
+        SUM(is_loss)::int AS losses,
+        SUM(is_draw)::int AS draws,
+        COALESCE(AVG(score), 0)::float AS win_rate
+      FROM filtered
+      GROUP BY 1
+    )
+    SELECT
+      o.games AS overall_games,
+      o.win_rate AS overall_win_rate,
+      b.band_start,
+      b.games,
+      b.wins,
+      b.losses,
+      b.draws,
+      b.win_rate
+    FROM overall o
+    JOIN bands b ON true
+    WHERE b.games >= ${Math.max(1, Math.trunc(minGamesPerBand))}
+    ORDER BY b.band_start ASC
+  `) as Array<{
+    overall_games: number
+    overall_win_rate: number
+    band_start: number
+    games: number
+    wins: number
+    losses: number
+    draws: number
+    win_rate: number
+  }>
+
+  if (rows.length === 0) {
+    // Could be because Elos not backfilled yet, or too few games with Elo.
+    const overall = (await sql`
+      WITH mine AS (
+        SELECT
+          result,
+          CASE
+            WHEN white ILIKE ANY(${playerPatterns}) THEN 'white'
+            WHEN black ILIKE ANY(${playerPatterns}) THEN 'black'
+            ELSE NULL
+          END AS my_color,
+          white_elo,
+          black_elo
+        FROM games
+        WHERE (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
+          AND pgn_text IS NOT NULL
+          AND pgn_text != ''
+      ),
+      with_opp AS (
+        SELECT
+          CASE
+            WHEN my_color = 'white' THEN black_elo
+            WHEN my_color = 'black' THEN white_elo
+            ELSE NULL
+          END AS opp_elo,
+          CASE
+            WHEN my_color = 'white' AND result = '1-0' THEN 1
+            WHEN my_color = 'black' AND result = '0-1' THEN 1
+            WHEN result = '1/2-1/2' THEN 0.5
+            WHEN result IS NULL THEN NULL
+            ELSE 0
+          END AS score
+        FROM mine
+        WHERE my_color IS NOT NULL
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE opp_elo IS NOT NULL)::int AS games,
+        COALESCE(AVG(score) FILTER (WHERE opp_elo IS NOT NULL), 0)::float AS win_rate
+      FROM with_opp
+    `) as Array<{ games: number; win_rate: number }>
+
+    return {
+      note:
+        'Not enough games with Elo to compute rating bands yet. Run: npx tsx scripts/backfill-game-ratings.ts',
+      overallWinRate: Number(overall[0]?.win_rate || 0),
+      overallGames: Number(overall[0]?.games || 0),
+      bands: [],
+    }
+  }
+
+  const overallGames = Number(rows[0]?.overall_games || 0)
+  const overallWinRate = Number(rows[0]?.overall_win_rate || 0)
+  const bands: RatingBandRow[] = rows.map((r) => ({
+    bandStart: Number(r.band_start),
+    bandEnd: Number(r.band_start) + band - 1,
+    games: Number(r.games),
+    wins: Number(r.wins),
+    losses: Number(r.losses),
+    draws: Number(r.draws),
+    winRate: Number(r.win_rate),
+  }))
+
+  return { overallWinRate, overallGames, bands }
+}
+
 export type LichessGameSummary = {
   id: string
   lichess_game_id: string
@@ -94,7 +324,7 @@ export type LichessGameSummary = {
 export async function getGames(limit = 100) {
   const sql = getSql()
   const rows = (await sql`
-    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, pgn_text, created_at
     FROM games
     ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
@@ -105,6 +335,8 @@ export async function getGames(limit = 100) {
     time: r.time ?? undefined,
     white: r.white ?? undefined,
     black: r.black ?? undefined,
+    white_elo: typeof r.white_elo === 'number' ? r.white_elo : r.white_elo === null ? null : r.white_elo ? Number(r.white_elo) : null,
+    black_elo: typeof r.black_elo === 'number' ? r.black_elo : r.black_elo === null ? null : r.black_elo ? Number(r.black_elo) : null,
     result: r.result ?? undefined,
     opening_name: r.opening_name ?? undefined,
     my_accuracy: r.my_accuracy ?? undefined,
@@ -117,7 +349,7 @@ export async function getGames(limit = 100) {
 export async function getGameSummaries(limit = 10) {
   const sql = getSql()
   const rows = (await sql`
-    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
+    SELECT id, date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, created_at
     FROM games
     ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
@@ -128,6 +360,8 @@ export async function getGameSummaries(limit = 10) {
     time: r.time ? String(r.time) : undefined,
     white: r.white ? String(r.white) : undefined,
     black: r.black ? String(r.black) : undefined,
+    white_elo: r.white_elo === null || r.white_elo === undefined ? null : Number(r.white_elo),
+    black_elo: r.black_elo === null || r.black_elo === undefined ? null : Number(r.black_elo),
     result: r.result ? String(r.result) : undefined,
     opening_name: r.opening_name ? String(r.opening_name) : undefined,
     my_accuracy: r.my_accuracy ? Number(r.my_accuracy) : undefined,
@@ -150,7 +384,7 @@ export async function getGameSummariesByDateRange(startDate: string, endDate: st
   // We'll fetch all games and filter in code to handle date format variations
   // This is more reliable than complex SQL CASE statements
   const allRows = (await sql`
-    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
+    SELECT id, date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, created_at
     FROM games
     WHERE date IS NOT NULL OR created_at IS NOT NULL
     ORDER BY date DESC, time DESC, created_at DESC
@@ -200,6 +434,8 @@ export async function getGameSummariesByDateRange(startDate: string, endDate: st
     date: r.date ? String(r.date) : undefined,
     white: r.white ? String(r.white) : undefined,
     black: r.black ? String(r.black) : undefined,
+    white_elo: r.white_elo === null || r.white_elo === undefined ? null : Number(r.white_elo),
+    black_elo: r.black_elo === null || r.black_elo === undefined ? null : Number(r.black_elo),
     result: r.result ? String(r.result) : undefined,
     opening_name: r.opening_name ? String(r.opening_name) : undefined,
     my_accuracy: r.my_accuracy ? Number(r.my_accuracy) : undefined,
@@ -349,12 +585,14 @@ export async function createGame(data: CreateGameInput): Promise<string> {
     const embeddingStr = toVectorString(data.embedding)
     // Cast the text parameter to vector type
     const rows = (await sql`
-      INSERT INTO games (date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
+      INSERT INTO games (date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, pgn_text, moves, embedding)
       VALUES (
         ${data.date ?? null},
         ${data.time ?? null},
         ${data.white ?? null},
         ${data.black ?? null},
+        ${typeof data.white_elo === 'number' ? data.white_elo : null},
+        ${typeof data.black_elo === 'number' ? data.black_elo : null},
         ${data.result ?? null},
         ${data.opening_name ?? null},
         ${data.my_accuracy ?? null},
@@ -368,12 +606,14 @@ export async function createGame(data: CreateGameInput): Promise<string> {
     return String(rows[0]?.id)
   } else {
     const rows = (await sql`
-      INSERT INTO games (date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, moves)
+      INSERT INTO games (date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, pgn_text, moves)
       VALUES (
         ${data.date ?? null},
         ${data.time ?? null},
         ${data.white ?? null},
         ${data.black ?? null},
+        ${typeof data.white_elo === 'number' ? data.white_elo : null},
+        ${typeof data.black_elo === 'number' ? data.black_elo : null},
         ${data.result ?? null},
         ${data.opening_name ?? null},
         ${data.my_accuracy ?? null},
@@ -633,7 +873,7 @@ export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
   // Use template literal - the embedding string is safe since it's generated from numbers
   // We need to cast the parameter to vector type
   const rows = (await sql`
-    SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at,
+    SELECT id, date, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, pgn_text, created_at,
       embedding <-> (${embeddingStr}::text::vector) AS distance
     FROM games
     WHERE embedding IS NOT NULL
@@ -645,6 +885,8 @@ export async function searchGamesByEmbedding(embedding: number[], limit = 5) {
     date: r.date ? String(r.date) : undefined,
     white: r.white ? String(r.white) : undefined,
     black: r.black ? String(r.black) : undefined,
+    white_elo: r.white_elo === null || r.white_elo === undefined ? null : Number(r.white_elo),
+    black_elo: r.black_elo === null || r.black_elo === undefined ? null : Number(r.black_elo),
     result: r.result ? String(r.result) : undefined,
     opening_name: r.opening_name ? String(r.opening_name) : undefined,
     my_accuracy: r.my_accuracy ? Number(r.my_accuracy) : undefined,

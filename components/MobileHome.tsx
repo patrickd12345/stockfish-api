@@ -10,6 +10,7 @@ import BlunderDnaTab from '@/components/BlunderDnaTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
 import type { HomeTab } from '@/components/DesktopHome'
+import { useRouter } from 'next/navigation'
 
 interface MobileHomeProps {
   activeTab: HomeTab
@@ -31,6 +32,7 @@ export default function MobileHome({
   onGameSelect,
 }: MobileHomeProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const router = useRouter()
 
   return (
     <div className="min-h-[100dvh] bg-sage-900 flex flex-col text-sage-100">
@@ -46,9 +48,24 @@ export default function MobileHome({
 
           <div className="font-black text-terracotta text-lg tracking-tight">Chess Coach</div>
 
-          <div className="min-w-[72px] flex justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/account')}
+              className="py-2 px-2.5 rounded-lg text-[11px] font-black border bg-sage-800/50 text-sage-200 border-white/5"
+            >
+              Account
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/pricing')}
+              className="py-2 px-2.5 rounded-lg text-[11px] font-black border bg-terracotta text-sage-900 border-terracotta"
+            >
+              Upgrade
+            </button>
+
             {(importStatus || engineStatus) && (
-              <div className="flex flex-col items-end text-[10px] gap-1">
+              <div className="flex flex-col items-end text-[10px] gap-1 min-w-[64px]">
                 {importStatus && <span className="text-emerald-400 font-medium animate-pulse">Importing</span>}
                 {engineStatus && <span className="text-ochre font-medium animate-pulse">Analyzing</span>}
               </div>

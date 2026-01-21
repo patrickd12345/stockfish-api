@@ -54,6 +54,19 @@ If the time window was based on a fuzzy phrase (e.g., "around christmas"), you M
 
 Do not ask for more data - work with what is provided. If the game count seems low, check if the date range is correct or if games might be missing from the database.`
 
+function wantsRatingBandAnalysis(input: string): boolean {
+  const q = input.toLowerCase()
+  return (
+    q.includes('rating band') ||
+    q.includes('rating range') ||
+    q.includes('overperform') ||
+    q.includes('underperform') ||
+    q.includes('which rating') ||
+    q.includes('against higher rated') ||
+    q.includes('against lower rated')
+  )
+}
+
 export async function buildAgent(conn: any) {
   const cfg = getOpenAIConfig()
   if (!cfg) {
@@ -213,9 +226,14 @@ Total games in database: ${dbGameCount.toLocaleString()}
               const gamesWithBlunderData = blundersWithData.length
               
               // Use a very compact format - CSV-like for efficiency
-              const gamesCompact = gamesInWindow.map((g, i) => 
-                `${i + 1}. ${g.date || 'N/A'} | ${g.white || 'N/A'} vs ${g.black || 'N/A'} | ${g.result || 'N/A'} | ${typeof g.blunders === 'number' && g.blunders >= 0 ? `${g.blunders} blunders` : 'blunders: pending analysis'} | ${g.my_accuracy ? g.my_accuracy.toFixed(1) + '%' : 'N/A'}`
-              ).join('\n')
+              const gamesCompact = gamesInWindow
+                .map((g, i) => {
+                  const wElo = (g as any).white_elo ?? null
+                  const bElo = (g as any).black_elo ?? null
+                  const eloStr = `Elo ${wElo ?? '?'}–${bElo ?? '?'}`
+                  return `${i + 1}. ${g.date || 'N/A'} | ${g.white || 'N/A'} (${wElo ?? '?'}) vs ${g.black || 'N/A'} (${bElo ?? '?'}) | ${g.result || 'N/A'} | ${eloStr} | ${typeof g.blunders === 'number' && g.blunders >= 0 ? `${g.blunders} blunders` : 'blunders: pending analysis'} | ${g.my_accuracy ? g.my_accuracy.toFixed(1) + '%' : 'N/A'}`
+                })
+                .join('\n')
               
               context += `\n\n╔══════════════════════════════════════════════════════════════╗
 ║  TIME WINDOW ANALYSIS: ${window.label || 'Custom Period'}          ║
@@ -266,6 +284,36 @@ ${gamesCompact}
           }
         }
 
+        if (wantsRatingBandAnalysis(input)) {
+          try {
+            const { getOpponentRatingBandPerformance } = await import('@/lib/models')
+            const bands = await getOpponentRatingBandPerformance(200, 50)
+            if (bands.note) {
+              context += `\n\n=== RATING BAND PERFORMANCE (AUTHORITATIVE) ===
+${bands.note}
+=============================================`
+            } else {
+              const lines = bands.bands.map((b) => {
+                const range = `${b.bandStart}–${b.bandEnd}`
+                const wr = (b.winRate * 100).toFixed(1)
+                const delta = ((b.winRate - bands.overallWinRate) * 100).toFixed(1)
+                return `${range} | n=${b.games} | W${b.wins}/L${b.losses}/D${b.draws} | winrate=${wr}% | vs overall ${delta}%`
+              })
+
+              context += `\n\n=== RATING BAND PERFORMANCE (AUTHORITATIVE) ===
+Overall win rate (games with Elo): ${(bands.overallWinRate * 100).toFixed(1)}% (n=${bands.overallGames.toLocaleString()})
+Band size: 200 Elo
+
+${lines.join('\n')}
+=============================================`
+            }
+          } catch (e) {
+            context += `\n\n=== RATING BAND PERFORMANCE ===
+Unable to compute rating-band performance (ratings may not be stored yet). Run: npx tsx scripts/migrate-game-ratings.ts then npx tsx scripts/backfill-game-ratings.ts
+==============================`
+          }
+        }
+
         if (input) {
           try {
             const embedding = await getEmbedding(input)
@@ -277,6 +325,8 @@ ${gamesCompact}
                   date: game.date,
                   white: game.white,
                   black: game.black,
+                  white_elo: (game as any).white_elo ?? null,
+                  black_elo: (game as any).black_elo ?? null,
                   result: game.result,
                   opening_name: game.opening_name,
                   my_accuracy: game.my_accuracy,
@@ -514,9 +564,15 @@ function formatGamesForContext(
   let truncated = false
 
   for (const game of games) {
+    const whiteElo = typeof game.white_elo === 'number' ? game.white_elo : null
+    const blackElo = typeof game.black_elo === 'number' ? game.black_elo : null
+    const eloPart =
+      whiteElo !== null || blackElo !== null ? `Elo: ${whiteElo ?? '?'}-${blackElo ?? '?'}` : null
+
     const lineParts = [
       game.date || 'N/A',
       `${game.white || 'N/A'} vs ${game.black || 'N/A'}`,
+      eloPart,
       `Result: ${game.result || 'N/A'}`,
       game.opening_name ? `Opening: ${game.opening_name}` : null,
       typeof game.my_accuracy === 'number' ? `Accuracy: ${game.my_accuracy.toFixed(1)}%` : null,

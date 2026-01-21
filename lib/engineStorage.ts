@@ -208,22 +208,37 @@ export async function getAnalysisCoverage(
   await connectToDb()
   const sql = getSql()
   
+  // A game can have multiple analysis rows (including both failed and successful retries).
+  // Coverage must classify each game into exactly one bucket:
+  // - analyzed: at least one successful analysis exists
+  // - failed: no successful analysis, but at least one failed attempt exists
+  // - pending: no analysis rows at all
   const stats = (await sql`
-    SELECT 
-      COUNT(DISTINCT g.id) as total_games,
-      COUNT(DISTINCT CASE WHEN ea.id IS NOT NULL AND ea.analysis_failed = false THEN g.id END) as analyzed_games,
-      COUNT(DISTINCT CASE WHEN ea.analysis_failed = true THEN g.id END) as failed_games
-    FROM games g
-    LEFT JOIN engine_analysis ea ON g.id = ea.game_id 
-      AND ea.engine_name = ${engineName}
-      AND ea.analysis_depth = ${analysisDepth}
+    WITH per_game AS (
+      SELECT
+        g.id AS game_id,
+        BOOL_OR(ea.id IS NOT NULL AND ea.analysis_failed = false) AS has_success,
+        BOOL_OR(ea.id IS NOT NULL AND ea.analysis_failed = true) AS has_failed
+      FROM games g
+      LEFT JOIN engine_analysis ea ON g.id = ea.game_id
+        AND ea.engine_name = ${engineName}
+        AND ea.analysis_depth = ${analysisDepth}
+      WHERE g.pgn_text IS NOT NULL
+        AND g.pgn_text != ''
+      GROUP BY g.id
+    )
+    SELECT
+      COUNT(*) AS total_games,
+      COUNT(*) FILTER (WHERE has_success) AS analyzed_games,
+      COUNT(*) FILTER (WHERE NOT has_success AND has_failed) AS failed_games
+    FROM per_game
   `) as Array<{ total_games: number; analyzed_games: number; failed_games: number }>
-  
+
   const row = stats[0]
-  const totalGames = Number(row.total_games) || 0
-  const analyzedGames = Number(row.analyzed_games) || 0
-  const failedGames = Number(row.failed_games) || 0
-  const pendingGames = totalGames - analyzedGames - failedGames
+  const totalGames = Number(row?.total_games) || 0
+  const analyzedGames = Number(row?.analyzed_games) || 0
+  const failedGames = Number(row?.failed_games) || 0
+  const pendingGames = Math.max(0, totalGames - analyzedGames - failedGames)
   
   return {
     totalGames,

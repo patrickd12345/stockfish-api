@@ -138,7 +138,8 @@ export default function EngineCoverageWidget({
 
   const coverage = data?.coverage
   const done = coverage ? coverage.analyzedGames + coverage.failedGames : 0
-  const pct = coverage && coverage.totalGames > 0 ? (done / coverage.totalGames) * 100 : 0
+  const pctRaw = coverage && coverage.totalGames > 0 ? (done / coverage.totalGames) * 100 : 0
+  const pct = Math.max(0, Math.min(100, pctRaw))
   const updatedAt = data?.updatedAt ? new Date(data.updatedAt) : null
   const queueStats = queue?.stats ?? null
 
@@ -280,7 +281,7 @@ export default function EngineCoverageWidget({
       <div className="mt-1.5 h-2 rounded-full bg-sage-900 overflow-hidden border border-white/5">
         <div
           className="h-full bg-ochre transition-all duration-500 ease-out"
-          style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+          style={{ width: `${pct}%` }}
         />
       </div>
 

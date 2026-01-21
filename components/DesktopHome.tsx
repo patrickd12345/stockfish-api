@@ -8,6 +8,7 @@ import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
+import { useRouter } from 'next/navigation'
 
 export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna' | 'params'
 
@@ -32,6 +33,8 @@ export default function DesktopHome({
   onGamesProcessed,
   onGameSelect,
 }: DesktopHomeProps) {
+  const router = useRouter()
+
   return (
     <div className="flex min-h-screen bg-sage-900 text-sage-100">
       <div className="w-80 flex-shrink-0 z-20">
@@ -81,6 +84,23 @@ export default function DesktopHome({
           </div>
 
           <div className="flex items-center gap-4 flex-wrap justify-end">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.push('/account')}
+                className="px-3 py-2 rounded-lg font-bold border bg-sage-800/50 text-sage-200 border-white/5 hover:bg-sage-700/70 hover:text-sage-100 hover:border-white/10 transition-all"
+              >
+                Account
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/pricing')}
+                className="px-3 py-2 rounded-lg font-black border bg-terracotta text-sage-900 border-terracotta hover:brightness-110 transition-all"
+              >
+                Upgrade
+              </button>
+            </div>
+
             <EngineCoverageWidget compact active={Boolean(importStatus || engineStatus)} />
 
             {importStatus && (

@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
     redirectUri,
     state,
     codeChallenge,
-      scopes: ['board:play']
+      // board:play is required for the board API (moves, seek, etc).
+      // challenge:write is required for creating/canceling lobby challenges (open challenge fallback).
+      scopes: ['board:play', 'challenge:write']
   })
 
   const response = NextResponse.redirect(url)

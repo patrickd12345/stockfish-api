@@ -169,6 +169,8 @@ export default function LichessLiveTab() {
   const [myAccount, setMyAccount] = useState<LichessAccount | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
   const [seeking, setSeeking] = useState(false)
+  const seekAbortRef = useRef<AbortController | null>(null)
+  const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null)
   const [returningToLobby, setReturningToLobby] = useState(false)
   const [dismissedGameId, setDismissedGameId] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
@@ -213,6 +215,13 @@ export default function LichessLiveTab() {
     }
     setDismissedGameId(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveGameState?.gameId, liveGameState?.status])
+
+  // If a live game starts, clear any pending open challenge tracking.
+  useEffect(() => {
+    if (!liveGameState?.gameId) return
+    if (liveGameState.status !== 'started' && liveGameState.status !== 'playing') return
+    setPendingOpenChallengeId(null)
   }, [liveGameState?.gameId, liveGameState?.status])
 
   const displayGame = useMemo(() => {
@@ -276,6 +285,8 @@ export default function LichessLiveTab() {
   const ratingPayload = useMemo(() => {
     const isAny = ratingDiffLower === null && ratingDiffUpper === null
     if (isAny) return {}
+    // Lichess can reject ultra-narrow ranges; treat 0/0 as "no filter".
+    if (ratingDiffLower === 0 && ratingDiffUpper === 0) return {}
     return { ratingDiffLower, ratingDiffUpper }
   }, [ratingDiffLower, ratingDiffUpper])
 
@@ -421,12 +432,36 @@ export default function LichessLiveTab() {
   }
 
   const handleSeekMatch = async () => {
+    // Toggle behavior: while seeking, allow cancel (abort request => closes seek connection).
+    if (seeking) {
+      try {
+        if (pendingOpenChallengeId) {
+          await fetch(`/api/lichess/challenge/${encodeURIComponent(pendingOpenChallengeId)}/cancel`, {
+            method: 'POST',
+          }).catch(() => null)
+          setPendingOpenChallengeId(null)
+        } else {
+          seekAbortRef.current?.abort()
+          seekAbortRef.current = null
+        }
+      } finally {
+        setSeeking(false)
+        setActionError(null)
+        refreshState()
+      }
+      return
+    }
+
     setSeeking(true)
     setActionError(null)
+
+    const controller = new AbortController()
+    seekAbortRef.current = controller
     try {
       const res = await fetch('/api/lichess/board/seek', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           any: seekAny,
           ...(seekAny ? {} : { time: seekTime, increment: seekIncrement }),
@@ -443,10 +478,24 @@ export default function LichessLiveTab() {
         data = { error: await res.text() }
       }
       if (!res.ok) throw new Error(data.error || 'Failed to seek match')
+      if (typeof data?.mode === 'string' && data.mode === 'open_challenge' && typeof data?.challengeId === 'string') {
+        setPendingOpenChallengeId(data.challengeId)
+      } else {
+        setPendingOpenChallengeId(null)
+      }
     } catch (err) {
+      // Aborting cancels the pending seek; don't surface as an error.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setSeeking(false)
+        setActionError(null)
+        return
+      }
       setActionError(err instanceof Error ? err.message : 'Failed to seek match')
       setSeeking(false)
     } finally {
+      if (seekAbortRef.current === controller) {
+        seekAbortRef.current = null
+      }
       refreshState()
     }
   }
@@ -991,10 +1040,14 @@ export default function LichessLiveTab() {
           <div className="flex gap-3 w-full max-w-lg">
             <button 
               onClick={handleSeekMatch} 
-              disabled={seeking || loading} 
-              className="flex-1 py-4 text-lg font-bold rounded-xl bg-terracotta text-sage-900 hover:bg-terracotta-light transition-colors disabled:opacity-50"
+                disabled={loading} 
+                className={`flex-1 py-4 text-lg font-bold rounded-xl transition-colors disabled:opacity-50 ${
+                  seeking
+                    ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/25'
+                    : 'bg-terracotta text-sage-900 hover:bg-terracotta-light'
+                }`}
             >
-              {seeking ? 'Seeking...' : 'Seek Human'}
+                {seeking ? 'Cancel Seeking' : 'Seek Human'}
             </button>
             <button 
               onClick={() => handlePracticeBot('maia1')} 

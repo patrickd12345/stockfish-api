@@ -14,6 +14,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(entitlement);
   } catch (error: any) {
     console.error('Failed to fetch entitlement:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({
+      plan: 'FREE',
+      status: 'NONE',
+      current_period_end: null,
+      cancel_at_period_end: false,
+    });
   }
 }

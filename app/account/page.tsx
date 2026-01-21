@@ -1,129 +1,208 @@
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface Entitlement {
-  plan: 'FREE' | 'PRO';
-  status: string;
-  current_period_end: string | null;
-  cancel_at_period_end: boolean;
+  plan: 'FREE' | 'PRO'
+  status: string
+  current_period_end: string | null
+  cancel_at_period_end: boolean
 }
 
 export default function AccountPage() {
-  const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [portalLoading, setPortalLoading] = useState(false);
-  const router = useRouter();
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [portalLoading, setPortalLoading] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
+  const router = useRouter()
+
+  const proBullets = useMemo(
+    () => [
+      'Deeper Stockfish analysis (beyond Free depth cap)',
+      'Unlimited engine queue runs',
+      'Pro-gated analysis features unlocked',
+      'Manage subscription in Stripe customer portal',
+    ],
+    []
+  )
 
   useEffect(() => {
-    // In a real app, we'd have a useUser hook or similar, or fetch from an API that calls getEntitlementForUser
-    // Since we don't have a dedicated /api/me for entitlement yet, we might need one or inject it into the page.
-    // However, the prompt says "Client UI must NOT decide entitlement based on local state; it calls /api/me or similar"
-
-    // I haven't implemented /api/me yet. I should probably add one or fetch from a new route.
-    // Let's assume I can fetch it from a simple endpoint I'll creating now or just mock it for this step.
-    // Wait, I should implement /api/billing/entitlement or similar.
-
-    // I will implement a quick fetcher here assuming the endpoint exists,
-    // but I realize I missed adding an endpoint for the client to fetch status.
-    // The prompt said: "Client UI must NOT decide entitlement based on local state; it calls /api/me or similar to fetch entitlement."
-
-    // I will add a GET handler to /api/billing/subscription or similar in a moment.
-    // For now, I'll write the fetch code.
     fetch('/api/billing/subscription')
       .then(res => {
-        if (res.status === 401) {
-            // Redirect to login or show unauthorized
-            return null;
-        }
-        return res.json();
+        if (res.status === 401) return null
+        return res.json()
       })
       .then(data => {
-        if (data) setEntitlement(data);
-        setLoading(false);
+        if (data) setEntitlement(data)
+        setLoading(false)
       })
       .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, []);
+        console.error(err)
+        setLoading(false)
+      })
+  }, [])
 
   const handleManageBilling = async () => {
-    setPortalLoading(true);
+    setPortalError(null)
+    setPortalLoading(true)
     try {
       const res = await fetch('/api/billing/portal', {
         method: 'POST',
-      });
-      if (!res.ok) throw new Error('Failed to create portal session');
-      const { url } = await res.json();
-      window.location.href = url;
+      })
+      const data = (await res.json().catch(() => null)) as any
+      if (!res.ok) {
+        const message = typeof data?.error === 'string' ? data.error : 'Failed to open billing portal'
+        setPortalError(message)
+        setPortalLoading(false)
+        return
+      }
+
+      const url = typeof data?.url === 'string' ? data.url : null
+      if (!url) {
+        setPortalError('Billing portal did not return a URL.')
+        setPortalLoading(false)
+        return
+      }
+      window.location.href = url
     } catch (err) {
-      console.error(err);
-      alert('Failed to open billing portal');
-      setPortalLoading(false);
+      console.error(err)
+      setPortalError('Failed to open billing portal')
+      setPortalLoading(false)
     }
-  };
+  }
 
   if (loading) {
-    return <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center text-[#e0e0e0]">Loading...</div>;
+    return (
+      <div className="min-h-screen bg-sage-900 flex items-center justify-center text-sage-100">
+        Loading…
+      </div>
+    )
   }
 
   if (!entitlement) {
-    return <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center text-[#e0e0e0]">Please log in.</div>;
+    return (
+      <div className="min-h-screen bg-sage-900 flex items-center justify-center text-sage-100">
+        Sign in required.
+      </div>
+    )
   }
 
-  const isPro = entitlement.plan === 'PRO';
+  const isPro = entitlement.plan === 'PRO'
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] text-[#e0e0e0] p-8">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Account & Billing</h1>
+    <div className="min-h-screen bg-sage-900 text-sage-100">
+      <div className="absolute inset-0 pointer-events-none bg-noise opacity-70" />
 
-        <div className="bg-[#2a2a2a] p-6 rounded-lg border border-[#404040]">
-          <h2 className="text-xl font-semibold mb-4">Subscription Status</h2>
+      <div className="relative max-w-3xl mx-auto p-6 md:p-10">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={() => router.push('/')} className="btn-secondary">
+            Back to app
+          </button>
+          <button type="button" onClick={() => router.push('/pricing')} className="btn-secondary">
+            Pricing
+          </button>
+        </div>
 
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="text-[#a0a0a0] text-sm mb-1">Current Plan</div>
-              <div className={`text-2xl font-bold ${isPro ? 'text-[#d4a373]' : 'text-[#e0e0e0]'}`}>
+        <h1 className="mt-10 text-3xl font-black tracking-tight">Account & Billing</h1>
+        <div className="mt-2 text-sm text-sage-300">
+          Subscription status and Stripe portal access.
+        </div>
+
+        <div className="mt-8 glass-panel p-6">
+          <h2 className="text-xl font-black tracking-tight">Subscription Status</h2>
+
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-12 gap-4 items-start">
+            <div className="sm:col-span-7">
+              <div className="text-xs uppercase tracking-widest text-sage-400 font-black">Current plan</div>
+              <div className={`mt-1 text-3xl font-black ${isPro ? 'text-terracotta' : 'text-sage-100'}`}>
                 {entitlement.plan}
               </div>
             </div>
-            <div>
-              <div className="text-[#a0a0a0] text-sm mb-1">Status</div>
-              <div className="capitalize">{entitlement.status.toLowerCase().replace('_', ' ')}</div>
+
+            <div className="sm:col-span-5">
+              <div className="text-xs uppercase tracking-widest text-sage-400 font-black">Status</div>
+              <div className="mt-1 text-sm text-sage-200 capitalize">
+                {entitlement.status.toLowerCase().replace('_', ' ')}
+              </div>
             </div>
           </div>
 
-          {entitlement.current_period_end && (
-            <div className="mb-6">
-              <div className="text-[#a0a0a0] text-sm mb-1">
+          {entitlement.current_period_end ? (
+            <div className="mt-5 rounded-xl border border-white/10 bg-sage-950/20 p-4">
+              <div className="text-xs uppercase tracking-widest text-sage-400 font-black">
                 {entitlement.cancel_at_period_end ? 'Expires on' : 'Renews on'}
               </div>
-              <div>{new Date(entitlement.current_period_end).toLocaleDateString()}</div>
+              <div className="mt-1 text-sm text-sage-200">
+                {new Date(entitlement.current_period_end).toLocaleDateString()}
+              </div>
             </div>
-          )}
+          ) : null}
 
-          <div className="flex gap-4">
+          <div className="mt-5 flex flex-wrap gap-3">
             <button
               onClick={handleManageBilling}
               disabled={portalLoading}
-              className="px-4 py-2 bg-[#404040] hover:bg-[#505050] rounded text-white font-medium transition-colors"
+              className="btn-secondary font-black"
             >
-              {portalLoading ? 'Loading...' : 'Manage Billing'}
+              {portalLoading ? 'Opening portal…' : 'Manage Billing'}
             </button>
             {!isPro && (
               <button
                 onClick={() => router.push('/pricing')}
-                className="px-4 py-2 bg-[#d4a373] hover:bg-[#b58b61] text-[#1a1a1a] rounded font-medium transition-colors"
+                className="btn-primary font-black"
               >
                 Upgrade to Pro
               </button>
             )}
           </div>
+
+          {portalError ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+            >
+              {portalError}
+            </div>
+          ) : null}
         </div>
+
+        {!isPro ? (
+          <div className="mt-6 glass-panel p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-black uppercase tracking-widest text-sage-400">Why upgrade</div>
+                <h2 className="mt-2 text-xl font-black tracking-tight">
+                  Pro removes caps and unlocks deeper analysis.
+                </h2>
+                <div className="mt-2 text-sm text-sage-300 leading-relaxed">
+                  Free is great for quick checks. Pro is built for repeated improvement loops.
+                </div>
+              </div>
+            </div>
+
+            <ul className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-sage-200">
+              {proBullets.map((b) => (
+                <li key={b} className="flex items-start gap-2 rounded-lg border border-white/5 bg-sage-950/20 p-3">
+                  <span aria-hidden="true" className="text-terracotta font-black">
+                    ✓
+                  </span>
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button type="button" onClick={() => router.push('/pricing')} className="btn-primary font-black">
+                See pricing
+              </button>
+              <button type="button" onClick={handleManageBilling} className="btn-secondary font-black">
+                Open billing portal
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
-  );
+  )
 }

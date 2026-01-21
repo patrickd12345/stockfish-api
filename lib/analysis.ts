@@ -10,6 +10,8 @@ export interface GameData {
     time?: string
     white?: string
     black?: string
+    white_elo?: number
+    black_elo?: number
     result?: string
     opening_name?: string
     my_accuracy?: number
@@ -24,6 +26,13 @@ export interface GameData {
     engine_eval?: number
     is_blunder: boolean
   }>
+}
+
+function parseElo(value: string | null | undefined): number | undefined {
+  if (!value) return undefined
+  const n = Number(String(value).replace(/[^\d]/g, ''))
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  return Math.trunc(n)
 }
 
 export async function analyzePgn(
@@ -137,6 +146,8 @@ export async function analyzePgn(
             time: headers.UTCTime || headers.Time || undefined,
             white: headers.White ?? undefined,
             black: headers.Black ?? undefined,
+            white_elo: parseElo(headers.WhiteElo),
+            black_elo: parseElo(headers.BlackElo),
             result: headers.Result ?? undefined,
             opening_name: openingName,
             my_accuracy: accuracy,
@@ -216,6 +227,8 @@ export async function parsePgnWithoutEngine(pgnText: string): Promise<GameData[]
         time: headers.UTCTime || headers.Time || undefined,
         white: headers.White ?? undefined,
         black: headers.Black ?? undefined,
+        white_elo: parseElo(headers.WhiteElo),
+        black_elo: parseElo(headers.BlackElo),
         result: headers.Result ?? undefined,
         opening_name: openingName,
         my_accuracy: undefined,

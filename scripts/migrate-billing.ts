@@ -18,10 +18,16 @@ async function migrate() {
     const migrationSql = fs.readFileSync(migrationFile, 'utf8');
 
     console.log('🚀 Executing migration...');
-    // Split by semicolon to execute statements individually if needed,
-    // but neon driver might support multiple statements in one call.
-    // Let's try executing as a single block first.
-    await sql(migrationSql);
+    // Neon serverless does not allow multiple SQL commands in a single prepared statement,
+    // so execute statements one-by-one.
+    const statements = migrationSql
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    for (const statement of statements) {
+      await sql(statement);
+    }
 
     console.log('✅ Migration completed successfully.');
   } catch (error) {

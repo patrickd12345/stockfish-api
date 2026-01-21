@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 // Initialize Stripe
 // We use a getter to ensure env vars are loaded/validated when needed
 let stripeInstance: Stripe | null = null;
+let warnedMissingEntitlementsTable = false;
 
 export function getStripe() {
   if (!stripeInstance) {
@@ -17,6 +18,20 @@ export function getStripe() {
   return stripeInstance;
 }
 
+function getCurrentPeriodEndFromSubscription(subscription: Stripe.Subscription): Date | null {
+  const latestInvoice = subscription.latest_invoice;
+  if (!latestInvoice || typeof latestInvoice === 'string') return null;
+
+  // Stripe v20+ doesn't include `current_period_end` on Subscription typings.
+  // When `latest_invoice` is expanded, `period_end` is the most reliable proxy for current billing period end.
+  const periodEnd =
+    typeof (latestInvoice as Stripe.Invoice).period_end === 'number'
+      ? (latestInvoice as Stripe.Invoice).period_end
+      : null;
+
+  return periodEnd ? new Date(periodEnd * 1000) : null;
+}
+
 export type Plan = 'FREE' | 'PRO';
 export type SubscriptionStatus = 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'INCOMPLETE' | 'TRIALING' | 'NONE';
 
@@ -25,6 +40,23 @@ export interface Entitlement {
   status: SubscriptionStatus;
   current_period_end: Date | null;
   cancel_at_period_end: boolean;
+}
+
+function defaultEntitlement(): Entitlement {
+  return {
+    plan: 'FREE',
+    status: 'NONE',
+    current_period_end: null,
+    cancel_at_period_end: false,
+  };
+}
+
+function isMissingRelationError(error: unknown, relationName: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const maybe = error as { code?: unknown; message?: unknown };
+  const code = typeof maybe.code === 'string' ? maybe.code : '';
+  const message = typeof maybe.message === 'string' ? maybe.message : '';
+  return code === '42P01' && message.includes(`relation "${relationName}" does not exist`);
 }
 
 /**
@@ -45,20 +77,31 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
 export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
   const sql = getSql();
 
-  // Query the entitlements table
-  const rows = await sql`
-    SELECT plan, status, current_period_end, cancel_at_period_end
-    FROM entitlements
-    WHERE user_id = ${userId}
-  `;
+  let rows: any[];
+  try {
+    // Query the entitlements table
+    rows = await sql`
+      SELECT plan, status, current_period_end, cancel_at_period_end
+      FROM entitlements
+      WHERE user_id = ${userId}
+    `;
+  } catch (error) {
+    // Local/dev environments may not have billing tables yet.
+    // Degrade gracefully: treat as FREE instead of 500-ing the app.
+    if (isMissingRelationError(error, 'entitlements')) {
+      if (!warnedMissingEntitlementsTable) {
+        warnedMissingEntitlementsTable = true;
+        console.warn('Billing disabled: missing "entitlements" table. Returning FREE entitlement until billing schema is applied.');
+      }
+      return defaultEntitlement();
+    }
+
+    console.error('Failed to fetch entitlement:', error);
+    return defaultEntitlement();
+  }
 
   if (rows.length === 0) {
-    return {
-      plan: 'FREE',
-      status: 'NONE',
-      current_period_end: null,
-      cancel_at_period_end: false,
-    };
+    return defaultEntitlement();
   }
 
   const row = rows[0];
@@ -85,29 +128,7 @@ export async function createCheckoutSession(userId: string, interval: 'monthly' 
   const env = validateBillingEnv();
 
   // 1. Get or create billing customer
-  let stripeCustomerId: string;
-  const customerRows = await sql`SELECT stripe_customer_id FROM billing_customers WHERE user_id = ${userId}`;
-
-  if (customerRows.length > 0) {
-    stripeCustomerId = customerRows[0].stripe_customer_id as string;
-  } else {
-    // Create new customer in Stripe
-    // We might want to pass email if we have it, but we only have user_id (lichess id) here easily.
-    // If we had an email, we'd pass it. For now, metadata is key.
-    const customer = await stripe.customers.create({
-      metadata: {
-        user_id: userId,
-      },
-    });
-    stripeCustomerId = customer.id;
-
-    // Save to DB
-    await sql`
-      INSERT INTO billing_customers (user_id, stripe_customer_id)
-      VALUES (${userId}, ${stripeCustomerId})
-      ON CONFLICT (user_id) DO UPDATE SET stripe_customer_id = ${stripeCustomerId}
-    `;
-  }
+  const stripeCustomerId = await getOrCreateStripeCustomerId(userId);
 
   // 2. Determine price ID
   const priceId = interval === 'monthly'
@@ -140,14 +161,11 @@ export async function createCheckoutSession(userId: string, interval: 'monthly' 
  */
 export async function createPortalSession(userId: string) {
   const stripe = getStripe();
-  const sql = getSql();
   const env = validateBillingEnv();
 
-  const customerRows = await sql`SELECT stripe_customer_id FROM billing_customers WHERE user_id = ${userId}`;
-  if (customerRows.length === 0) {
-    throw new Error("No billing customer found for user");
-  }
-  const stripeCustomerId = customerRows[0].stripe_customer_id as string;
+  // Users who haven't checked out yet won't have a billing customer row.
+  // Create one on-demand so "Manage Billing" always works.
+  const stripeCustomerId = await getOrCreateStripeCustomerId(userId);
 
   const session = await stripe.billingPortal.sessions.create({
     customer: stripeCustomerId,
@@ -155,6 +173,31 @@ export async function createPortalSession(userId: string) {
   });
 
   return { url: session.url };
+}
+
+async function getOrCreateStripeCustomerId(userId: string): Promise<string> {
+  const stripe = getStripe();
+  const sql = getSql();
+
+  const customerRows = await sql`SELECT stripe_customer_id FROM billing_customers WHERE user_id = ${userId}`;
+  if (customerRows.length > 0) {
+    return customerRows[0].stripe_customer_id as string;
+  }
+
+  const customer = await stripe.customers.create({
+    metadata: {
+      user_id: userId,
+    },
+  });
+
+  const stripeCustomerId = customer.id;
+  await sql`
+    INSERT INTO billing_customers (user_id, stripe_customer_id)
+    VALUES (${userId}, ${stripeCustomerId})
+    ON CONFLICT (user_id) DO UPDATE SET stripe_customer_id = ${stripeCustomerId}
+  `;
+
+  return stripeCustomerId;
 }
 
 /**
@@ -224,7 +267,9 @@ async function updateEntitlementFromSubscription(event: Stripe.Event) {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.mode !== 'subscription' || !session.subscription) return;
     const stripe = getStripe();
-    subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+    subscription = await stripe.subscriptions.retrieve(session.subscription as string, {
+      expand: ['latest_invoice'],
+    });
   } else {
     subscription = event.data.object as Stripe.Subscription;
   }
@@ -255,7 +300,7 @@ async function updateEntitlementFromSubscription(event: Stripe.Event) {
 
   const status = subscription.status;
   const plan = mapStatusToPlan(status);
-  const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+  const currentPeriodEnd = getCurrentPeriodEndFromSubscription(subscription);
   const cancelAtPeriodEnd = subscription.cancel_at_period_end;
   const priceId = subscription.items.data[0]?.price.id;
 
@@ -287,10 +332,15 @@ async function updateEntitlementFromInvoice(event: Stripe.Event) {
   // We can just fetch the subscription and update the same way to be sure.
 
   const invoice = event.data.object as Stripe.Invoice;
-  if (!invoice.subscription) return;
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+  if (!subscriptionRef) return;
+
+  const subscriptionId = typeof subscriptionRef === 'string' ? subscriptionRef : subscriptionRef.id;
 
   const stripe = getStripe();
-  const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['latest_invoice'],
+  });
 
   // Reuse logic
   // We construct a synthetic event or just call the helper with the subscription data
@@ -300,10 +350,17 @@ async function updateEntitlementFromInvoice(event: Stripe.Event) {
   // We'll just call updateEntitlementFromSubscription but we need to pass an event that contains the subscription.
   // Or we create a helper that takes a subscription object.
 
-  await updateEntitlementFromSubscriptionObject(subscription, event.id);
+  const currentPeriodEndFromInvoice =
+    typeof invoice.period_end === 'number' ? new Date(invoice.period_end * 1000) : null;
+
+  await updateEntitlementFromSubscriptionObject(subscription, event.id, currentPeriodEndFromInvoice);
 }
 
-async function updateEntitlementFromSubscriptionObject(subscription: Stripe.Subscription, eventId: string) {
+async function updateEntitlementFromSubscriptionObject(
+  subscription: Stripe.Subscription,
+  eventId: string,
+  currentPeriodEndOverride?: Date | null
+) {
   const sql = getSql();
   const stripeCustomerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
 
@@ -327,7 +384,10 @@ async function updateEntitlementFromSubscriptionObject(subscription: Stripe.Subs
 
   const status = subscription.status;
   const plan = mapStatusToPlan(status);
-  const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+  const currentPeriodEnd =
+    typeof currentPeriodEndOverride === 'undefined'
+      ? getCurrentPeriodEndFromSubscription(subscription)
+      : currentPeriodEndOverride;
   const cancelAtPeriodEnd = subscription.cancel_at_period_end;
   const priceId = subscription.items.data[0]?.price.id;
 

@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS games (
   time TEXT,
   white TEXT,
   black TEXT,
+  white_elo INT,
+  black_elo INT,
   result TEXT,
   opening_name TEXT,
   my_accuracy FLOAT,
