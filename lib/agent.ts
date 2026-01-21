@@ -67,8 +67,8 @@ function wantsRatingBandAnalysis(input: string): boolean {
   )
 }
 
-export async function buildAgent(conn: any) {
-  const cfg = getOpenAIConfig()
+export async function buildAgent(conn: any, apiKeyOverride?: string | null) {
+  const cfg = getOpenAIConfig(apiKeyOverride)
   if (!cfg) {
     throw new Error('Missing OpenAI credentials. Set (VERCEL_AI_GATEWAY_ID + VERCEL_VIRTUAL_KEY) or OPENAI_API_KEY.')
   }
@@ -80,7 +80,7 @@ export async function buildAgent(conn: any) {
     model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
   })
 
-  const openai = getOpenAIClient()
+  const openai = getOpenAIClient(apiKeyOverride)
 
   return {
     async invoke({ input, gameId, timeWindow }: { 
@@ -316,7 +316,7 @@ Unable to compute rating-band performance (ratings may not be stored yet). Run: 
 
         if (input) {
           try {
-            const embedding = await getEmbedding(input)
+            const embedding = await getEmbedding(input, apiKeyOverride)
             if (embedding && embedding.length > 0) {
               const games = await searchGamesByEmbedding(embedding, 5)
               if (games.length > 0) {

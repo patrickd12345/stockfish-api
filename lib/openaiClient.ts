@@ -1,6 +1,10 @@
 import OpenAI from 'openai'
 
-export function getOpenAIConfig(): { apiKey: string; baseURL?: string } | null {
+export function getOpenAIConfig(apiKeyOverride?: string | null): { apiKey: string; baseURL?: string } | null {
+  if (apiKeyOverride) {
+    return { apiKey: apiKeyOverride }
+  }
+
   const provider = (process.env.OPENAI_PROVIDER || '').trim().toLowerCase()
   const gatewayId = process.env.VERCEL_AI_GATEWAY_ID?.trim()
   const virtualKey = process.env.VERCEL_VIRTUAL_KEY?.replace(/[\n\r]/g, '').trim()
@@ -28,8 +32,8 @@ export function getOpenAIConfig(): { apiKey: string; baseURL?: string } | null {
   return null
 }
 
-export function getOpenAIClient(): OpenAI {
-  const cfg = getOpenAIConfig()
+export function getOpenAIClient(apiKeyOverride?: string | null): OpenAI {
+  const cfg = getOpenAIConfig(apiKeyOverride)
   if (!cfg) {
     throw new Error(
       'Missing OpenAI credentials. Set (VERCEL_AI_GATEWAY_ID + VERCEL_VIRTUAL_KEY) or OPENAI_API_KEY.'

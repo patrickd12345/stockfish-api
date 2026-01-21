@@ -8,7 +8,11 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const { page, gameState, lastMessage } = await request.json().catch(() => ({}))
-    const openai = getOpenAIClient()
+
+    // Check for BYOK header
+    const byokKey = request.headers.get('x-openai-key')
+
+    const openai = getOpenAIClient(byokKey)
     const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     // Fetch last 5 games for context
