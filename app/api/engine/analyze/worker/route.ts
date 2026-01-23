@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
 import { isDbConfigured, connectToDb } from '@/lib/database'
-import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
+import { analyzeGameWithEngineInternal } from '@/lib/engineAnalysis'
 import { storeEngineAnalysis, markAnalysisFailed } from '@/lib/engineStorage'
 import { computeEngineSummary } from '@/lib/engineSummaryAnalysis'
 import { storeEngineSummary } from '@/lib/engineSummaryStorage'
@@ -12,6 +12,8 @@ import {
   fetchQueuedGamePgn,
   enqueueEngineAnalysisJobs,
 } from '@/lib/engineQueue'
+import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { recordUsageWithAdjustment, estimateCpuMs } from '@/lib/budget'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -43,6 +45,18 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDb()
 
+    // Require Pro entitlement to process jobs
+    let userId: string
+    try {
+      const entitlementResult = await requireProEntitlement(request)
+      userId = entitlementResult.userId
+    } catch (error: any) {
+      if (error instanceof ForbiddenError) {
+        return NextResponse.json({ error: error.message }, { status: 403 })
+      }
+      throw error
+    }
+
     let jobs = await claimEngineAnalysisJobs(limit, 'stockfish', analysisDepth)
     let autoEnqueued = 0
     if (jobs.length === 0) {
@@ -69,9 +83,34 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const result = await analyzeGameWithEngine(pgnText, stockfishPath, playerNames, analysisDepth)
+        // Estimate CPU time for budget tracking
+        const chess = new (await import('chess.js')).Chess()
+        try {
+          chess.loadPgn(pgnText)
+        } catch {
+          await markEngineAnalysisJobFailed(job.id, 'Invalid PGN')
+          failed++
+          continue
+        }
+        const gameLength = chess.history().length
+        const estimatedCpuMs = estimateCpuMs(analysisDepth, gameLength, 'game')
+        
+        // Note: Budget is checked when jobs are enqueued, not here.
+        // But we still track usage for the worker's user.
+        const startTime = Date.now()
+        
+        const result = await analyzeGameWithEngineInternal(pgnText, stockfishPath, playerNames, analysisDepth)
         await storeEngineAnalysis(job.gameId, result, 'stockfish')
         await markEngineAnalysisJobDone(job.id)
+        
+        // Record usage (approximate - actual CPU time)
+        const actualCpuMs = Date.now() - startTime
+        try {
+          await recordUsageWithAdjustment(userId, estimatedCpuMs, actualCpuMs, 'game')
+        } catch {
+          // If usage tracking fails, continue (non-fatal)
+        }
+        
         succeeded++
       } catch (e: any) {
         const reason = e?.message || 'Unknown engine analysis error'

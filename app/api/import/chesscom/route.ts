@@ -6,8 +6,8 @@ import { connectToDb, isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { createGame, gameExists, gameExistsByPgnText } from '@/lib/models'
 import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
-import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
-import { storeEngineAnalysis } from '@/lib/engineStorage'
+import { executeServerSideAnalysis } from '@/lib/engineGateway'
+import { getEntitlementForUser } from '@/lib/billing'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -223,24 +223,42 @@ export async function POST(request: NextRequest) {
     // Trigger batch analysis if any games were saved
     const done = normalizedMode !== 'all' || sliceEnd >= archivesToProcess.length
     if (savedCount > 0 && done && runBatch) {
-      // Immediately analyze a few newly-imported games with Stockfish so blunders/mistakes/etc are real.
-      const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false'
-      if (analyzeNow && newlySaved.length > 0) {
+      // Check if user has Pro entitlement before triggering server-side analysis
+      const lichessUserId = request.cookies.get('lichess_user_id')?.value
+      let hasProAccess = false
+      
+      if (lichessUserId) {
+        try {
+          const entitlement = await getEntitlementForUser(lichessUserId)
+          hasProAccess = entitlement.plan === 'PRO'
+        } catch (e) {
+          console.warn('Failed to check entitlement:', e)
+        }
+      }
+      
+      // Only trigger server-side analysis for Pro users
+      const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false' && hasProAccess
+      if (analyzeNow && newlySaved.length > 0 && lichessUserId) {
         const envPlayerNames =
           process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
         const playerNames = Array.from(new Set([username, ...envPlayerNames].filter(Boolean)))
         const depth = Math.max(8, Math.min(25, Number(process.env.ANALYSIS_DEPTH ?? 15)))
-        const stockfishPathResolved =
-          process.env.STOCKFISH_PATH?.trim() ||
-          (process.platform === 'win32'
-            ? path.join(process.cwd(), 'stockfish.exe')
-            : path.join(process.cwd(), 'stockfish'))
         const maxToAnalyze = Math.min(5, newlySaved.length)
 
         for (let i = 0; i < maxToAnalyze; i++) {
           try {
-            const result = await analyzeGameWithEngine(newlySaved[i].pgnText, stockfishPathResolved, playerNames, depth)
-            await storeEngineAnalysis(newlySaved[i].id, result, 'stockfish')
+            // Use gateway to enforce entitlement and budget
+            const result = await executeServerSideAnalysis({
+              userId: lichessUserId,
+              type: 'game',
+              gameId: newlySaved[i].id,
+              playerNames,
+              depth,
+            })
+            if (result.ok && result.result) {
+              // Result is already stored by gateway
+              console.log(`Analyzed game ${newlySaved[i].id}`)
+            }
           } catch (e) {
             console.warn('Immediate engine analysis failed:', e)
           }
