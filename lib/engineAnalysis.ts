@@ -80,10 +80,13 @@ export interface BlunderDetail {
 }
 
 /**
- * Analyze a single game with Stockfish engine
+ * Analyze a single game with Stockfish engine (internal)
  * This is a FACT GENERATION function - no narration, no interpretation
+ * 
+ * @internal This function should only be called through executeServerSideAnalysis() in engineGateway.ts
+ * to ensure entitlement and budget checks are enforced.
  */
-export async function analyzeGameWithEngine(
+export async function analyzeGameWithEngineInternal(
   pgnText: string,
   stockfishPath: string,
   playerNames: string[],
@@ -453,4 +456,19 @@ function calculateCentipawnLoss(
   const afterPov = playerColor === 'white' ? evalAfter : -evalAfter
   const loss = beforePov - afterPov
   return Math.max(0, Math.round(loss))
+}
+
+/**
+ * @deprecated Use executeServerSideAnalysis() from engineGateway.ts instead.
+ * This function is kept for backward compatibility but will be removed.
+ * It does NOT enforce entitlement or budget checks.
+ */
+export async function analyzeGameWithEngine(
+  pgnText: string,
+  stockfishPath: string,
+  playerNames: string[],
+  analysisDepth: number = 15
+): Promise<EngineAnalysisResult> {
+  console.warn('analyzeGameWithEngine is deprecated. Use executeServerSideAnalysis() from engineGateway.ts instead.');
+  return analyzeGameWithEngineInternal(pgnText, stockfishPath, playerNames, analysisDepth);
 }

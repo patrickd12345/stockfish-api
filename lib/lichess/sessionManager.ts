@@ -1,5 +1,7 @@
 import { connectToDb, getSql } from '@/lib/database'
 import { deriveFenFromMoves } from '@/lib/lichess/fen'
+import { lichessFetch } from '@/lib/lichess/apiClient'
+import { getLichessToken } from '@/lib/lichess/tokenStorage'
 import {
   LichessChatLineEvent,
   LichessGameFinishEvent,
@@ -15,6 +17,76 @@ function normalizeLichessId(value: unknown): string | null {
   const trimmed = value.trim()
   if (!trimmed) return null
   return trimmed.toLowerCase()
+}
+
+// Simple in-memory cache for throttling sync calls in the same execution context.
+const lastSyncAt: Record<string, number> = {}
+const SYNC_THROTTLE_MS = 15000 // 15 seconds
+
+/**
+ * Fetches active games from Lichess and updates our database.
+ * Useful for "discovering" games that started while our stream handler was offline.
+ */
+export async function syncActiveGames(lichessUserId: string): Promise<void> {
+  const now = Date.now()
+  const last = lastSyncAt[lichessUserId] || 0
+  if (now - last < SYNC_THROTTLE_MS) return
+  lastSyncAt[lichessUserId] = now
+
+  const stored = await getLichessToken(lichessUserId)
+  if (!stored || stored.revokedAt) return
+
+  try {
+    const response = await lichessFetch('/api/account/playing', { token: stored.token.accessToken })
+    const data = await response.json() as { nowPlaying: any[] }
+    const nowPlaying = data.nowPlaying || []
+
+    if (nowPlaying.length === 0) {
+      // If Lichess says nothing is playing, but our DB says we are, we might want to clean up.
+      // However, it's safer to let the stream handler or explicit actions handle that
+      // to avoid race conditions with game initialization.
+      return
+    }
+
+    // For now, we only support one active game.
+    const latestGame = nowPlaying[0]
+    const gameId = latestGame.gameId
+
+    // Check if we already have this game in our DB
+    await connectToDb()
+    const sql = getSql()
+    const existing = await sql`
+      SELECT status FROM lichess_game_states WHERE game_id = ${gameId}
+    `
+
+    if (existing.length === 0) {
+      console.log(`[Lichess Sync] Discovered new game: ${gameId}`)
+      // Trigger a "virtual" gameStart by fetching full game state
+      const fullRes = await lichessFetch(`/api/board/game/stream/${gameId}`, { token: stored.token.accessToken })
+      const reader = fullRes.body?.getReader()
+      if (reader) {
+        const decoder = new TextDecoder()
+        const { value } = await reader.read()
+        const chunk = decoder.decode(value || new Uint8Array())
+        const firstLine = chunk.split('\n')[0].trim()
+        if (firstLine) {
+          try {
+            const event = JSON.parse(firstLine) as LichessGameFullEvent
+            if (event.type === 'gameFull') {
+              await recordGameFull(lichessUserId, event, gameId)
+            }
+          } catch (e) {
+            console.warn('[Lichess Sync] Failed to parse discovered game state:', e)
+          }
+        }
+        reader.releaseLock()
+        // We don't keep the stream open here; we just want the initial state.
+        // The background handler (re-kicked by the state route) will take over.
+      }
+    }
+  } catch (err) {
+    console.warn('[Lichess Sync] Failed to sync active games:', err)
+  }
 }
 
 function inferMyColorFromGameFull(lichessUserId: string, event: LichessGameFullEvent): 'white' | 'black' | null {
@@ -474,6 +546,15 @@ export async function getActiveGameState(lichessUserId: string): Promise<Lichess
     initial_time_ms: number | null
     initial_increment_ms: number | null
   }>
+
+  if (rows.length === 0 || !['started', 'playing'].includes(rows[0].status)) {
+    // No active game in DB. Try to sync from Lichess to discover any missed starts.
+    // This is especially important in serverless environments where the stream handler dies.
+    // We don't await this to avoid blocking the polling route.
+    syncActiveGames(lichessUserId).catch(() => null)
+    
+    // If we discovered a game in a previous background sync, the next query will find it.
+  }
 
   if (rows.length === 0) return null
   const row = rows[0]

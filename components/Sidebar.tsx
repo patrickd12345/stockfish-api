@@ -95,7 +95,7 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
   useEffect(() => {
     if (selectedGameId) {
       const selectedGame = games.find(g => g.id === selectedGameId)
-      if (selectedGame && selectedGame.pgn_text) {
+      if (selectedGame?.pgn_text) {
         loadGameHistory(selectedGame.pgn_text)
         return
       }
@@ -110,6 +110,13 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
           setCurrentMoveIdx(-1)
           setBoardFen('start')
         }
+        return
+      }
+      if (selectedGame) {
+        fetch(`/api/games/${selectedGameId}/pgn`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => { if (data?.pgn) loadGameHistory(data.pgn) })
+          .catch(() => {})
       }
     }
   }, [selectedGameId, games, loadGameHistory, buildFenHistoryFromUciMoves])

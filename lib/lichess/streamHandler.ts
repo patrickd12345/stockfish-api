@@ -2,7 +2,8 @@ import { lichessFetch } from '@/lib/lichess/apiClient'
 import { LichessStreamEvent, LichessGameStateEvent, LichessGameFullEvent, LichessChatLineEvent } from '@/lib/lichess/types'
 import { recordGameStart, recordGameState, recordGameFinish, recordChatMessage, updateSessionError, ensureBoardSession, getSession, recordGameFull } from '@/lib/lichess/sessionManager'
 
-const RECONNECT_DELAY_MS = 2000
+const INITIAL_RECONNECT_DELAY_MS = 2000
+const MAX_RECONNECT_DELAY_MS = 60000
 
 export class BoardStreamHandler {
   private readonly token: string
@@ -11,6 +12,7 @@ export class BoardStreamHandler {
   private gameAbortController: AbortController | null = null
   private activeGameId: string | null = null
   private running = false
+  private reconnectDelay = INITIAL_RECONNECT_DELAY_MS
 
   constructor(token: string, lichessUserId: string) {
     this.token = token
@@ -33,15 +35,34 @@ export class BoardStreamHandler {
       try {
         console.log(`[Lichess Stream] Consuming stream...`)
         await this.consumeStream()
+        // If consumeStream returns normally (e.g. server closed connection), 
+        // reset the delay for the next attempt.
+        this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown stream error'
+        const isRateLimit = message.includes('429')
+        const isUnauthorized = message.includes('401')
+        
         console.error(`[Lichess Stream] Error: ${message}`)
         await updateSessionError(this.lichessUserId, message)
         
-        if (!this.running) break
+        if (!this.running || isUnauthorized) {
+          console.log(`[Lichess Stream] Stopping stream due to ${isUnauthorized ? 'unauthorized error' : 'request'}.`)
+          this.running = false
+          break
+        }
         
-        console.log(`[Lichess Stream] Retrying in ${RECONNECT_DELAY_MS}ms...`)
-        await new Promise((resolve) => setTimeout(resolve, RECONNECT_DELAY_MS))
+        // Exponential backoff
+        const currentDelay = this.reconnectDelay
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS)
+        
+        // If we were rate limited, maybe the user needs to wait a bit longer
+        if (isRateLimit) {
+          this.reconnectDelay = Math.max(this.reconnectDelay, 15000) // Increase to 15s for 429
+        }
+
+        console.log(`[Lichess Stream] Retrying in ${currentDelay}ms...`)
+        await new Promise((resolve) => setTimeout(resolve, currentDelay))
       }
     }
     console.log(`[Lichess Stream] Handler stopped.`)

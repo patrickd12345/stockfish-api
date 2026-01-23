@@ -162,6 +162,27 @@ export default function MobileGameDrawer({
         fens = buildFenHistoryFromPgn(selected.pgn_text)
       } else if (typeof selected?.moves_uci === 'string' && selected.moves_uci.trim()) {
         fens = buildFenHistoryFromUciMoves(selected.moves_uci)
+      } else if (selected) {
+        fetch(`/api/games/${selectedGameId}/pgn`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data?.pgn) {
+              const f = buildFenHistoryFromPgn(data.pgn)
+              setMoveHistory(f)
+              setCurrentMoveIdx(f.length - 1)
+              setBoardFen(f[f.length - 1] || 'start')
+            } else {
+              setMoveHistory([])
+              setCurrentMoveIdx(-1)
+              setBoardFen('start')
+            }
+          })
+          .catch(() => {
+            setMoveHistory([])
+            setCurrentMoveIdx(-1)
+            setBoardFen('start')
+          })
+        return
       }
       if (fens.length === 0) {
         setMoveHistory([])
@@ -250,7 +271,7 @@ export default function MobileGameDrawer({
         <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <input
             type="text"
-            placeholder="Search opponent, opening..."
+            placeholder="Search white, black, opening..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
