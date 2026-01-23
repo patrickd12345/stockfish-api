@@ -34,7 +34,7 @@ test('replay tab shows inspector and chat input returns', async ({ page }) => {
 
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Game Inspector (Replay)' }).click()
+  await page.getByRole('button', { name: 'Game Inspector' }).click()
 
   const gameInspectorHeading = page.getByRole('heading', { name: 'Game Inspector' })
   const noGamesText = page.getByText('No games processed yet.')

@@ -55,9 +55,9 @@ test('mobile chat posts selected gameId (drawer flow)', async ({ page }) => {
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Games' }).click()
-  await expect(page.getByPlaceholder('Search white, black, opening...')).toBeVisible()
+  await expect(page.getByPlaceholder('Search opponent, opening...')).toBeVisible()
 
-  await page.getByRole('button', { name: /Alice vs Bob/i }).click()
+  await page.getByRole('button', { name: /Alice.*Bob/i }).click()
 
   await page.getByPlaceholder('Ask your coach').fill('hi')
   await page.getByRole('button', { name: 'Send' }).click()

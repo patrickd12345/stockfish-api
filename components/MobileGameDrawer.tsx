@@ -250,7 +250,7 @@ export default function MobileGameDrawer({
         <div style={{ padding: '12px 14px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <input
             type="text"
-            placeholder="Search white, black, opening..."
+            placeholder="Search opponent, opening..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{

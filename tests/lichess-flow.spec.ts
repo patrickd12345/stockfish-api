@@ -70,7 +70,7 @@ test.describe('Lichess Live Mode Flow', () => {
     await page.getByRole('button', { name: 'Seek Human' }).click();
     
     // It should show "Seeking..." state
-    await expect(page.getByRole('button', { name: 'Seeking...' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel Seeking' })).toBeVisible();
 
     // Should remain in lobby while waiting for real game start
     await expect(page.getByText('Ready to Play')).toBeVisible()
