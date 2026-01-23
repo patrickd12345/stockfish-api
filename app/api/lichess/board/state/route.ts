@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveGameState } from '@/lib/lichess/sessionManager'
+import { startBoardSession } from '@/lib/lichess/sessionService'
 
 export const runtime = 'nodejs'
 
@@ -8,6 +9,12 @@ export async function GET(request: NextRequest) {
   if (!lichessUserId) {
     return NextResponse.json(null, { status: 200 })
   }
+
+  // Best-effort: ensure the background stream is running whenever we poll state.
+  // We don't await this to keep the polling route fast.
+  startBoardSession(lichessUserId).catch((err) => {
+    console.warn('[Lichess State] Failed to auto-start board session:', err)
+  })
 
   const state = await getActiveGameState(lichessUserId)
   if (!state) {

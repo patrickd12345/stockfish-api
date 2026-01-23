@@ -61,6 +61,7 @@ export async function POST(request: NextRequest) {
             '  - sarcastic: dry witty humor (never mean-spirited).\n' +
             '- Use that POV: when you say "you", you mean that player; recommend moves for that side.\n' +
             '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
+            '- You will receive the full move sequence. If you recognize the opening (e.g., "Ruy Lopez", "Sicilian Defense", "Queen\'s Gambit"), mention it naturally in your commentary when relevant.\n' +
             '- Use ALL preceding moves and the current Stockfish output.\n' +
             '- Keep it concise: 1–3 short sentences.\n' +
             '- Focus on plans/tactics and the most important mistake or opportunity.\n' +

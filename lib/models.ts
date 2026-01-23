@@ -457,7 +457,7 @@ export async function searchGames(query: string, limit = 50) {
   const sql = getSql()
   const searchTerm = `%${query}%`
   const rows = (await sql`
-    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
     FROM games
     WHERE 
       white ILIKE ${searchTerm} OR 
@@ -477,7 +477,7 @@ export async function searchGames(query: string, limit = 50) {
     opening_name: r.opening_name ?? undefined,
     my_accuracy: r.my_accuracy ?? undefined,
     blunders: r.blunders ?? 0,
-    pgn_text: r.pgn_text,
+    pgn_text: undefined as string | undefined,
     createdAt: r.created_at,
   }))
 }
@@ -499,7 +499,7 @@ export async function getGamesByOpeningOutcome(
   const playerPatterns = playerNames.map((name) => `%${name}%`)
 
   const rows = (await sql`
-    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+    SELECT id, date, time, white, black, result, opening_name, my_accuracy, blunders, created_at
     FROM games
     WHERE opening_name ILIKE ${openingTerm}
       AND (white ILIKE ANY(${playerPatterns}) OR black ILIKE ANY(${playerPatterns}))
@@ -534,7 +534,7 @@ export async function getGamesByOpeningOutcome(
     opening_name: r.opening_name ?? undefined,
     my_accuracy: r.my_accuracy ?? undefined,
     blunders: r.blunders ?? 0,
-    pgn_text: r.pgn_text,
+    pgn_text: undefined as string | undefined,
     createdAt: r.created_at,
   }))
 }

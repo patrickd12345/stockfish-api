@@ -81,5 +81,14 @@ describe('lib/database', () => {
     const { neon } = await import('@neondatabase/serverless')
     expect(vi.mocked(neon)).toHaveBeenCalledTimes(1)
   })
+
+  it('isNeonQuotaError detects 402 and data transfer quota messages', async () => {
+    const { isNeonQuotaError } = await import('@/lib/database')
+    expect(isNeonQuotaError(new Error('Server error (HTTP status 402): ...'))).toBe(true)
+    expect(isNeonQuotaError(new Error('Your project has exceeded the data transfer quota.'))).toBe(true)
+    expect(isNeonQuotaError({ message: 'exceeded the data transfer quota' })).toBe(true)
+    expect(isNeonQuotaError(new Error('connection refused'))).toBe(false)
+    expect(isNeonQuotaError(new Error('ECONNREFUSED'))).toBe(false)
+  })
 })
 
