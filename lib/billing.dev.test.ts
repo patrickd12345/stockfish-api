@@ -4,12 +4,10 @@ import { resetRuntimeCapabilities } from './runtimeCapabilities'
 
 // Mock database
 vi.mock('./database', () => ({
-  getSql: () => ({
-    async query(strings: TemplateStringsArray, ...values: any[]) {
-      // Return empty result (no entitlement in DB)
-      return []
-    },
-  }),
+  getSql: () => {
+    const sql = async () => [] as any[]
+    return sql
+  },
 }))
 
 describe('dev entitlement override', () => {
@@ -23,7 +21,7 @@ describe('dev entitlement override', () => {
     vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
     vi.stubEnv('LOCAL_DB', 'true')
     
-    const entitlement = await getEntitlementForUser('test-user', 'local')
+    const entitlement = await getEntitlementForUser('test-user')
     expect(entitlement.plan).toBe('FREE') // Should not override in production
   })
 
@@ -32,17 +30,8 @@ describe('dev entitlement override', () => {
     vi.stubEnv('LOCAL_DB', 'true')
     // DEV_ENTITLEMENT not set
     
-    const entitlement = await getEntitlementForUser('test-user', 'local')
+    const entitlement = await getEntitlementForUser('test-user')
     expect(entitlement.plan).toBe('FREE') // Should not override without explicit opt-in
-  })
-
-  it('does not override for server execution mode', async () => {
-    vi.stubEnv('NODE_ENV', 'development')
-    vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
-    vi.stubEnv('LOCAL_DB', 'true')
-    
-    const entitlement = await getEntitlementForUser('test-user', 'server')
-    expect(entitlement.plan).toBe('FREE') // Should not override for server mode
   })
 
   it('does not override without local DB', async () => {
@@ -50,7 +39,7 @@ describe('dev entitlement override', () => {
     vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
     // LOCAL_DB not set, DATABASE_URL points to remote
     
-    const entitlement = await getEntitlementForUser('test-user', 'local')
+    const entitlement = await getEntitlementForUser('test-user')
     expect(entitlement.plan).toBe('FREE') // Should not override without local DB
   })
 
@@ -59,7 +48,7 @@ describe('dev entitlement override', () => {
     vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
     vi.stubEnv('LOCAL_DB', 'true')
     
-    const entitlement = await getEntitlementForUser('test-user', 'local')
+    const entitlement = await getEntitlementForUser('test-user')
     expect(entitlement.plan).toBe('PRO')
     expect(entitlement.status).toBe('ACTIVE')
   })

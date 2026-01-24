@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -19,6 +20,7 @@ export async function POST(
   }
 
   try {
+    await requireLichessLiveAccess(request)
     const response = await lichessFetch(`/api/board/game/${params.gameId}/resign`, {
       method: 'POST',
       token: stored.token.accessToken,
@@ -31,6 +33,9 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Lichess Resign] Error:', error)
     return NextResponse.json({ error: error.message || 'Failed to resign' }, { status: 500 })
   }

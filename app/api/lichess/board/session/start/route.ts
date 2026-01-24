@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { startBoardSession } from '@/lib/lichess/sessionService'
 import { getSession } from '@/lib/lichess/sessionManager'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -14,10 +15,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await requireLichessLiveAccess(request)
     await startBoardSession(lichessUserId)
     const session = await getSession(lichessUserId)
     return NextResponse.json(session)
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Lichess Session] Failed to start board session:', error)
     return NextResponse.json({ error: error.message || 'Failed to start session' }, { status: 500 })
   }

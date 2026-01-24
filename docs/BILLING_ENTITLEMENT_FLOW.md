@@ -56,7 +56,7 @@ No roles, feature flags, or extra tables.
 
 ## D. Runtime checks
 
-`requireProEntitlement(request)` and any logic that needs “is this user Pro?” use **only**:
+`requireFeatureForUser(feature, { userId })` and any logic that needs “is this user allowed?” use **only**:
 
 1. **Database**: `getEntitlementForUser(userId)` reads from `entitlements` (and applies the `now > current_period_end` rule above).
 2. **Current time**: Used inside `getEntitlementForUser()` to compare with `current_period_end`.
@@ -84,6 +84,6 @@ All logic is idempotent and restart-safe: no reliance on in-memory caches or “
 2. **Route** verifies signature, then calls `handleWebhook(event)`.
 3. **handleWebhook** tries to insert the event into `webhook_events`. If the insert yields no row (duplicate id), it returns without updating entitlement.
 4. **Event handler** (subscription or invoice) resolves `user_id` from `billing_customers` or metadata, computes `plan` and `current_period_end` from the subscription/invoice, and upserts `entitlements`.
-5. **Next request** that needs Pro calls `requireProEntitlement(request)` → `getEntitlementForUser(userId)` → read from DB, apply `now > current_period_end` ⇒ FREE, then enforce Pro only if `plan === 'PRO'`.
+5. **Next request** that needs a gated feature calls `requireFeatureForUser(feature, { userId })` → `getEntitlementForUser(userId)` → read from DB, apply `now > current_period_end` ⇒ FREE, then enforce tier allowance for the feature.
 
 No pricing UI, no plan inferred from the client, no Stripe calls at request time.

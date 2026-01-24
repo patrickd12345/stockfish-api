@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveGameState } from '@/lib/lichess/sessionManager'
 import { startBoardSession } from '@/lib/lichess/sessionService'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -8,6 +9,14 @@ export async function GET(request: NextRequest) {
   const lichessUserId = request.cookies.get('lichess_user_id')?.value
   if (!lichessUserId) {
     return NextResponse.json(null, { status: 200 })
+  }
+  try {
+    await requireLichessLiveAccess(request)
+  } catch (error) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    throw error
   }
 
   // Best-effort: ensure the background stream is running whenever we poll state.

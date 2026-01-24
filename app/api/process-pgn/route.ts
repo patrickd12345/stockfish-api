@@ -6,7 +6,7 @@ import { createGame } from '@/lib/models'
 import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
 import { executeServerSideAnalysis } from '@/lib/engineGateway'
-import { getEntitlementForUser } from '@/lib/billing'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,19 +77,30 @@ export async function POST(request: NextRequest) {
     // Run engine analysis for a small subset immediately so blunders are real, not defaults.
     // Keep this bounded for serverless/dev responsiveness; the full backlog can be analyzed via /api/engine/analyze or scripts/run-engine-analysis.ts.
     // Only for Pro users - Free users can use client-side analysis.
-    const lichessUserId = request.cookies.get('lichess_user_id')?.value
-    let hasProAccess = false
-    
+    const lichessUserId = request.cookies.get('lichess_user_id')?.value ?? null
+    let hasEngineAccess = false
+    let hasBatchAccess = false
+
     if (lichessUserId) {
       try {
-        const entitlement = await getEntitlementForUser(lichessUserId)
-        hasProAccess = entitlement.plan === 'PRO'
+        await requireFeatureForUser('engine_analysis', { userId: lichessUserId })
+        hasEngineAccess = true
       } catch (e) {
-        console.warn('Failed to check entitlement:', e)
+        if (!(e instanceof FeatureAccessError)) {
+          console.warn('Failed to check engine feature access:', e)
+        }
+      }
+      try {
+        await requireFeatureForUser('batch_analysis', { userId: lichessUserId })
+        hasBatchAccess = true
+      } catch (e) {
+        if (!(e instanceof FeatureAccessError)) {
+          console.warn('Failed to check batch feature access:', e)
+        }
       }
     }
-    
-    const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false' && hasProAccess
+
+    const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false' && hasEngineAccess
     if (analyzeNow && created.length > 0 && lichessUserId) {
       const envPlayerNames =
         process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
@@ -118,7 +129,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (hasProAccess) {
+    if (hasBatchAccess) {
       console.log('🔄 Triggering batch analysis after PGN import...')
       try {
         await runBatchAnalysis()
@@ -130,7 +141,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       count,
-      message: hasProAccess
+      message: hasBatchAccess
         ? `Processed ${count} game(s) and updated progression analysis`
         : `Processed ${count} game(s)`
     })

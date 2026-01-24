@@ -1,53 +1,92 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Entitlement } from '@/lib/billing'
+import type { Tier } from '@/lib/tierPolicy'
 
-const EntitlementContext = createContext<Entitlement | null>(null)
+type EntitlementState = {
+  entitlement: Entitlement
+  tier: Tier
+  isAuthenticated: boolean
+}
 
-export function EntitlementProvider({ children }: { children: ReactNode }) {
-  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
-  const [loading, setLoading] = useState(true)
+const defaultEntitlement: Entitlement = {
+  plan: 'FREE',
+  status: 'NONE',
+  current_period_end: null,
+  cancel_at_period_end: false,
+}
+
+const defaultState: EntitlementState = {
+  entitlement: defaultEntitlement,
+  tier: 'ANON',
+  isAuthenticated: false,
+}
+
+const EntitlementContext = createContext<EntitlementState>(defaultState)
+
+export function EntitlementProvider({
+  children,
+  initialState,
+}: {
+  children: ReactNode
+  initialState?: EntitlementState
+}) {
+  const [state, setState] = useState<EntitlementState>(initialState ?? defaultState)
+  const [loading, setLoading] = useState(!initialState)
 
   useEffect(() => {
+    if (initialState) return
     fetch('/api/billing/subscription')
-      .then((res) => res.json())
-      .then((data: Entitlement) => {
-        setEntitlement(data)
+      .then(async (res) => {
+        if (res.status === 401) {
+          setState({
+            entitlement: defaultEntitlement,
+            tier: 'ANON',
+            isAuthenticated: false,
+          })
+          return
+        }
+        const data = (await res.json()) as Entitlement
+        const tier: Tier = data.plan === 'PRO' ? 'PRO' : 'FREE'
+        setState({
+          entitlement: data,
+          tier,
+          isAuthenticated: true,
+        })
       })
       .catch(() => {
-        // Default to FREE on error
-        setEntitlement({
-          plan: 'FREE',
-          status: 'NONE',
-          current_period_end: null,
-          cancel_at_period_end: false,
+        setState({
+          entitlement: defaultEntitlement,
+          tier: 'ANON',
+          isAuthenticated: false,
         })
       })
       .finally(() => {
         setLoading(false)
       })
-  }, [])
+  }, [initialState])
+
+  const value = useMemo(() => state, [state])
 
   if (loading) {
     return null
   }
 
-  return (
-    <EntitlementContext.Provider value={entitlement}>
-      {children}
-    </EntitlementContext.Provider>
-  )
+  return <EntitlementContext.Provider value={value}>{children}</EntitlementContext.Provider>
 }
 
 export function useEntitlement(): Entitlement {
-  const entitlement = useContext(EntitlementContext)
-  
-  // Default to FREE if not loaded
-  return entitlement ?? {
-    plan: 'FREE',
-    status: 'NONE',
-    current_period_end: null,
-    cancel_at_period_end: false,
-  }
+  const state = useContext(EntitlementContext)
+  return state.entitlement
+}
+
+export function useTier(): Tier {
+  const state = useContext(EntitlementContext)
+  return state.tier
+}
+
+export function useIsAuthenticated(): boolean {
+  const state = useContext(EntitlementContext)
+  return state.isAuthenticated
 }

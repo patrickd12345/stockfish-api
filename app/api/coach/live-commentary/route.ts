@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOpenAIConfig, getOpenAIClient } from '@/lib/openaiClient'
 import { normalizeAgentTone } from '@/lib/agentTone'
+import { callLlm } from '@/lib/llmHelper'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,74 +32,42 @@ export async function POST(request: NextRequest) {
   const bestMove = typeof body.bestMove === 'string' ? body.bestMove : null
   const evalLabel = typeof body.evalLabel === 'string' ? body.evalLabel : null
 
-  // Always return usable output, even if no LLM configured.
-  if (!getOpenAIConfig()) {
-    return NextResponse.json({
-      commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
-      source: 'fallback'
-    })
-  }
+  const systemPrompt =
+    'You are an onboard chess coach. Write helpful, human-friendly live feedback.\n' +
+    `- The player you are coaching is playing as: ${myColor ?? 'unknown'}.\n` +
+    `- Your tone must be: ${tone}.\n` +
+    '- Tone rules:\n' +
+    '  - neutral: direct, calm, analytical.\n' +
+    '  - empathic: supportive, encouraging, never patronizing.\n' +
+    '  - jockey: playful hype + light banter (never rude).\n' +
+    '  - sarcastic: dry witty humor (never mean-spirited).\n' +
+    '- Use that POV: when you say "you", you mean that player; recommend moves for that side.\n' +
+    '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
+    '- You will receive the full move sequence. If you recognize the opening (e.g., "Ruy Lopez", "Sicilian Defense", "Queen\'s Gambit"), mention it naturally in your commentary when relevant.\n' +
+    '- Use ALL preceding moves and the current Stockfish output.\n' +
+    '- Keep it concise: 1–3 short sentences.\n' +
+    '- Focus on plans/tactics and the most important mistake or opportunity.\n' +
+    '- Do NOT dump engine lines verbatim; interpret them.\n' +
+    "- If uncertain, say what to look for next rather than hallucinating.\n"
 
-  try {
-    const openai = getOpenAIClient()
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+  const userPrompt = JSON.stringify(
+    {
+      fen,
+      moves,
+      myColor,
+      lastMove,
+      stockfish: { evaluation, mate, depth, bestMove, bestLine, evalLabel }
+    },
+    null,
+    2
+  )
 
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature: 0.35,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an onboard chess coach. Write helpful, human-friendly live feedback.\n' +
-            `- The player you are coaching is playing as: ${myColor ?? 'unknown'}.\n` +
-            `- Your tone must be: ${tone}.\n` +
-            '- Tone rules:\n' +
-            '  - neutral: direct, calm, analytical.\n' +
-            '  - empathic: supportive, encouraging, never patronizing.\n' +
-            '  - jockey: playful hype + light banter (never rude).\n' +
-            '  - sarcastic: dry witty humor (never mean-spirited).\n' +
-            '- Use that POV: when you say "you", you mean that player; recommend moves for that side.\n' +
-            '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
-            '- You will receive the full move sequence. If you recognize the opening (e.g., "Ruy Lopez", "Sicilian Defense", "Queen\'s Gambit"), mention it naturally in your commentary when relevant.\n' +
-            '- Use ALL preceding moves and the current Stockfish output.\n' +
-            '- Keep it concise: 1–3 short sentences.\n' +
-            '- Focus on plans/tactics and the most important mistake or opportunity.\n' +
-            '- Do NOT dump engine lines verbatim; interpret them.\n' +
-            "- If uncertain, say what to look for next rather than hallucinating.\n"
-        },
-        {
-          role: 'user',
-          content: JSON.stringify(
-            {
-              fen,
-              moves,
-              myColor,
-              lastMove,
-              stockfish: { evaluation, mate, depth, bestMove, bestLine, evalLabel }
-            },
-            null,
-            2
-          )
-        }
-      ]
-    })
+  const fallback = fallbackCommentary({ lastMove, evalLabel, bestMove })
+  const result = await callLlm(userPrompt, systemPrompt, { temperature: 0.35 }, fallback)
 
-    const commentary = completion.choices[0]?.message?.content?.trim()
-    if (!commentary) {
-      return NextResponse.json({
-        commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
-        source: 'fallback'
-      })
-    }
-
-    return NextResponse.json({ commentary, source: 'llm' })
-  } catch (error: any) {
-    console.error('[Live Commentary] LLM failed:', error)
-    return NextResponse.json({
-      commentary: fallbackCommentary({ lastMove, evalLabel, bestMove }),
-      source: 'fallback'
-    })
-  }
+  return NextResponse.json({
+    commentary: result.content,
+    source: result.source === 'ollama' || result.source === 'gateway' ? 'llm' : 'fallback'
+  })
 }
 

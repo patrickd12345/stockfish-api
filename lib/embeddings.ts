@@ -1,4 +1,4 @@
-import { getOpenAIClient } from '@/lib/openaiClient'
+import { getAIGatewayClient } from '@/lib/openaiClient'
 
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
 const MAX_EMBED_CHARS = 6000
@@ -27,9 +27,9 @@ export function buildEmbeddingText(input: {
 }
 
 export async function getEmbedding(text: string): Promise<number[] | null> {
-  let openai
+  let gatewayClient
   try {
-    openai = getOpenAIClient()
+    gatewayClient = getAIGatewayClient()
   } catch {
     return null
   }
@@ -41,7 +41,7 @@ export async function getEmbedding(text: string): Promise<number[] | null> {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await openai.embeddings.create({
+      const response = await gatewayClient.embeddings.create({
         model,
         // Vercel AI Gateway (Azure-backed) rejects string input; send array form.
         input: [input],

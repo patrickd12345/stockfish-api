@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { ExecutionModeProvider } from '@/contexts/ExecutionModeContext'
+import { CapabilityFactsProvider } from '@/contexts/CapabilityFactsContext'
+import { EntitlementProvider } from '@/contexts/EntitlementContext'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 
 function coverageOk() {
@@ -41,7 +42,7 @@ describe('components/EngineCoverageWidget', () => {
     )
   })
 
-  it('shows Resume when executionMode is server and coverage loaded', async () => {
+  it('shows Resume when capabilities allow engine coverage', async () => {
     const fetchSpy = vi.fn(async (url: string) => {
       const u = String(url)
       if (u.startsWith('/api/engine/coverage')) return { ok: true, json: async () => coverageOk() } as Response
@@ -51,9 +52,30 @@ describe('components/EngineCoverageWidget', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     render(
-      <ExecutionModeProvider value="server">
-        <EngineCoverageWidget active />
-      </ExecutionModeProvider>
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: true,
+          outboundNetwork: true,
+          database: true,
+          persistence: true,
+          secrets: true,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          <EngineCoverageWidget active />
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
     )
 
     await waitFor(() => {
@@ -63,19 +85,40 @@ describe('components/EngineCoverageWidget', () => {
     expect(resumeBtn).toBeEnabled()
   })
 
-  it('shows local-only status and no Resume when executionMode is local', () => {
+  it('shows unavailable status and no Resume when capabilities are missing', () => {
     render(
-      <ExecutionModeProvider value="local">
-        <EngineCoverageWidget active />
-      </ExecutionModeProvider>
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: false,
+          outboundNetwork: false,
+          database: false,
+          persistence: false,
+          secrets: false,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          <EngineCoverageWidget active />
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
     )
 
-    expect(screen.getByText(/Engine: local only/i)).toBeInTheDocument()
-    expect(screen.getByText(/Server analysis off in this mode/i)).toBeInTheDocument()
+    expect(screen.getByText(/Engine coverage unavailable/i)).toBeInTheDocument()
+    expect(screen.getByText(/Feature Engine Coverage is not supported/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Resume/i })).not.toBeInTheDocument()
   })
 
-  it('does not call fetch for /api/engine/analyze or /api/engine/analyze/worker when executionMode is local', async () => {
+  it('does not call fetch for /api/engine/analyze or /api/engine/analyze/worker when capabilities are missing', async () => {
     const fetchSpy = vi.fn(async (url: string) => {
       const u = String(url)
       if (u.startsWith('/api/engine/coverage')) return { ok: true, json: async () => coverageOk() } as Response
@@ -85,12 +128,33 @@ describe('components/EngineCoverageWidget', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     render(
-      <ExecutionModeProvider value="local">
-        <EngineCoverageWidget active />
-      </ExecutionModeProvider>
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: false,
+          outboundNetwork: false,
+          database: false,
+          persistence: false,
+          secrets: false,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          <EngineCoverageWidget active />
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
     )
 
-    expect(screen.getByText(/Engine: local only/i)).toBeInTheDocument()
+    expect(screen.getByText(/Engine coverage unavailable/i)).toBeInTheDocument()
 
     const analyzeCalls = fetchSpy.mock.calls.filter(
       ([url]) => String(url).includes('/api/engine/analyze') && !String(url).includes('coverage') && !String(url).includes('diagnostics')
@@ -98,7 +162,7 @@ describe('components/EngineCoverageWidget', () => {
     expect(analyzeCalls.length).toBe(0)
   })
 
-  it('calls fetch for /api/engine/analyze when server and Resume clicked', async () => {
+  it('calls fetch for /api/engine/analyze when Resume clicked and allowed', async () => {
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url)
       if (u.startsWith('/api/engine/coverage')) return { ok: true, json: async () => coverageOk() } as Response
@@ -114,9 +178,30 @@ describe('components/EngineCoverageWidget', () => {
     vi.stubGlobal('fetch', fetchSpy)
 
     render(
-      <ExecutionModeProvider value="server">
-        <EngineCoverageWidget active />
-      </ExecutionModeProvider>
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: true,
+          outboundNetwork: true,
+          database: true,
+          persistence: true,
+          secrets: true,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          <EngineCoverageWidget active />
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
     )
 
     await waitFor(() => {

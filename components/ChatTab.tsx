@@ -5,7 +5,9 @@ import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import SuggestionBubbles from './SuggestionBubbles'
 import FirstInsightsPanel from '@/components/FirstInsightsPanel'
-import { useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { useRouter } from 'next/navigation'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
+import { getFeatureErrorMessage } from '@/lib/featureGate/core'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -319,12 +321,32 @@ function ServerChatTab({ selectedGameId, fill = false, currentPage }: ChatTabPro
 }
 
 export default function ChatTab(props: ChatTabProps) {
-  const executionMode = useExecutionMode()
-  
-  // Early return BEFORE any effects
-  if (executionMode === 'local') {
-    return <LocalChatTab selectedGameId={props.selectedGameId} fill={props.fill} />
+  const access = useFeatureAccess('coach_chat')
+  const router = useRouter()
+
+  if (!access.allowed) {
+    return (
+      <div className={`glass-panel p-6 ${props.fill ? 'flex flex-col h-full min-h-0' : ''}`}>
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-xl font-bold text-terracotta tracking-tight">Coach Chat</h2>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-sage-900/40 p-4 text-sm text-sage-300">
+          {getFeatureErrorMessage('coach_chat', access.reason ?? 'capability')}
+        </div>
+        {access.reason === 'tier' ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => router.push('/pricing')}
+              className="btn-primary text-sm px-4 py-2"
+            >
+              Upgrade to Pro
+            </button>
+          </div>
+        ) : null}
+      </div>
+    )
   }
-  
+
   return <ServerChatTab {...props} />
 }

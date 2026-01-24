@@ -103,12 +103,25 @@ Violating these rules breaks the business model.
 2. **Set Environment Variables**
    Create a `.env.local` file with all the variables mentioned above.
 
-3. **Run Development Server**
+3. **Local DB (Docker, pgvector)**
+   - **Port 5433 rationale:** Port 5432 is commonly occupied by Supabase/local Postgres. Binding Docker on 5433 avoids collisions and guarantees the app is talking to the container.
+   - **Invariant:** The dev guard passes without `LOCAL_DB=true` as long as `DATABASE_URL` points to localhost.
+   - **Command:**
+     ```bash
+     docker run -d --name stockfish-postgres -p 5433:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=stockfish pgvector/pgvector:pg15
+     ```
+   - **Shortcuts:**
+     ```bash
+     pnpm db:local:up
+     pnpm db:local:down
+     ```
+
+4. **Run Development Server**
    ```bash
    pnpm dev
    ```
 
-4. **Stripe Webhook Testing**
+5. **Stripe Webhook Testing**
    Use Stripe CLI to forward webhooks:
    ```bash
    stripe listen --forward-to localhost:3000/api/billing/webhook

@@ -175,7 +175,25 @@ CREATE TABLE IF NOT EXISTS lichess_game_states (
   winner TEXT,
   last_move_at TIMESTAMPTZ,
   last_clock_update_at TIMESTAMPTZ,
+  my_color TEXT CHECK (my_color IN ('white', 'black')),
+  opponent_name TEXT,
+  opponent_rating INT,
+  initial_time_ms INT,
+  initial_increment_ms INT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_lichess_game_states_user ON lichess_game_states (lichess_user_id);
+
+-- Chat messages from live Lichess games
+CREATE TABLE IF NOT EXISTS lichess_chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id TEXT NOT NULL,
+  lichess_user_id TEXT NOT NULL,
+  room TEXT NOT NULL,
+  username TEXT NOT NULL,
+  text TEXT NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lichess_chat_messages_game ON lichess_chat_messages (game_id, received_at);

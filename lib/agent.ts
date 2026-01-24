@@ -1,4 +1,4 @@
-import { getOpenAIClient, getOpenAIConfig } from '@/lib/openaiClient'
+import { getAIGatewayClient, getAIGatewayConfig } from '@/lib/openaiClient'
 import { connectToDb } from '@/lib/database'
 import { getGameCount, getGameSummaries, getGamePgn, searchGamesByEmbedding } from '@/lib/models'
 import { getEmbedding } from '@/lib/embeddings'
@@ -6,6 +6,7 @@ import { loadProgressionSummary } from '@/lib/progressionStorage'
 import { loadEngineSummary } from '@/lib/engineSummaryStorage'
 import { parseTimeExpression, formatTimeWindowForPrompt, filterGamesInWindow } from '@/lib/timeWindows'
 import { formatProgressionSummaryForPrompt, formatEngineSummaryForPrompt } from '@/lib/promptFormatters'
+import { callLlm } from '@/lib/llmHelper'
 
 const DEBUG_ENGINE_MARKER = '=== DEBUG: ENGINE SUMMARY PRESENT ==='
 const DEBUG_PROGRESSION_MARKER = '=== DEBUG: PROGRESSION SUMMARY PRESENT ==='
@@ -68,19 +69,21 @@ function wantsRatingBandAnalysis(input: string): boolean {
 }
 
 export async function buildAgent(conn: any) {
-  const cfg = getOpenAIConfig()
-  if (!cfg) {
-    throw new Error('Missing OpenAI credentials. Set (VERCEL_AI_GATEWAY_ID + VERCEL_VIRTUAL_KEY) or OPENAI_API_KEY.')
+  // Check if we have any LLM available (local or AI Gateway)
+  const gatewayConfig = getAIGatewayConfig()
+  const hasLlm = gatewayConfig !== null // Local LLM is checked at runtime in callLlm
+
+  if (!hasLlm) {
+    throw new Error('Missing LLM credentials. Set VERCEL_AI_GATEWAY_ID and VERCEL_VIRTUAL_KEY, or ensure Ollama is running locally.')
   }
 
   console.log('Building agent with:', {
-    hasApiKey: !!cfg.apiKey,
-    apiKeyLength: cfg.apiKey.length,
-    baseURL: cfg.baseURL ?? '(direct)',
-    model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim()
+    hasGatewayConfig: !!gatewayConfig,
+    gatewayApiKeyLength: gatewayConfig?.apiKey.length ?? 0,
+    gatewayBaseURL: gatewayConfig?.baseURL ?? '(not configured)',
+    model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim(),
+    localLlmAvailable: 'checked at runtime'
   })
-
-  const openai = getOpenAIClient()
 
   return {
     async invoke({ input, gameId, timeWindow }: { 
@@ -492,21 +495,19 @@ The agent must not claim awareness of overall progression.
             }
           }
           
-          const response = await openai.chat.completions.create(
-            {
-              model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim(),
-              messages,
+          // Use local-first LLM helper (prefers Ollama, falls back to OpenAI)
+          const result = await callLlm(
+            input,
+            finalSystemContent,
+            { 
               temperature: 0,
+              model: process.env.OPENAI_MODEL || 'gpt-4o-mini'
             },
-            {
-              timeout: 30000, // 30 second timeout
-            }
+            'No response'
           )
 
-          const content = response.choices[0]?.message?.content || 'No response'
-          
           return {
-            output: content,
+            output: result.content,
             intermediate_steps: [],
           }
         } catch (error: any) {

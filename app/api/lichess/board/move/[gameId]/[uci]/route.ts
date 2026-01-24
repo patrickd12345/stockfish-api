@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,7 @@ export async function POST(
   const { gameId, uci } = params
 
   try {
+    await requireLichessLiveAccess(request)
     const response = await lichessFetch(`/api/board/game/${gameId}/move/${uci}`, {
       method: 'POST',
       token: stored.token.accessToken
@@ -38,6 +40,9 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Move relay failed:', error)
     if (error.status && error.payload) {
       try {

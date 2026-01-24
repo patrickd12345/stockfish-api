@@ -4,8 +4,8 @@ import { vi } from 'vitest'
 const {
   connectToDb,
   isDbConfigured,
-  requireProEntitlement,
-  ForbiddenError,
+  requireFeatureForUser,
+  FeatureAccessError,
   getAnalysisCoverage,
   enqueueEngineAnalysisJobs,
   getGamesNeedingAnalysis,
@@ -17,11 +17,13 @@ const {
 } = vi.hoisted(() => ({
   connectToDb: vi.fn(async () => {}),
   isDbConfigured: vi.fn(() => true),
-  requireProEntitlement: vi.fn(),
-  ForbiddenError: class ForbiddenError extends Error {
+  requireFeatureForUser: vi.fn(),
+  FeatureAccessError: class FeatureAccessError extends Error {
+    public reason = 'tier'
+    public feature = 'engine_analysis'
     constructor(m: string) {
       super(m)
-      this.name = 'ForbiddenError'
+      this.name = 'FeatureAccessError'
     }
   },
   getAnalysisCoverage: vi.fn(async () => ({ totalGames: 0, analyzedGames: 0, failedGames: 0, pendingGames: 0 })),
@@ -35,10 +37,9 @@ const {
 }))
 
 vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
-vi.mock('@/lib/entitlementGuard', () => ({
-  requireProEntitlement,
-  ForbiddenError,
-  getUserIdFromRequest: vi.fn(),
+vi.mock('@/lib/featureGate/server', () => ({
+  requireFeatureForUser,
+  FeatureAccessError,
 }))
 vi.mock('@/lib/engineStorage', () => ({
   getGamesNeedingAnalysis,
@@ -67,7 +68,7 @@ describe('app/api/engine/analyze', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     isDbConfigured.mockReturnValue(true)
-    requireProEntitlement.mockReset()
+    requireFeatureForUser.mockReset()
   })
 
   it('returns 500 when db is not configured', async () => {
@@ -76,13 +77,12 @@ describe('app/api/engine/analyze', () => {
     const res = await POST(req)
     expect(res.status).toBe(500)
     await expect(res.json()).resolves.toEqual({ error: 'Database not configured' })
-    expect(requireProEntitlement).not.toHaveBeenCalled()
+    expect(requireFeatureForUser).not.toHaveBeenCalled()
     expect(enqueueEngineAnalysisJobs).not.toHaveBeenCalled()
     expect(analyzeGameWithEngineInternal).not.toHaveBeenCalled()
   })
 
   it('returns 403 when not authenticated (no cookie)', async () => {
-    requireProEntitlement.mockRejectedValueOnce(new ForbiddenError('Authentication required'))
     const req = jsonRequest({ mode: 'enqueue', limit: 5 })
     const res = await POST(req)
     expect(res.status).toBe(403)
@@ -93,22 +93,22 @@ describe('app/api/engine/analyze', () => {
   })
 
   it('returns 403 when user is Free (not Pro)', async () => {
-    requireProEntitlement.mockRejectedValueOnce(
-      new ForbiddenError('Pro subscription required for server-side analysis')
+    requireFeatureForUser.mockRejectedValueOnce(
+      new FeatureAccessError('Upgrade required to use Engine Analysis.')
     )
-    const req = jsonRequest({ mode: 'enqueue', limit: 5 })
+    const req = jsonRequest({ mode: 'enqueue', limit: 5 }, 'lichess_user_id=free-user')
     const res = await POST(req)
     expect(res.status).toBe(403)
     const body = await res.json()
-    expect(body.error).toContain('Pro subscription')
+    expect(body.error).toContain('Upgrade required')
     expect(enqueueEngineAnalysisJobs).not.toHaveBeenCalled()
     expect(analyzeGameWithEngineInternal).not.toHaveBeenCalled()
   })
 
   it('returns 202 with enqueued count when Pro and mode enqueue', async () => {
-    requireProEntitlement.mockResolvedValueOnce({ userId: 'pro-user', entitlement: { plan: 'PRO' } as any })
+    requireFeatureForUser.mockResolvedValueOnce({ userId: 'pro-user', tier: 'PRO' })
     enqueueEngineAnalysisJobs.mockResolvedValueOnce({ enqueued: 3, skipped: 1 })
-    const req = jsonRequest({ mode: 'enqueue', limit: 10, analysisDepth: 20 })
+    const req = jsonRequest({ mode: 'enqueue', limit: 10, analysisDepth: 20 }, 'lichess_user_id=pro-user')
     const res = await POST(req)
     expect(res.status).toBe(202)
     const body = await res.json()
@@ -122,20 +122,20 @@ describe('app/api/engine/analyze', () => {
   })
 
   it('uses full depth range for Pro (no cap at 15)', async () => {
-    requireProEntitlement.mockResolvedValueOnce({ userId: 'pro-user', entitlement: { plan: 'PRO' } as any })
+    requireFeatureForUser.mockResolvedValueOnce({ userId: 'pro-user', tier: 'PRO' })
     enqueueEngineAnalysisJobs.mockResolvedValueOnce({ enqueued: 0, skipped: 0 })
-    const req = jsonRequest({ mode: 'enqueue', limit: 5, analysisDepth: 25 })
+    const req = jsonRequest({ mode: 'enqueue', limit: 5, analysisDepth: 25 }, 'lichess_user_id=pro-user')
     const res = await POST(req)
     expect(res.status).toBe(202)
     expect(enqueueEngineAnalysisJobs).toHaveBeenCalledWith(5, 'stockfish', 25)
   })
 
   it('runs inline analysis when Pro and mode inline', async () => {
-    requireProEntitlement.mockResolvedValueOnce({ userId: 'pro-user', entitlement: { plan: 'PRO' } as any })
+    requireFeatureForUser.mockResolvedValueOnce({ userId: 'pro-user', tier: 'PRO' })
     getGamesNeedingAnalysis.mockResolvedValueOnce([{ id: 'g1', pgn_text: '1. e4 e5' }] as any)
     analyzeGameWithEngineInternal.mockResolvedValueOnce({ moves: [], engineVersion: '16' } as any)
     computeEngineSummary.mockResolvedValueOnce({ coveragePercent: 100, gamesWithEngineAnalysis: 1, overall: {} } as any)
-    const req = jsonRequest({ mode: 'inline', limit: 5, analysisDepth: 18 })
+    const req = jsonRequest({ mode: 'inline', limit: 5, analysisDepth: 18 }, 'lichess_user_id=pro-user')
     const res = await POST(req)
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -147,10 +147,10 @@ describe('app/api/engine/analyze', () => {
   })
 
   it('does not call engine or enqueue when 403', async () => {
-    requireProEntitlement.mockRejectedValueOnce(
-      new ForbiddenError('Pro subscription required for server-side analysis')
+    requireFeatureForUser.mockRejectedValueOnce(
+      new FeatureAccessError('Upgrade required to use Engine Analysis.')
     )
-    const req = jsonRequest({ mode: 'inline', limit: 5 })
+    const req = jsonRequest({ mode: 'inline', limit: 5 }, 'lichess_user_id=free-user')
     await POST(req)
     expect(analyzeGameWithEngineInternal).not.toHaveBeenCalled()
     expect(enqueueEngineAnalysisJobs).not.toHaveBeenCalled()

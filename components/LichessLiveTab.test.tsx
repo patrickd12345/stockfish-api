@@ -1,5 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import LichessLiveTab from '@/components/LichessLiveTab'
+import { CapabilityFactsProvider } from '@/contexts/CapabilityFactsContext'
+import { EntitlementProvider } from '@/contexts/EntitlementContext'
 import { vi } from 'vitest'
 
 // Mock useLichessBoard hook
@@ -19,6 +22,34 @@ vi.mock('./LiveCommentary', () => ({
 }))
 
 describe('components/LichessLiveTab', () => {
+  const renderInServerMode = (ui: ReactElement) =>
+    render(
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: true,
+          outboundNetwork: true,
+          database: true,
+          persistence: true,
+          secrets: true,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          {ui}
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
+    )
+
   beforeEach(() => {
     vi.restoreAllMocks()
     mockUseLichessBoard.mockReturnValue({
@@ -40,7 +71,7 @@ describe('components/LichessLiveTab', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    render(<LichessLiveTab />)
+    renderInServerMode(<LichessLiveTab />)
 
     await waitFor(() => {
       expect(screen.getByText('Seek Human')).toBeInTheDocument()
@@ -59,7 +90,7 @@ describe('components/LichessLiveTab', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    render(<LichessLiveTab />)
+    renderInServerMode(<LichessLiveTab />)
 
     await waitFor(() => {
       expect(screen.getByText('Seek Human')).toBeInTheDocument()
@@ -78,7 +109,7 @@ describe('components/LichessLiveTab', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    render(<LichessLiveTab />)
+    renderInServerMode(<LichessLiveTab />)
 
     await waitFor(() => {
       expect(screen.queryByText('Seek Match')).not.toBeInTheDocument()
@@ -104,7 +135,7 @@ describe('components/LichessLiveTab', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    render(<LichessLiveTab />)
+    renderInServerMode(<LichessLiveTab />)
 
     await waitFor(() => {
       expect(screen.queryByText('Seek Match')).not.toBeInTheDocument()
@@ -140,7 +171,7 @@ describe('components/LichessLiveTab', () => {
     })
     vi.stubGlobal('fetch', fetchSpy)
 
-    render(<LichessLiveTab />)
+    renderInServerMode(<LichessLiveTab />)
 
     await waitFor(() => {
       expect(screen.getByTestId('chess-board')).toBeInTheDocument()

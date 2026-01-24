@@ -81,27 +81,31 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
  * 1. Only applies when NODE_ENV === 'development' (never in production)
  * 2. Requires explicit DEV_ENTITLEMENT=PRO (opt-in, not automatic)
  * 3. Requires localDb capability (ensures we're not hitting hosted DB)
- * 4. Does NOT affect server-side hosted paths (checked via executionMode)
+ * 4. Does NOT affect hosted paths (requires local DB capability)
  * 
  * This enables full local development without weakening production invariants.
  */
-export async function getEntitlementForUser(userId: string, executionMode?: 'local' | 'server'): Promise<Entitlement> {
+export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
   // DEV ENTITLEMENT OVERRIDE: Only in development, only for local execution, only with explicit opt-in
   if (
     process.env.NODE_ENV === 'development' &&
-    process.env.DEV_ENTITLEMENT === 'PRO' &&
-    executionMode === 'local'
+    process.env.DEV_ENTITLEMENT === 'PRO'
   ) {
     const capabilities = getRuntimeCapabilitiesSync()
     
     // Only grant PRO if local DB is available (ensures we're not hitting hosted quotas)
     if (capabilities.localDb) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Dev Entitlement] Override active: granting PRO access for local dev')
+      }
       return {
         plan: 'PRO',
         status: 'ACTIVE',
         current_period_end: null,
         cancel_at_period_end: false,
       }
+    } else if (process.env.NODE_ENV === 'development') {
+      console.warn('[Dev Entitlement] Override skipped: localDb capability not available (hosted DB detected)')
     }
   }
   

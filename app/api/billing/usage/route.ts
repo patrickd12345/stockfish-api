@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserIdFromRequest } from '@/lib/entitlementGuard';
 import { getUsageForPeriod } from '@/lib/budget';
 import { getEntitlementForUser } from '@/lib/billing';
 
@@ -7,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserIdFromRequest(request);
+    const userId = request.cookies.get('lichess_user_id')?.value ?? null;
     
     if (!userId) {
       return NextResponse.json(

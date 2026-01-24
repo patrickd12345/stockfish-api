@@ -28,6 +28,8 @@
     "embeddings:test": "npx tsx scripts/test-embedding.ts",
     "rebuild:engine-summary": "npx tsx scripts/rebuild-engine-summary.ts",
     "migrate:analysis-blunders": "npx tsx scripts/migrate-analysis-blunders.ts",
+    "db:local:up": "docker run -d --name stockfish-postgres -p 5433:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=stockfish pgvector/pgvector:pg15",
+    "db:local:down": "docker rm -f -v stockfish-postgres",
     "prepare": "husky"
   },
   "dependencies": {
@@ -44,6 +46,7 @@
     "react-chessboard": "^4.7.3",
     "react-dom": "^18.3.0",
     "recharts": "^2.15.4",
+    "server-only": "^0.0.1",
     "stripe": "^20.2.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",

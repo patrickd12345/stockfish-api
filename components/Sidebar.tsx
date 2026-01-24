@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import ChessBoard from './ChessBoard'
 import { Chess } from 'chess.js'
-import { useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 
 interface SidebarProps {
   onGamesProcessed: () => void
@@ -232,32 +232,105 @@ function ServerSidebar({ onGamesProcessed, onGameSelect, selectedGameId, refresh
     return null
   }
 
-  const formatDateWithEST = (dateStr: string | undefined, pgnText: string | undefined): string => {
-    if (!dateStr) return 'Unknown date'
-    const timeStr = extractTimeFromPgn(pgnText)
-    if (timeStr) {
-      const timeParts = timeStr.split(':')
-      if (timeParts.length >= 2) {
-        const hours = parseInt(timeParts[0], 10)
-        const minutes = parseInt(timeParts[1], 10)
-        const dateParts = dateStr.split('.')
-        if (dateParts.length === 3) {
-          const year = parseInt(dateParts[0], 10)
-          const month = parseInt(dateParts[1], 10) - 1
-          const day = parseInt(dateParts[2], 10)
-          const utcDate = new Date(Date.UTC(year, month, day, hours, minutes, 0))
-          const estTime = utcDate.toLocaleTimeString('en-US', {
-            timeZone: 'America/New_York',
+  const parseUtcDateTime = (dateStr: string, timeStr: string): Date | null => {
+    const dateParts = dateStr.split('.')
+    if (dateParts.length !== 3) return null
+    const year = parseInt(dateParts[0], 10)
+    const month = parseInt(dateParts[1], 10) - 1
+    const day = parseInt(dateParts[2], 10)
+    if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return null
+
+    const timeParts = timeStr.split(':')
+    const hours = parseInt(timeParts[0] ?? '0', 10)
+    const minutes = parseInt(timeParts[1] ?? '0', 10)
+    const seconds = parseInt(timeParts[2] ?? '0', 10)
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || Number.isNaN(seconds)) return null
+
+    const stamp = Date.UTC(year, month, day, hours, minutes, seconds)
+    const parsed = new Date(stamp)
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed
+  }
+
+  const formatLocalDate = (date: Date): string => {
+    const year = date.getFullYear()
+    const month = `${date.getMonth() + 1}`.padStart(2, '0')
+    const day = `${date.getDate()}`.padStart(2, '0')
+    return `${year}.${month}.${day}`
+  }
+
+  const formatDateWithEST = (
+    dateStr: string | undefined,
+    pgnText: string | undefined,
+    timeStr?: string | undefined,
+    createdAt?: string | Date | undefined
+  ): string => {
+    if (!dateStr) {
+      if (createdAt) {
+        const created = new Date(createdAt)
+        if (!Number.isNaN(created.getTime())) {
+          const localDate = formatLocalDate(created)
+          const localTime = created.toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
-            hour12: true
+            hour12: true,
           })
-          return `${dateStr} ${estTime} EST`
+          return `${localDate} ${localTime}`
         }
       }
+      return 'Unknown date'
     }
+
+    const resolvedTime = timeStr || extractTimeFromPgn(pgnText)
+    if (resolvedTime) {
+      const parsedUtc = parseUtcDateTime(dateStr, resolvedTime)
+      if (parsedUtc) {
+        const localDate = formatLocalDate(parsedUtc)
+        const localTime = parsedUtc.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        return `${localDate} ${localTime}`
+      }
+      return `${dateStr} ${resolvedTime}`
+    }
+
+    if (createdAt) {
+      const created = new Date(createdAt)
+      if (!Number.isNaN(created.getTime())) {
+        const localDate = formatLocalDate(created)
+        const localTime = created.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+        return `${localDate} ${localTime}`
+      }
+    }
+
     return dateStr
   }
+
+  const sortedGames = useMemo(() => {
+    const getTimestamp = (game: any) => {
+      if (game?.date) {
+        const dateStr = String(game.date).replace(/\./g, '-')
+        const timeStr = game?.time ? String(game.time) : extractTimeFromPgn(game?.pgn_text) || '00:00:00'
+        const normalizedDate = dateStr.replace(/-/g, '.')
+        const parsedUtc = parseUtcDateTime(normalizedDate, timeStr)
+        if (parsedUtc) return parsedUtc.getTime()
+        const stamp = new Date(`${dateStr}T${timeStr}`).getTime()
+        if (!Number.isNaN(stamp)) return stamp
+      }
+      if (game?.createdAt) {
+        const created = new Date(game.createdAt).getTime()
+        if (!Number.isNaN(created)) return created
+      }
+      return 0
+    }
+    return [...games].sort((a, b) => getTimestamp(b) - getTimestamp(a))
+  }, [games])
 
   return (
     <div className="fixed left-0 top-0 h-full w-80 bg-sage-900/95 backdrop-blur-xl border-r border-white/5 flex flex-col z-30 shadow-2xl">
@@ -299,7 +372,7 @@ function ServerSidebar({ onGamesProcessed, onGameSelect, selectedGameId, refresh
           {!searching && games.length === 0 && (
             <div className="text-xs text-sage-500 text-center py-4">No games found.</div>
           )}
-          {games.map((game) => {
+          {sortedGames.map((game) => {
             const status = getGameStatus(game)
             const isSelected = selectedGameId === game.id
             const origin =
@@ -341,7 +414,7 @@ function ServerSidebar({ onGamesProcessed, onGameSelect, selectedGameId, refresh
                   {game.opening_name || 'Unknown Opening'}
                 </div>
                 <div className={`text-[10px] mt-1 ${isSelected ? 'text-sage-800/70' : 'text-sage-500'}`}>
-                  {formatDateWithEST(game.date, game.pgn_text)} • {game.result}
+                  {formatDateWithEST(game.date, game.pgn_text, game.time, game.createdAt)} • {game.result}
                 </div>
               </button>
             )
@@ -353,13 +426,12 @@ function ServerSidebar({ onGamesProcessed, onGameSelect, selectedGameId, refresh
 }
 
 export default function Sidebar(props: SidebarProps) {
-  const executionMode = useExecutionMode()
-  
-  // Early return BEFORE any effects
-  if (executionMode === 'local') {
+  const access = useFeatureAccess('games_library')
+
+  if (!access.allowed) {
     return <LocalSidebar onGameSelect={props.onGameSelect} selectedGameId={props.selectedGameId} />
   }
-  
+
   return <ServerSidebar {...props} />
 }
 

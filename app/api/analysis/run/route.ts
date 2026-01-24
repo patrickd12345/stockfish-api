@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard';
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server';
 import { executeServerSideAnalysis } from '@/lib/engineGateway';
-import { checkAndIncrementBudget, estimateCpuMs } from '@/lib/budget';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
-    // Extract and verify Pro entitlement
-    const { userId, entitlement } = await requireProEntitlement(request);
-    
+    const userId = request.cookies.get('lichess_user_id')?.value ?? null
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: 'Authentication required' }, { status: 403 })
+    }
+
     // Parse request body
     const body = await request.json().catch(() => ({}));
     const {
@@ -35,7 +36,23 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
+    const featureKey =
+      analysisType === 'blunder-dna'
+        ? 'blunder_dna'
+        : analysisType === 'batch'
+          ? 'batch_analysis'
+          : 'engine_analysis'
+
+    try {
+      await requireFeatureForUser(featureKey, { userId })
+    } catch (error: any) {
+      if (error instanceof FeatureAccessError) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 403 })
+      }
+      throw error
+    }
+
     // Validate depth for Pro users (max 25)
     const analysisDepth = depth ? Math.min(Math.max(8, depth), 25) : 15;
     
@@ -77,7 +94,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Check if it's a forbidden error
-      if (result.error?.includes('Pro subscription') || result.error?.includes('Authentication')) {
+      if (result.error?.includes('Upgrade required') || result.error?.includes('Authentication')) {
         return NextResponse.json(
           { ok: false, error: result.error },
           { status: 403 }
@@ -97,13 +114,6 @@ export async function POST(request: NextRequest) {
       budgetRemaining: result.budgetRemaining,
     });
   } catch (error: any) {
-    if (error instanceof ForbiddenError) {
-      return NextResponse.json(
-        { ok: false, error: error.message, code: error.code },
-        { status: 403 }
-      );
-    }
-    
     console.error('Analysis API error:', error);
     return NextResponse.json(
       { ok: false, error: error.message || 'Internal server error' },

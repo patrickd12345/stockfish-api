@@ -1,6 +1,6 @@
 import { parseTimeExpression } from '@/lib/timeWindows'
 import type { TimeWindow } from '@/types/ProgressionSummary'
-import { getOpenAIClient } from '@/lib/openaiClient'
+import { callLlm } from '@/lib/llmHelper'
 
 export type TimeWindowResolution =
   | {
@@ -16,11 +16,8 @@ export type TimeWindowResolution =
   | null
 
 function getResolverClient() {
-  try {
-    return getOpenAIClient()
-  } catch {
-    return null
-  }
+  // This function is kept for compatibility but LLM calls now go through callLlm
+  return null
 }
 
 function toIsoDate(d: Date): string {
@@ -65,9 +62,6 @@ export async function resolveTimeWindowFromMessage(
   }
 
   // 2) LLM-assisted fuzzy resolution.
-  const openai = getResolverClient()
-  if (!openai) return null
-
   const nowIso = toIsoDate(now)
 
   const sys = [
@@ -89,16 +83,8 @@ export async function resolveTimeWindowFromMessage(
     '- "since Jan 5" -> start = Jan 5 (most recent past), end = NOW.',
   ].join('\n')
 
-  const completion = await openai.chat.completions.create({
-    model: (process.env.OPENAI_MODEL || 'gpt-4o-mini').trim(),
-    temperature: 0,
-    messages: [
-      { role: 'system', content: sys },
-      { role: 'user', content: user },
-    ],
-  })
-
-  const raw = completion.choices?.[0]?.message?.content ?? ''
+  const result = await callLlm(user, sys, { temperature: 0 }, '{}')
+  const raw = result.content.trim()
   const obj = safeParseJsonObject(raw)
   if (!obj) return null
 

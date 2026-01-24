@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { interpolateClock } from '@/lib/lichess/clockSync'
 import { ClockSnapshot } from '@/lib/lichess/types'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 
 export interface LichessBoardState {
   gameId: string
@@ -28,6 +29,7 @@ export interface LichessBoardState {
 }
 
 export function useLichessBoard(pollIntervalMs: number = 2000) {
+  const access = useFeatureAccess('lichess_live')
   const [state, setState] = useState<LichessBoardState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [clockTick, setClockTick] = useState(0)
@@ -35,6 +37,11 @@ export function useLichessBoard(pollIntervalMs: number = 2000) {
 
   const refreshState = useCallback(async () => {
     try {
+      if (!access.allowed) {
+        setState(null)
+        setError(null)
+        return
+      }
       const response = await fetch('/api/lichess/board/state')
       if (!response.ok) {
         throw new Error(`Failed to fetch state: ${response.status}`)
@@ -71,15 +78,20 @@ export function useLichessBoard(pollIntervalMs: number = 2000) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch board state')
     }
-  }, [])
+  }, [access.allowed])
 
   useEffect(() => {
+    if (!access.allowed) {
+      setState(null)
+      setError(null)
+      return
+    }
     refreshState().catch(() => null)
     const interval = setInterval(() => {
       refreshState().catch(() => null)
     }, pollIntervalMs)
     return () => clearInterval(interval)
-  }, [pollIntervalMs, refreshState])
+  }, [access.allowed, pollIntervalMs, refreshState])
 
   useEffect(() => {
     const interval = setInterval(() => {

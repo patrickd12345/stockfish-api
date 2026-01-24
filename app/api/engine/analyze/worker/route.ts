@@ -12,7 +12,7 @@ import {
   fetchQueuedGamePgn,
   enqueueEngineAnalysisJobs,
 } from '@/lib/engineQueue'
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 import { recordUsageWithAdjustment, estimateCpuMs } from '@/lib/budget'
 
 export const dynamic = 'force-dynamic'
@@ -45,13 +45,14 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDb()
 
-    // Require Pro entitlement to process jobs
-    let userId: string
+    const userId = request.cookies.get('lichess_user_id')?.value ?? null
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 403 })
+    }
     try {
-      const entitlementResult = await requireProEntitlement(request)
-      userId = entitlementResult.userId
+      await requireFeatureForUser('engine_analysis', { userId })
     } catch (error: any) {
-      if (error instanceof ForbiddenError) {
+      if (error instanceof FeatureAccessError) {
         return NextResponse.json({ error: error.message }, { status: 403 })
       }
       throw error

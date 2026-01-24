@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
 
 type Evidence = {
   gameId: string
@@ -205,13 +205,11 @@ function ServerFirstInsightsPanel() {
 }
 
 export default function FirstInsightsPanel() {
-  const executionMode = useExecutionMode()
-  
-  // Early return BEFORE any effects
-  if (executionMode === 'local') {
+  const access = useFeatureAccess('first_insights')
+
+  if (!access.allowed) {
     return null
   }
-  
+
   return <ServerFirstInsightsPanel />
 }
-

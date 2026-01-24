@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getOpenAIClient } from '@/lib/openaiClient'
 import { getOpeningStats } from '@/lib/models'
 import { getRecentBlunders } from '@/lib/blunderStorage'
+import { callLlm } from '@/lib/llmHelper'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST() {
   try {
-    const openai = getOpenAIClient()
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-
     const openings = await getOpeningStats(50)
     const eligible = openings.filter((o) => o.games >= 3)
     const sortedByWin = [...eligible].sort(
@@ -26,23 +23,13 @@ export async function POST() {
       blunders,
     }
 
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature: 0.3,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a chess coach. Write a short Coach Report with three labeled sections: Strength, Weakness, Fix. Keep it factual and concise.',
-        },
-        {
-          role: 'user',
-          content: `Use this data to generate the report:\n${JSON.stringify(payload, null, 2)}`,
-        },
-      ],
-    })
+    const systemPrompt =
+      'You are a chess coach. Write a short Coach Report with three labeled sections: Strength, Weakness, Fix. Keep it factual and concise.'
 
-    const report = completion.choices[0]?.message?.content?.trim() || ''
+    const userPrompt = `Use this data to generate the report:\n${JSON.stringify(payload, null, 2)}`
+    const result = await callLlm(userPrompt, systemPrompt, { temperature: 0.3 }, 'Coach report unavailable.')
+
+    const report = result.content.trim()
 
     return NextResponse.json({ report, data: payload })
   } catch (error: any) {

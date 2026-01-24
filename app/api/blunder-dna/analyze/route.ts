@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isDbConfigured } from '@/lib/database'
 import { fetchRecentLichessGames, persistInputGames } from '@/lib/blunderDna'
 import { executeServerSideAnalysis } from '@/lib/engineGateway'
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,8 +13,7 @@ export async function POST(request: NextRequest) {
   if (!isDbConfigured()) return NextResponse.json({ error: 'Database not configured' }, { status: 500 })
 
   try {
-    // Require Pro entitlement
-    await requireProEntitlement(request)
+    await requireFeatureForUser('blunder_dna', { userId: lichessUserId })
     
     const body = await request.json().catch(() => ({}))
     const n = typeof body.n === 'number' ? body.n : 50
@@ -46,8 +45,8 @@ export async function POST(request: NextRequest) {
       budgetRemaining: result.budgetRemaining,
     })
   } catch (error: any) {
-    if (error instanceof ForbiddenError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: 403 })
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
     }
     console.error('[Blunder DNA] analyze failed:', error)
     return NextResponse.json({ error: error.message || 'Analysis failed' }, { status: 500 })

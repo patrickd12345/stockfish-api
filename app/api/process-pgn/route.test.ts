@@ -7,7 +7,7 @@ const {
   runBatchAnalysis,
   buildEmbeddingText,
   getEmbedding,
-  getEntitlementForUser,
+  requireFeatureForUser,
 } = vi.hoisted(() => ({
   analyzePgn: vi.fn(async (): Promise<any[]> => []),
   parsePgnWithoutEngine: vi.fn(async (): Promise<any[]> => []),
@@ -21,15 +21,22 @@ const {
   })),
   buildEmbeddingText: vi.fn(() => 'embed'),
   getEmbedding: vi.fn(async (): Promise<number[] | null> => [0.1, 0.2]),
-  getEntitlementForUser: vi.fn(async (): Promise<{ plan: string }> => ({ plan: 'FREE' })),
+  requireFeatureForUser: vi.fn(async () => ({ userId: 'free-user', tier: 'FREE' })),
 }))
 
 vi.mock('@/lib/analysis', () => ({ analyzePgn, parsePgnWithoutEngine }))
-vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
+vi.mock('@/lib/database', () => ({
+  connectToDb,
+  isDbConfigured,
+  getSql: () => {
+    const sql = async () => [] as any[]
+    return sql
+  },
+}))
 vi.mock('@/lib/models', () => ({ createGame }))
 vi.mock('@/lib/batchAnalysis', () => ({ runBatchAnalysis }))
 vi.mock('@/lib/embeddings', () => ({ buildEmbeddingText, getEmbedding }))
-vi.mock('@/lib/billing', () => ({ getEntitlementForUser }))
+vi.mock('@/lib/featureGate/server', () => ({ requireFeatureForUser }))
 
 import { POST } from '@/app/api/process-pgn/route'
 
@@ -43,7 +50,7 @@ describe('app/api/process-pgn', () => {
     runBatchAnalysis.mockReset()
     buildEmbeddingText.mockReset().mockReturnValue('embed')
     getEmbedding.mockReset().mockResolvedValue([0.1, 0.2])
-    getEntitlementForUser.mockReset().mockResolvedValue({ plan: 'FREE' })
+    requireFeatureForUser.mockReset().mockResolvedValue({ userId: 'free-user', tier: 'FREE' })
     delete process.env.ENGINE_ANALYSIS_MODE
   })
 
@@ -81,7 +88,7 @@ describe('app/api/process-pgn', () => {
   })
 
   it('saves games, generates embeddings, and triggers batch analysis when db configured and user is Pro', async () => {
-    getEntitlementForUser.mockResolvedValue({ plan: 'PRO' })
+    requireFeatureForUser.mockResolvedValue({ userId: 'pro-user', tier: 'PRO' })
     parsePgnWithoutEngine.mockResolvedValueOnce([
       { game: { blunders: 0, pgn_text: 'PGN1' }, moves: [] },
       { game: { blunders: 1, pgn_text: 'PGN2' }, moves: [] },

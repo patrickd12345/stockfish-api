@@ -9,34 +9,37 @@ describe('hosted DB guard', () => {
     vi.unstubAllEnvs()
   })
 
-  it('does not block server execution mode', () => {
+  it('does not block outside development', () => {
+    vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('DATABASE_URL', 'postgres://neon.tech/db')
     
-    // Should not throw for server mode
-    expect(() => checkHostedDbGuard('server')).not.toThrow()
+    expect(() => checkHostedDbGuard()).not.toThrow()
   })
 
-  it('does not block local execution with local DB', () => {
+  it('does not block development with local DB', () => {
+    vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('LOCAL_DB', 'true')
     
     // Should not throw when using local DB
-    expect(() => checkHostedDbGuard('local')).not.toThrow()
+    expect(() => checkHostedDbGuard()).not.toThrow()
   })
 
-  it('blocks local execution with hosted DB', () => {
+  it('blocks development with hosted DB', () => {
+    vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('DATABASE_URL', 'postgres://neon.tech/db')
     
     // Should throw when trying to use hosted DB in local mode
-    expect(() => checkHostedDbGuard('local')).toThrow('Hosted DB access blocked in local execution mode')
+    expect(() => checkHostedDbGuard()).toThrow('Hosted DB access blocked in development')
   })
 
   it('only checks once per process', () => {
+    vi.stubEnv('NODE_ENV', 'development')
     vi.stubEnv('DATABASE_URL', 'postgres://neon.tech/db')
     
     // First call should throw
-    expect(() => checkHostedDbGuard('local')).toThrow()
+    expect(() => checkHostedDbGuard()).toThrow()
     
     // Second call should not throw again (already checked)
-    expect(() => checkHostedDbGuard('local')).not.toThrow()
+    expect(() => checkHostedDbGuard()).not.toThrow()
   })
 })

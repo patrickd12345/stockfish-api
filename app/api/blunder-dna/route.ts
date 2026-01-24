@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 import { getUserAnalyzedGamesWithBlunders, getLatestBlunderDnaSnapshot, storeBlunderDnaSnapshot, isSnapshotValid } from '@/lib/blunderDnaStorage'
 import { detectBlunders, aggregateBlunders } from '@/lib/blunderDnaV1'
 import type { BlunderDetail } from '@/lib/engineAnalysis'
@@ -71,7 +71,11 @@ async function computeSnapshot(userId: string) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = await requireProEntitlement(request)
+    const userId = request.cookies.get('lichess_user_id')?.value ?? null
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: 'Authentication required' }, { status: 403 })
+    }
+    await requireFeatureForUser('blunder_dna', { userId })
     
     // Check for force refresh
     const url = new URL(request.url)
@@ -105,11 +109,8 @@ export async function GET(request: NextRequest) {
       snapshot,
     })
   } catch (error: any) {
-    if (error instanceof ForbiddenError) {
-      return NextResponse.json(
-        { ok: false, error: error.message, code: error.code },
-        { status: 403 }
-      )
+    if (error instanceof FeatureAccessError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 403 })
     }
     console.error('[Blunder DNA] GET failed:', error)
     return NextResponse.json(

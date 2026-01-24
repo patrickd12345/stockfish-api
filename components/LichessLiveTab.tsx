@@ -1,10 +1,13 @@
 'use client'
 
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Chess } from 'chess.js'
 import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import { useLichessBoard } from '@/hooks/useLichessBoard'
+import { useFeatureAccess } from '@/hooks/useFeatureAccess'
+import { getFeatureErrorMessage } from '@/lib/featureGate/core'
 import type { LichessAccount } from '@/lib/lichess/account'
 import { detectFurthestOpening } from '@/lib/lichess/openings'
 
@@ -162,7 +165,43 @@ function uciMovesToFenAtPly(uciMoves: string, ply: number): { fen: string; appli
   return { fen: chess.fen(), appliedMoves: applied.join(' ') }
 }
 
+function LichessLiveUnavailable({ reason }: { reason: 'capability' | 'tier' }) {
+  const router = useRouter()
+  return (
+    <div className="glass-panel p-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-terracotta tracking-tight">Lichess Live</h2>
+        <span className="text-xs font-semibold text-sage-400 bg-sage-900/60 border border-white/10 px-3 py-1 rounded-full">
+          Unavailable
+        </span>
+      </div>
+      <div className="mt-5 rounded-xl border border-white/10 bg-sage-900/40 p-4 text-sm text-sage-300">
+        {getFeatureErrorMessage('lichess_live', reason)}
+      </div>
+      {reason === 'tier' ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => router.push('/pricing')}
+            className="btn-primary text-sm px-4 py-2"
+          >
+            Upgrade to Pro
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export default function LichessLiveTab() {
+  const access = useFeatureAccess('lichess_live')
+  if (!access.allowed) {
+    return <LichessLiveUnavailable reason={access.reason ?? 'capability'} />
+  }
+  return <ServerLichessLiveTab />
+}
+
+function ServerLichessLiveTab() {
   const { state: liveGameState, displayClock, error, refreshState } = useLichessBoard(2000)
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -810,9 +849,9 @@ export default function LichessLiveTab() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-terracotta tracking-tight">Lichess Live Mode</h2>
         <div className="flex gap-3">
-          {(!session || session.status === 'error') && (
+          {(!myAccount || !session || session.status === 'error') && (
             <button onClick={handleConnect} className="btn-secondary">
-              Reconnect Lichess
+              {myAccount ? 'Reconnect Lichess' : 'Connect Lichess'}
             </button>
           )}
           {session && session.status !== 'idle' && (

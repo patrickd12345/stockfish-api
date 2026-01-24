@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -19,6 +20,7 @@ export async function POST(
   }
 
   try {
+    await requireLichessLiveAccess(request)
     const { accept } = await request.json().catch(() => ({ accept: true }))
     const action = accept ? 'yes' : 'no'
     
@@ -34,6 +36,9 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Lichess Draw] Error:', error)
     return NextResponse.json({ error: error.message || 'Failed to draw' }, { status: 500 })
   }

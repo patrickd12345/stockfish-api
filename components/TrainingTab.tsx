@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import ChessBoard from './ChessBoard'
+import { Chess } from 'chess.js'
 
 type ModuleId = 'basics' | 'pieces' | 'tactics' | 'endgames' | 'strategy'
 type LessonId = string
@@ -305,6 +306,16 @@ export default function TrainingTab() {
     setShowHint(false)
   }, [])
 
+  const markLessonComplete = useCallback((lesson: Lesson | null) => {
+    if (!lesson || lesson.exercise) return
+    setCompletedLessons((prev) => {
+      if (prev.has(lesson.id)) return prev
+      const next = new Set(prev)
+      next.add(lesson.id)
+      return next
+    })
+  }, [])
+
   const handleMove = useCallback(
     (from: string, to: string) => {
       if (!activeLesson?.exercise) return false
@@ -340,6 +351,55 @@ export default function TrainingTab() {
     },
     [activeLesson, showHint, activeModule.lessons, handleLessonSelect]
   )
+
+  const exerciseHighlights = useMemo(() => {
+    if (!activeLesson) return undefined
+    
+    const chess = new Chess(activeLesson.fen)
+    let fromSquare: string | null = null
+    
+    // For exercises, extract from square from correctMove
+    if (activeLesson.exercise) {
+      const move = activeLesson.exercise.correctMove.toLowerCase()
+      if (move.length >= 4) {
+        fromSquare = move.slice(0, 2)
+      }
+    } else {
+      // For non-exercise piece movement lessons, infer piece and starting square
+      const lessonId = activeLesson.id.toLowerCase()
+      if (lessonId.includes('pawn')) {
+        fromSquare = 'e2' // Standard pawn starting position
+      } else if (lessonId.includes('knight')) {
+        fromSquare = 'b1' // Standard knight starting position
+      } else if (lessonId.includes('bishop')) {
+        fromSquare = 'c1' // Light-squared bishop
+      } else if (lessonId.includes('rook')) {
+        fromSquare = 'a1' // Left rook
+      } else if (lessonId.includes('queen')) {
+        fromSquare = 'd1' // Queen starting position
+      } else if (lessonId.includes('king')) {
+        fromSquare = 'e1' // King starting position
+      }
+    }
+    
+    if (!fromSquare) return undefined
+    
+    try {
+      const moves = chess.moves({ square: fromSquare as any, verbose: true }) as Array<any>
+      const targets = moves.map((m) => m.to).filter(Boolean) as string[]
+      if (targets.length === 0) return undefined
+      
+      return targets.reduce<Record<string, React.CSSProperties>>((acc, square) => {
+        acc[square] = {
+          background: 'radial-gradient(circle, rgba(59,130,246,0.45) 0 38%, rgba(59,130,246,0.0) 40%)',
+          boxShadow: 'inset 0 0 0 2px rgba(59,130,246,0.6)',
+        }
+        return acc
+      }, {})
+    } catch {
+      return undefined
+    }
+  }, [activeLesson])
 
   const progressPercentage = useMemo(() => {
     const totalLessons = TRAINING_MODULES.reduce((sum, m) => sum + m.lessons.length, 0)
@@ -460,7 +520,10 @@ export default function TrainingTab() {
                     <p className="text-sm text-sage-400 mt-1">{activeLesson.description}</p>
                   </div>
                   <button
-                    onClick={() => setActiveLessonId(null)}
+                    onClick={() => {
+                      markLessonComplete(activeLesson)
+                      setActiveLessonId(null)
+                    }}
                     className="px-3 py-1.5 bg-sage-800 hover:bg-sage-700 text-sage-200 text-sm font-medium rounded-lg border border-white/10 transition-colors"
                   >
                     Back
@@ -495,6 +558,7 @@ export default function TrainingTab() {
                     orientation="white"
                     isDraggable={!!activeLesson.exercise}
                     onMove={activeLesson.exercise ? handleMove : undefined}
+                    highlightSquares={exerciseHighlights}
                   />
                 </div>
 
@@ -522,6 +586,7 @@ export default function TrainingTab() {
                     onClick={() => {
                       const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
                       if (currentIndex > 0) {
+                        markLessonComplete(activeLesson)
                         handleLessonSelect(activeModule.lessons[currentIndex - 1].id)
                       }
                     }}
@@ -533,6 +598,7 @@ export default function TrainingTab() {
                   <button
                     onClick={() => {
                       const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
+                      markLessonComplete(activeLesson)
                       if (currentIndex < activeModule.lessons.length - 1) {
                         handleLessonSelect(activeModule.lessons[currentIndex + 1].id)
                       } else {

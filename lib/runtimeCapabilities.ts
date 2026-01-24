@@ -112,7 +112,7 @@ export async function getRuntimeCapabilities(): Promise<RuntimeCapabilities> {
   
   const localDb = detectLocalDb()
   const hostedDb = !localDb
-  const localEngine = true // Always true when executionMode === 'local' (checked at usage site)
+  const localEngine = true // Local engine availability is assumed in dev builds
   const localLLM = await probeOllama()
   const billingEnabled = detectBillingEnabled()
   

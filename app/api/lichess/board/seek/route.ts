@@ -4,6 +4,7 @@ import { fetchAccount } from '@/lib/lichess/account'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
 import { LichessApiError } from '@/lib/lichess/apiClient'
 import { startBoardSession } from '@/lib/lichess/sessionService'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await requireLichessLiveAccess(request)
     // Ensure the background event stream is running so "gameStart" gets detected
     // and the UI can immediately transition into the game when a match is found.
     await startBoardSession(lichessUserId).catch((err) => {
@@ -330,6 +332,9 @@ export async function POST(request: NextRequest) {
       throw err
     }
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Lichess Seek] Error:', error)
     return NextResponse.json({ error: error.message || 'Failed to seek match' }, { status: 500 })
   }

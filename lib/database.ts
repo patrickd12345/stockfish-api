@@ -36,7 +36,7 @@ function getConnectionStringSource(): 'POSTGRES_URL' | 'DATABASE_URL' | 'POSTGRE
  * Determines if the connection string points to a local database
  */
 function isLocalConnection(connectionString: string): boolean {
-  // Check explicit override first
+  // Localhost URLs are treated as local; LOCAL_DB=true is only for hosted opt-in.
   if (process.env.LOCAL_DB === 'true') {
     return false // LOCAL_DB=true means "allow hosted DB", so this is NOT local
   }
@@ -93,15 +93,11 @@ function createPgSqlClient(pool: Pool): SqlClient {
 }
 
 /**
- * Guards against hosted DB usage in local execution mode.
+ * Guards against hosted DB usage in development by default.
  * This must be called before any database queries to fail fast.
- * 
- * SAFETY: This check only applies when executionMode === 'local'.
- * Server-side execution (API routes) can still use hosted DBs.
  */
-export function checkHostedDbGuard(executionMode?: 'local' | 'server'): void {
-  // Only check in local execution mode
-  if (executionMode !== 'local') {
+export function checkHostedDbGuard(): void {
+  if (process.env.NODE_ENV !== 'development') {
     return
   }
   
@@ -114,10 +110,10 @@ export function checkHostedDbGuard(executionMode?: 'local' | 'server'): void {
   
   const capabilities = getRuntimeCapabilitiesSync()
   
-  if (capabilities.hostedDb) {
+  if (capabilities.hostedDb && process.env.LOCAL_DB !== 'true') {
     throw new Error(
-      'Hosted DB access blocked in local execution mode. ' +
-      'Set DATABASE_URL to a local PostgreSQL instance or set LOCAL_DB=true to use a local database.'
+      'Hosted DB access blocked in development. ' +
+      'Set DATABASE_URL to a local PostgreSQL instance or set LOCAL_DB=true to allow hosted DB access.'
     )
   }
 }

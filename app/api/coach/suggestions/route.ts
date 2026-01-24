@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOpenAIClient } from '@/lib/openaiClient'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import { getGames } from '@/lib/models'
+import { callLlm } from '@/lib/llmHelper'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
     const { page, gameState, lastMessage } = await request.json().catch(() => ({}))
-    const openai = getOpenAIClient()
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
     // Fetch last 5 games for context
     let recentGamesContext = ''
@@ -35,26 +33,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const completion = await openai.chat.completions.create({
-      model,
-      temperature: 0.4,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You generate concise, curious questions a chess student should ask based on their recent games. ' +
-            'If recent games are provided, base suggestions on patterns you notice (openings, results, accuracy, blunders). ' +
-            'If no games are provided or patterns are unclear, generate general chess learning questions. ' +
-            'Return ONLY a JSON array of 3 short strings.',
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({ page, gameState, lastMessage }) + recentGamesContext,
-        },
-      ],
-    })
+    const systemPrompt =
+      'You generate concise, curious questions a chess student should ask based on their recent games. ' +
+      'If recent games are provided, base suggestions on patterns you notice (openings, results, accuracy, blunders). ' +
+      'If no games are provided or patterns are unclear, generate general chess learning questions. ' +
+      'Return ONLY a JSON array of 3 short strings.'
 
-    const raw = completion.choices[0]?.message?.content?.trim() || '[]'
+    const userPrompt = JSON.stringify({ page, gameState, lastMessage }) + recentGamesContext
+    const result = await callLlm(userPrompt, systemPrompt, { temperature: 0.4 }, '[]')
+
+    const raw = result.content.trim()
     let suggestions: string[] = []
     
     // Strip markdown code blocks if present

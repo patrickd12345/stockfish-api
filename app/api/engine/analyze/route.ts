@@ -6,7 +6,7 @@ import { getGamesNeedingAnalysis, storeEngineAnalysis, markAnalysisFailed, getAn
 import { computeEngineSummary } from '@/lib/engineSummaryAnalysis'
 import { storeEngineSummary } from '@/lib/engineSummaryStorage'
 import { enqueueEngineAnalysisJobs } from '@/lib/engineQueue'
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -16,15 +16,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Database not configured' }, { status: 500 })
   }
 
-  let _userId: string
+  const userId = request.cookies.get('lichess_user_id')?.value ?? null
+  if (!userId) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 403 })
+  }
   try {
-    const ent = await requireProEntitlement(request)
-    _userId = ent.userId
-  } catch (e) {
-    if (e instanceof ForbiddenError) {
-      return NextResponse.json({ error: e.message }, { status: 403 })
+    await requireFeatureForUser('engine_analysis', { userId })
+  } catch (error: unknown) {
+    if (error instanceof FeatureAccessError) {
+      const accessError = error as FeatureAccessError
+      return NextResponse.json({ error: accessError.message }, { status: 403 })
     }
-    throw e
+    throw error
   }
 
   const body = await request.json().catch(() => ({} as any))

@@ -3,7 +3,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as dotenv from 'dotenv'
-import { getOpenAIConfig } from '@/lib/openaiClient'
+import { getAIGatewayConfig } from '@/lib/openaiClient'
 import { getEmbedding } from '@/lib/embeddings'
 
 function loadEnvLocal() {
@@ -23,7 +23,7 @@ function loadEnvLocal() {
 async function main() {
   loadEnvLocal()
 
-  const cfg = getOpenAIConfig()
+  const cfg = getAIGatewayConfig()
   const provider =
     (process.env.OPENAI_PROVIDER || '').trim().toLowerCase() ||
     (cfg?.baseURL ? 'gateway(default)' : 'direct(default)')

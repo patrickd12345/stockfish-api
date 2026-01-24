@@ -7,34 +7,40 @@ const { runBatchAnalysis, getProgressionSummaryMetadata } = vi.hoisted(() => ({
   getProgressionSummaryMetadata: vi.fn(async (): Promise<any> => null),
 }))
 
-const ForbiddenError = vi.hoisted(() => {
-  class ForbiddenError extends Error {
+import { NextRequest } from 'next/server'
+
+const FeatureAccessError = vi.hoisted(() => {
+  class FeatureAccessError extends Error {
     constructor(m: string) {
       super(m)
-      this.name = 'ForbiddenError'
+      this.name = 'FeatureAccessError'
     }
   }
-  return ForbiddenError
+  return FeatureAccessError
 })
 
-const requireProEntitlement = vi.hoisted(() => vi.fn())
+const requireFeatureForUser = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/batchAnalysis', () => ({ runBatchAnalysis }))
 vi.mock('@/lib/progressionStorage', () => ({ getProgressionSummaryMetadata }))
-vi.mock('@/lib/entitlementGuard', () => ({
-  requireProEntitlement,
-  ForbiddenError,
+vi.mock('@/lib/featureGate/server', () => ({
+  requireFeatureForUser,
+  FeatureAccessError,
 }))
 
 import { GET, POST } from '@/app/api/batch-analysis/route'
 
 describe('app/api/batch-analysis', () => {
-  const request = () => ({ nextUrl: new URL('http://x/api/batch-analysis') } as any)
+  const request = (cookie?: string) =>
+    new NextRequest('http://x/api/batch-analysis', {
+      method: 'POST',
+      headers: cookie ? { Cookie: cookie } : undefined,
+    })
 
   beforeEach(() => {
     runBatchAnalysis.mockReset()
     getProgressionSummaryMetadata.mockReset().mockResolvedValue(null)
-    requireProEntitlement.mockReset().mockResolvedValue(undefined)
+    requireFeatureForUser.mockReset().mockResolvedValue(undefined)
   })
 
   it('GET returns exists:false when metadata is null', async () => {
@@ -62,35 +68,35 @@ describe('app/api/batch-analysis', () => {
   })
 
   it('POST returns 403 when not Pro', async () => {
-    requireProEntitlement.mockRejectedValueOnce(new (ForbiddenError as any)('Pro subscription required'))
-    const res = await POST(request())
+    requireFeatureForUser.mockRejectedValueOnce(new (FeatureAccessError as any)('Upgrade required to use Batch Analysis.'))
+    const res = await POST(request('lichess_user_id=free-user'))
     expect(res.status).toBe(403)
     const body = await res.json()
     expect(body.success).toBe(false)
-    expect(body.error).toContain('Pro subscription')
+    expect(body.error).toContain('Upgrade required')
     expect(runBatchAnalysis).not.toHaveBeenCalled()
   })
 
   it('POST runs batch analysis and returns summary when Pro', async () => {
-    requireProEntitlement.mockResolvedValueOnce(undefined)
+    requireFeatureForUser.mockResolvedValueOnce({ userId: 'pro-user', tier: 'PRO' })
     runBatchAnalysis.mockResolvedValueOnce({
       totalGames: 10,
       computedAt: '2026-01-18T00:00:00.000Z',
       period: { start: '2026-01-01', end: '2026-01-18', days: 17 },
     } as any)
 
-    const res = await POST(request())
+    const res = await POST(request('lichess_user_id=pro-user'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.success).toBe(true)
     expect(body.summary.totalGames).toBe(10)
-    expect(requireProEntitlement).toHaveBeenCalledTimes(1)
+    expect(requireFeatureForUser).toHaveBeenCalledTimes(1)
   })
 
   it('POST returns 500 on failure', async () => {
-    requireProEntitlement.mockResolvedValueOnce(undefined)
+    requireFeatureForUser.mockResolvedValueOnce({ userId: 'pro-user', tier: 'PRO' })
     runBatchAnalysis.mockRejectedValueOnce(new Error('nope'))
-    const res = await POST(request())
+    const res = await POST(request('lichess_user_id=pro-user'))
     expect(res.status).toBe(500)
     await expect(res.json()).resolves.toEqual({
       success: false,

@@ -1,7 +1,7 @@
 import path from 'path';
 import { getEntitlementForUser, type Entitlement } from './billing';
 import { checkAndIncrementBudget, estimateCpuMs, recordUsageWithAdjustment } from './budget';
-import { ForbiddenError } from './entitlementGuard';
+import { FeatureAccessError, requireFeatureForUser } from './featureGate/server';
 import { analyzeGameWithEngineInternal, type EngineAnalysisResult } from './engineAnalysis';
 import { analyzeBlunderDnaFromGamesInternal } from './blunderDna';
 import { storeEngineAnalysis } from './engineStorage';
@@ -46,14 +46,19 @@ export async function executeServerSideAnalysis(
   
   // Validate userId is authenticated
   if (!userId) {
-    throw new ForbiddenError('Authentication required');
+    throw new Error('Authentication required');
   }
-  
-  // Fetch entitlement (throws if FREE)
+  const featureKey =
+    type === 'blunder-dna' ? 'blunder_dna' : type === 'batch' ? 'batch_analysis' : 'engine_analysis'
+  try {
+    await requireFeatureForUser(featureKey, { userId })
+  } catch (error: any) {
+    if (error instanceof FeatureAccessError) {
+      throw new Error(error.message)
+    }
+    throw error
+  }
   const entitlement = await getEntitlementForUser(userId);
-  if (entitlement.plan !== 'PRO') {
-    throw new ForbiddenError('Pro subscription required for server-side analysis');
-  }
   
   // Resolve Stockfish path
   const stockfishPath =

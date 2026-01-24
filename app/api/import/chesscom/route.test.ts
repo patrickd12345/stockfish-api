@@ -9,7 +9,7 @@ const {
   gameExistsByPgnText,
   createGame,
   runBatchAnalysis,
-  getEntitlementForUser,
+  requireFeatureForUser,
 } = vi.hoisted(() => ({
   fetchChessComArchives: vi.fn(async (): Promise<string[]> => []),
   fetchGamesFromArchive: vi.fn(async (): Promise<any[]> => []),
@@ -21,18 +21,26 @@ const {
   gameExistsByPgnText: vi.fn(async (): Promise<boolean> => false),
   createGame: vi.fn(async () => {}),
   runBatchAnalysis: vi.fn(async (): Promise<any> => ({})),
-  getEntitlementForUser: vi.fn(async (): Promise<{ plan: string }> => ({ plan: 'FREE' })),
+  requireFeatureForUser: vi.fn(async () => ({ userId: 'free-user', tier: 'FREE' })),
 }))
 
 vi.mock('@/lib/chesscom', () => ({ fetchChessComArchives, fetchGamesFromArchive }))
 vi.mock('@/lib/analysis', () => ({ analyzePgn, parsePgnWithoutEngine }))
 vi.mock('@/lib/database', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/database')>()
-  return { ...actual, connectToDb, isDbConfigured }
+  return {
+    ...actual,
+    connectToDb,
+    isDbConfigured,
+    getSql: () => {
+      const sql = async () => [] as any[]
+      return sql
+    },
+  }
 })
 vi.mock('@/lib/models', () => ({ createGame, gameExists, gameExistsByPgnText }))
 vi.mock('@/lib/batchAnalysis', () => ({ runBatchAnalysis }))
-vi.mock('@/lib/billing', () => ({ getEntitlementForUser }))
+vi.mock('@/lib/featureGate/server', () => ({ requireFeatureForUser }))
 
 import { POST } from '@/app/api/import/chesscom/route'
 
@@ -50,7 +58,7 @@ describe('app/api/import/chesscom', () => {
     gameExistsByPgnText.mockReset().mockResolvedValue(false)
     createGame.mockReset()
     runBatchAnalysis.mockReset()
-    getEntitlementForUser.mockReset().mockResolvedValue({ plan: 'FREE' })
+    requireFeatureForUser.mockReset().mockResolvedValue({ userId: 'free-user', tier: 'FREE' })
     delete process.env.ENGINE_ANALYSIS_MODE
   })
 
@@ -94,7 +102,7 @@ describe('app/api/import/chesscom', () => {
   })
 
   it('saves analyzed games and triggers batch analysis when new games saved and user is Pro', async () => {
-    getEntitlementForUser.mockResolvedValue({ plan: 'PRO' })
+    requireFeatureForUser.mockResolvedValue({ userId: 'pro-user', tier: 'PRO' })
     fetchChessComArchives.mockResolvedValueOnce([
       'https://api.chess.com/pub/player/p/games/2026/01',
     ])

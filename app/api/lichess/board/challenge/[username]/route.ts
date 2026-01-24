@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
 import { startBoardSession } from '@/lib/lichess/sessionService'
+import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
 
@@ -20,6 +21,7 @@ export async function POST(
   }
 
   try {
+    await requireLichessLiveAccess(request)
     // Ensure the background event stream is running so "gameStart" gets detected
     await startBoardSession(lichessUserId).catch((err) => {
       console.warn('[Lichess Challenge] Failed to auto-start board session (continuing):', err)
@@ -55,6 +57,9 @@ export async function POST(
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
+    if (error instanceof LichessAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('[Lichess Challenge] Error:', error)
     return NextResponse.json({ error: error.message || 'Failed to challenge' }, { status: 500 })
   }

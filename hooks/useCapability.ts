@@ -1,21 +1,15 @@
 'use client'
 
-import { useEntitlement } from '@/contexts/EntitlementContext'
-import { getCapabilities, type FeatureKey } from '@/lib/capabilities'
+import { useTier } from '@/contexts/EntitlementContext'
+import { useCapabilityFacts } from '@/contexts/CapabilityFactsContext'
+import { canUseFeature } from '@/lib/featureGate/core'
+import type { FeatureKey } from '@/lib/featureRegistry'
 
 /**
  * Hook to check if a feature is available for the current user.
  */
 export function useCapability(featureKey: FeatureKey): boolean {
-  const entitlement = useEntitlement()
-  const capabilities = getCapabilities(entitlement.plan)
-  return capabilities[featureKey]
-}
-
-/**
- * Hook to get all capabilities for the current user.
- */
-export function useCapabilities() {
-  const entitlement = useEntitlement()
-  return getCapabilities(entitlement.plan)
+  const tier = useTier()
+  const capabilities = useCapabilityFacts()
+  return canUseFeature(featureKey, tier, capabilities)
 }

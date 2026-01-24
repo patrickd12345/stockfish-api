@@ -1,32 +1,32 @@
-# Fix: Preventing Server Calls in Local/Free Mode
+# Fix: Preventing Server Calls Without Capabilities
 
 ## Problem
 
-At app startup, even in local/free mode, the following server endpoints were being called automatically:
+At app startup, server endpoints were being called even when required capabilities were absent:
 - `GET /api/games` (Sidebar component)
 - `GET /api/insights/first` (FirstInsightsPanel component)
 - `POST /api/coach/suggestions` (ChatTab component)
 - `POST /api/import/chesscom` (app/page.tsx autoImport effect)
 
-These endpoints hit a Neon database and caused quota errors immediately on page load.
+These endpoints hit a hosted database or external APIs and caused errors immediately on page load.
 
 ## Root Cause
 
 **Why guards inside `useEffect` are insufficient:**
 
-1. **React schedules effects after render** - Even if a guard checks `executionMode !== 'server'` and returns early, React has already scheduled the effect function to run.
+1. **React schedules effects after render** - Even if a guard checks feature access and returns early, React has already scheduled the effect function to run.
 2. **Effect function is created regardless** - The effect callback is created during render, and React will attempt to run it regardless of conditions inside.
 3. **Timing/race conditions** - There's a window between when the component mounts and when guards execute where server calls can be initiated.
 
-## Solution: Conditional Component Mounting
+## Solution: Conditional Component Mounting (Capability + Tier)
 
 The correct-by-construction fix uses **conditional component mounting** - the same pattern used for `EngineCoverageWidget`:
 
-1. **Early return in parent** - Check `executionMode === 'local'` BEFORE any hooks/effects
-2. **Conditional rendering** - Only mount server-dependent components when `executionMode === 'server'`
-3. **Local variants** - Provide local-only UI components that don't make server calls
+1. **Early return in parent** - Check feature access BEFORE any hooks/effects
+2. **Conditional rendering** - Only mount server-dependent components when `useFeatureAccess(feature).allowed`
+3. **Local variants** - Provide fallbacks that don't make server calls
 
-This ensures React never schedules effects that make server calls in local mode.
+This ensures React never schedules effects when capabilities are missing or the tier disallows the feature.
 
 ## Implementation
 
@@ -35,16 +35,16 @@ This ensures React never schedules effects that make server calls in local mode.
 **Before:** Unconditional `useEffect(() => { fetchGames() }, [refreshKey])` that called `/api/games` on mount.
 
 **After:**
-- Parent `Sidebar` checks `executionMode` and returns early if `'local'`
+- Parent `Sidebar` checks `useFeatureAccess('games_library')` and returns early if access is denied
 - Renders `LocalSidebar` (no server calls) or `ServerSidebar` (makes server calls)
 - `ServerSidebar` contains all the `useEffect` hooks and `fetchGames` logic
 
 ```typescript
 export default function Sidebar({ ... }: SidebarProps) {
-  const executionMode = useExecutionMode()
+  const access = useFeatureAccess('games_library')
   
   // Early return BEFORE any effects
-  if (executionMode === 'local') {
+  if (!access.allowed) {
     return <LocalSidebar onGameSelect={onGameSelect} selectedGameId={selectedGameId} />
   }
   
@@ -57,15 +57,15 @@ export default function Sidebar({ ... }: SidebarProps) {
 **Before:** Unconditional `useEffect(() => { fetchWithRetry() }, [...])` that called `/api/insights/first` on mount.
 
 **After:**
-- Parent `FirstInsightsPanel` checks `executionMode` and returns `null` if `'local'`
-- Only mounts `ServerFirstInsightsPanel` when `executionMode === 'server'`
+- Parent `FirstInsightsPanel` checks `useFeatureAccess('first_insights')` and returns `null` if access is denied
+- Only mounts `ServerFirstInsightsPanel` when access is allowed
 
 ```typescript
 export default function FirstInsightsPanel() {
-  const executionMode = useExecutionMode()
+  const access = useFeatureAccess('first_insights')
   
   // Early return BEFORE any effects
-  if (executionMode === 'local') {
+  if (!access.allowed) {
     return null
   }
   
@@ -78,16 +78,16 @@ export default function FirstInsightsPanel() {
 **Before:** Unconditional `useEffect(() => { fetchSuggestions() }, [...])` that called `/api/coach/suggestions` on mount.
 
 **After:**
-- Parent `ChatTab` checks `executionMode` and returns early if `'local'`
+- Parent `ChatTab` checks `useFeatureAccess('coach_chat')` and returns early if access is denied
 - Renders `LocalChatTab` (no server calls) or `ServerChatTab` (makes server calls)
 - `LocalChatTab` provides basic UI without server-dependent features
 
 ```typescript
 export default function ChatTab({ ... }: ChatTabProps) {
-  const executionMode = useExecutionMode()
+  const access = useFeatureAccess('coach_chat')
   
   // Early return BEFORE any effects
-  if (executionMode === 'local') {
+  if (!access.allowed) {
     return <LocalChatTab selectedGameId={selectedGameId} fill={fill} />
   }
   
@@ -97,30 +97,30 @@ export default function ChatTab({ ... }: ChatTabProps) {
 
 ### 4. AutoImport Effect (`app/page.tsx`)
 
-**Before:** `useEffect` that called `/api/import/chesscom` without checking `executionMode` first.
+**Before:** `useEffect` that called `/api/import/chesscom` without checking feature access.
 
 **After:**
-- Early return at the start of the effect if `executionMode === 'local'`
+- Early return at the start of the effect if `useFeatureAccess('chesscom_import').allowed === false`
 - Prevents the entire `autoImport` async function from running
 
 ```typescript
 useEffect(() => {
   // Early return BEFORE any async work
-  if (executionMode === 'local') {
+  if (!importAccess.allowed) {
     return
   }
   
   // ... rest of autoImport logic only runs in server mode
-}, [disableAutoImport, forceAutoImport, executionMode])
+}, [disableAutoImport, forceAutoImport, importAccess.allowed])
 ```
 
 ## Guarantees
 
-✅ **No server calls in local mode** - Components that make server calls don't mount in local mode  
+✅ **No server calls without capability + tier** - Components that make server calls don't mount when access is denied  
 ✅ **No reliance on timing or refs** - React lifecycle guarantees, not best-effort guards  
-✅ **No need for defensive server logic** - Server endpoints can assume they're only called in server mode (though graceful error handling is still good practice)  
+✅ **No need for mode-based defensive logic** - Server endpoints can assume they are gated by feature access  
 ✅ **React lifecycle respected** - Effects only exist for components that mount  
-✅ **Architecture is obvious** - Clear separation between local and server components
+✅ **Architecture is obvious** - Clear separation between gated and non-gated components
 
 ## Testing
 
@@ -131,4 +131,4 @@ All changes compile successfully (`tsc --noEmit` passes). The pattern matches th
 This pattern makes it impossible to accidentally reintroduce server calls in local mode:
 - New developers can't add server calls to local components (they don't exist)
 - Refactoring polling logic or adding hooks can't reintroduce the bug
-- The invariant is structural: "Server polling exists if and only if executionMode === 'server'"
+- The invariant is structural: "Server polling exists if and only if feature access is allowed"

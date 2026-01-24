@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Sidebar from '@/components/Sidebar'
-import { ExecutionModeProvider } from '@/contexts/ExecutionModeContext'
+import { CapabilityFactsProvider } from '@/contexts/CapabilityFactsContext'
+import { EntitlementProvider } from '@/contexts/EntitlementContext'
 
 describe('components/Sidebar', () => {
   beforeEach(() => {
@@ -42,9 +43,31 @@ describe('components/Sidebar', () => {
                 black: 'Bob',
                 opening_name: 'Ruy Lopez',
                 date: '2026.01.17',
+                time: '09:00:00',
                 result: '1-0',
                 pgn_text:
                   '[Event \"?\"]\n[Site \"https://www.chess.com/game/live/123\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
+              },
+              {
+                id: 'g2',
+                white: 'Alice',
+                black: 'Bob',
+                opening_name: 'Ruy Lopez',
+                date: '2026.01.17',
+                time: '10:00:00',
+                result: '1-0',
+                pgn_text:
+                  '[Event \"?\"]\n[Site \"https://lichess.org/abcd1234\"]\n[White \"Alice\"]\n[Black \"Bob\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0',
+              },
+              {
+                id: 'g3',
+                white: 'Carol',
+                black: 'Dave',
+                opening_name: 'French Defense',
+                createdAt: '2026-01-18T08:00:00Z',
+                result: '0-1',
+                pgn_text:
+                  '[Event \"?\"]\n[Site \"https://lichess.org/efgh5678\"]\n[White \"Carol\"]\n[Black \"Dave\"]\n[Result \"0-1\"]\n\n1. e4 e6 2. d4 d5 3. Nc3 Bb4 0-1',
               },
             ],
           }),
@@ -55,14 +78,35 @@ describe('components/Sidebar', () => {
     const onGameSelect = vi.fn()
 
     render(
-      <ExecutionModeProvider value="server">
-        <Sidebar
-          onGamesProcessed={() => {}}
-          onGameSelect={onGameSelect}
-          selectedGameId={null}
-          refreshKey={0}
-        />
-      </ExecutionModeProvider>
+      <CapabilityFactsProvider
+        initialFacts={{
+          serverExecution: true,
+          outboundNetwork: true,
+          database: true,
+          persistence: true,
+          secrets: true,
+        }}
+      >
+        <EntitlementProvider
+          initialState={{
+            entitlement: {
+              plan: 'FREE',
+              status: 'ACTIVE',
+              current_period_end: null,
+              cancel_at_period_end: false,
+            },
+            tier: 'FREE',
+            isAuthenticated: true,
+          }}
+        >
+          <Sidebar
+            onGamesProcessed={() => {}}
+            onGameSelect={onGameSelect}
+            selectedGameId={null}
+            refreshKey={0}
+          />
+        </EntitlementProvider>
+      </CapabilityFactsProvider>
     )
 
     // Initial load request
@@ -74,6 +118,10 @@ describe('components/Sidebar', () => {
     expect(screen.getByPlaceholderText('Search opponent, opening...')).toBeInTheDocument()
     // Changed to title case badge based on implementation
     expect(await screen.findByText('Chess.com')).toBeInTheDocument()
+
+    const gameButtons = await screen.findAllByRole('button', { name: /Game:/i })
+    expect(gameButtons[0]).toHaveTextContent('Carol')
+    expect(gameButtons[1]).toHaveTextContent('Alice')
 
     // Search
     const search = screen.getByPlaceholderText('Search opponent, opening...')

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
 import { getProgressionSummaryMetadata } from '@/lib/progressionStorage'
-import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
+import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes for batch analysis
@@ -15,7 +15,11 @@ export const maxDuration = 300 // 5 minutes for batch analysis
 
 export async function POST(request: NextRequest) {
   try {
-    await requireProEntitlement(request)
+    const userId = request.cookies.get('lichess_user_id')?.value ?? null
+    if (!userId) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 403 })
+    }
+    await requireFeatureForUser('batch_analysis', { userId })
     console.log('🔄 Manual batch analysis triggered via API')
 
     const summary = await runBatchAnalysis()
@@ -30,9 +34,10 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error: unknown) {
-    if (error instanceof ForbiddenError) {
+    if (error instanceof FeatureAccessError) {
+      const accessError = error as FeatureAccessError
       return NextResponse.json(
-        { success: false, error: error.message, code: error.code },
+        { success: false, error: accessError.message },
         { status: 403 }
       )
     }
