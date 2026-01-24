@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from '@/components/ChessBoard'
 import EvalGauge from '@/components/EvalGauge'
+import FeatureGate from '@/components/FeatureGate'
+import BlunderDnaReport from '@/components/BlunderDnaReport'
+import { BlunderTheme, GamePhase } from '@/lib/blunderDnaV1'
 
 type PatternTag =
   | 'hanging_piece'
@@ -42,7 +45,41 @@ interface DailyDrillsResponse {
   patterns: PatternSummary[]
 }
 
+/**
+ * Map BlunderTheme to PatternTag
+ */
+function themeToPatternTag(theme: BlunderTheme): PatternTag {
+  switch (theme) {
+    case BlunderTheme.HANGING_PIECE:
+      return 'hanging_piece'
+    case BlunderTheme.MISSED_THREAT:
+      return 'missed_threat'
+    case BlunderTheme.MISSED_WIN:
+      return 'missed_win'
+    case BlunderTheme.UNSAFE_KING:
+      return 'unsafe_king'
+    case BlunderTheme.BAD_CAPTURE:
+      return 'bad_capture'
+    case BlunderTheme.TIME_TROUBLE:
+      return 'time_trouble_collapse'
+    default:
+      return 'missed_threat'
+  }
+}
+
+/**
+ * Determine game phase from ply (move number)
+ */
+function getPhaseFromPly(ply: number): GamePhase {
+  const moveNumber = Math.ceil((ply + 1) / 2)
+  if (moveNumber <= 15) return GamePhase.OPENING
+  if (moveNumber <= 30) return GamePhase.MIDDLEGAME
+  return GamePhase.ENDGAME
+}
+
 export default function BlunderDnaTab() {
+  const [activeView, setActiveView] = useState<'drills' | 'report'>('drills')
+  const [drillFilter, setDrillFilter] = useState<{ theme?: PatternTag; phase?: GamePhase } | null>(null)
   const [loading, setLoading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +93,21 @@ export default function BlunderDnaTab() {
   const [shareError, setShareError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
 
-  const activeDrill = data?.drills?.[activeIdx] ?? null
+  const filteredDrills = useMemo(() => {
+    if (!data?.drills) return []
+    if (!drillFilter) return data.drills
+    
+    return data.drills.filter((drill) => {
+      if (drillFilter.theme && drill.patternTag !== drillFilter.theme) return false
+      if (drillFilter.phase) {
+        const drillPhase = getPhaseFromPly(drill.ply)
+        if (drillPhase !== drillFilter.phase) return false
+      }
+      return true
+    })
+  }, [data?.drills, drillFilter])
+
+  const activeDrill = filteredDrills[activeIdx] ?? null
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -134,6 +185,13 @@ export default function BlunderDnaTab() {
     }, 0)
   }, [analyzing, data, handleAnalyze, loading])
 
+  // Reset active index when filter changes
+  useEffect(() => {
+    if (filteredDrills.length > 0 && activeIdx >= filteredDrills.length) {
+      setActiveIdx(0)
+    }
+  }, [filteredDrills.length, activeIdx])
+
   const patternsSorted = useMemo(() => {
     const list = data?.patterns || []
     return [...list].sort((a, b) => (b.weaknessScore - a.weaknessScore) || (b.occurrences - a.occurrences) || a.patternTag.localeCompare(b.patternTag))
@@ -164,13 +222,13 @@ export default function BlunderDnaTab() {
 
       if (ok) {
         setTimeout(() => {
-            setActiveIdx((i) => Math.min((data?.drills?.length ?? 1) - 1, i + 1))
+            setActiveIdx((i) => Math.min((filteredDrills.length ?? 1) - 1, i + 1))
             setLastAttemptResult(null) // Clear result after moving
         }, 800)
       }
       return ok
     },
-    [activeDrill, data?.drills?.length]
+    [activeDrill, filteredDrills.length]
   )
 
   const handleCreateShare = useCallback(async () => {
@@ -201,6 +259,14 @@ export default function BlunderDnaTab() {
       setShareCopied(false)
     }
   }, [shareUrl])
+
+  const handleTrainPattern = useCallback((theme: BlunderTheme, phase: GamePhase) => {
+    const patternTag = themeToPatternTag(theme)
+    setDrillFilter({ theme: patternTag, phase })
+    setActiveView('drills')
+    setActiveIdx(0)
+    setLastAttemptResult(null)
+  }, [])
 
   return (
     <div className="glass-panel p-6 flex flex-col gap-6 min-h-[700px]">
@@ -258,28 +324,77 @@ export default function BlunderDnaTab() {
           >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
-          <button
-            onClick={handleAnalyze}
-            disabled={loading || analyzing}
-            className="btn-primary bg-purple-600 hover:bg-purple-500 border-purple-500 shadow-purple-900/50"
-          >
-            {analyzing ? 'Analyzing…' : 'Analyze last 50 games'}
-          </button>
+          <FeatureGate feature="blunder_dna">
+            <button
+              onClick={handleAnalyze}
+              disabled={loading || analyzing}
+              className="btn-primary bg-purple-600 hover:bg-purple-500 border-purple-500 shadow-purple-900/50"
+            >
+              {analyzing ? 'Analyzing…' : 'Analyze last 50 games'}
+            </button>
+          </FeatureGate>
         </div>
       </div>
 
-      {error && (
-        <div className="bg-rose-900/40 border border-rose-700 text-rose-200 px-4 py-3 rounded-xl text-sm font-medium">
-          {error}
-        </div>
-      )}
+      {/* View switcher */}
+      <div className="flex gap-2 border-b border-white/10">
+        <button
+          onClick={() => setActiveView('drills')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeView === 'drills'
+              ? 'text-terracotta border-b-2 border-terracotta'
+              : 'text-sage-400 hover:text-sage-300'
+          }`}
+        >
+          Daily Drills
+        </button>
+        <button
+          onClick={() => setActiveView('report')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeView === 'report'
+              ? 'text-terracotta border-b-2 border-terracotta'
+              : 'text-sage-400 hover:text-sage-300'
+          }`}
+        >
+          Blunder Report
+        </button>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+      {activeView === 'report' ? (
+        <BlunderDnaReport onTrainPattern={handleTrainPattern} />
+      ) : (
+        <>
+          {error && (
+            <div className="bg-rose-900/40 border border-rose-700 text-rose-200 px-4 py-3 rounded-xl text-sm font-medium">
+              {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
         <div className="bg-sage-900/40 p-5 rounded-xl border border-white/5">
           <div className="flex justify-between items-center mb-4">
             <div className="font-bold text-lg text-sage-200">Today’s drills</div>
             <div className="text-xs font-mono text-sage-400 bg-sage-900 px-2 py-1 rounded">{data?.date || ''}</div>
           </div>
+
+          {drillFilter && (
+            <div className="mb-4 p-3 bg-purple-900/30 border border-purple-700/50 rounded-lg flex items-center justify-between">
+              <div className="text-sm text-purple-200">
+                Filtered: <strong>{drillFilter.theme}</strong>
+                {drillFilter.phase && ` · ${drillFilter.phase}`}
+                {' '}({filteredDrills.length} drills)
+              </div>
+              <button
+                onClick={() => {
+                  setDrillFilter(null)
+                  setActiveIdx(0)
+                }}
+                className="text-xs text-purple-400 hover:text-purple-300 underline"
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
 
           {activeDrill ? (
             <div className="flex flex-col gap-4">
@@ -287,7 +402,7 @@ export default function BlunderDnaTab() {
                 <div className="text-sm text-sage-300">
                   <span className="text-terracotta font-bold text-lg mr-1">{activeIdx + 1}</span>
                   <span className="text-sage-500 mx-1">/</span>
-                  <span className="text-sage-400">{data?.drills?.length || 0}</span>
+                  <span className="text-sage-400">{filteredDrills.length || 0}</span>
                   <span className="mx-3 text-sage-600">|</span>
                   <span className="font-bold text-white px-2 py-0.5 rounded bg-white/10">{activeDrill.patternTag}</span>
                   <span className="mx-3 text-sage-600">|</span>
@@ -343,8 +458,8 @@ export default function BlunderDnaTab() {
                   Prev
                 </button>
                 <button
-                  onClick={() => setActiveIdx((i) => Math.min((data?.drills?.length ?? 1) - 1, i + 1))}
-                  disabled={!data?.drills?.length || activeIdx >= (data.drills.length - 1)}
+                  onClick={() => setActiveIdx((i) => Math.min((filteredDrills.length ?? 1) - 1, i + 1))}
+                  disabled={!filteredDrills.length || activeIdx >= (filteredDrills.length - 1)}
                   className="btn-secondary flex-1"
                 >
                   Next
@@ -392,6 +507,8 @@ export default function BlunderDnaTab() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

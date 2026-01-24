@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     if (error instanceof ForbiddenError) {
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: error.message, code: error.code },
         { status: 403 }
       )
     }

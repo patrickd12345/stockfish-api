@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import ChessBoard from './ChessBoard'
 import { Chess } from 'chess.js'
+import { useExecutionMode } from '@/contexts/ExecutionModeContext'
 
 interface SidebarProps {
   onGamesProcessed: () => void
@@ -35,7 +36,54 @@ function formatOriginLabel(origin: GameOrigin): string {
   return 'Unknown'
 }
 
-export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId, refreshKey }: SidebarProps) {
+function LocalSidebar({ onGameSelect, selectedGameId }: { onGameSelect: (id: string) => void; selectedGameId: string | null }) {
+  const [boardFen, setBoardFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+  const [moveHistory, setMoveHistory] = useState<string[]>([])
+  const [currentMoveIdx, setCurrentMoveIdx] = useState(-1)
+
+  const navigateTo = (idx: number) => {
+    if (idx >= 0 && idx < moveHistory.length) {
+      setCurrentMoveIdx(idx)
+      setBoardFen(moveHistory[idx])
+    }
+  }
+
+  return (
+    <div className="fixed left-0 top-0 h-full w-80 bg-sage-900/95 backdrop-blur-xl border-r border-white/5 flex flex-col z-30 shadow-2xl">
+      <div className="p-4 bg-sage-900/50 border-b border-white/5">
+        <h2 className="text-sm font-semibold text-sage-300 uppercase tracking-wider mb-3">Game Preview</h2>
+        <div className="mb-3 bg-sage-800 rounded-lg p-2 shadow-inner border border-white/5">
+          <ChessBoard fen={boardFen} size="200px" />
+        </div>
+        
+        {/* CD Player Controls */}
+        <div className="flex justify-center gap-1 bg-sage-950/50 p-2 rounded-lg border border-white/5">
+          <ControlButton onClick={() => navigateTo(0)} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="«" title="Start" />
+          <ControlButton onClick={() => navigateTo(Math.max(0, currentMoveIdx - 5))} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="-5" title="Back 5" />
+          <ControlButton onClick={() => navigateTo(currentMoveIdx - 1)} disabled={moveHistory.length === 0 || currentMoveIdx === 0} label="‹" title="Back" />
+          <ControlButton onClick={() => navigateTo(currentMoveIdx + 1)} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="›" title="Forward" />
+          <ControlButton onClick={() => navigateTo(Math.min(moveHistory.length - 1, currentMoveIdx + 5))} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="+5" title="Forward 5" />
+          <ControlButton onClick={() => navigateTo(moveHistory.length - 1)} disabled={moveHistory.length === 0 || currentMoveIdx === moveHistory.length - 1} label="»" title="End" />
+        </div>
+
+        <div className="mt-2 text-xs text-center text-sage-500 font-mono">
+          {moveHistory.length > 0 ? `Move ${Math.floor(currentMoveIdx / 2) + 1} (${currentMoveIdx}/${moveHistory.length - 1})` : 'Select a game'}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col min-h-0 bg-sage-900/30">
+        <div className="p-4 pb-2">
+          <h2 className="text-sm font-semibold text-sage-300 uppercase tracking-wider mb-2">History</h2>
+          <div className="text-xs text-sage-500 text-center py-4">
+            Game history requires server mode
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ServerSidebar({ onGamesProcessed, onGameSelect, selectedGameId, refreshKey }: SidebarProps) {
   const [boardFen, setBoardFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
   const [moveHistory, setMoveHistory] = useState<string[]>([])
   const [currentMoveIdx, setCurrentMoveIdx] = useState(-1)
@@ -302,6 +350,17 @@ export default function Sidebar({ onGamesProcessed, onGameSelect, selectedGameId
       </div>
     </div>
   )
+}
+
+export default function Sidebar(props: SidebarProps) {
+  const executionMode = useExecutionMode()
+  
+  // Early return BEFORE any effects
+  if (executionMode === 'local') {
+    return <LocalSidebar onGameSelect={props.onGameSelect} selectedGameId={props.selectedGameId} />
+  }
+  
+  return <ServerSidebar {...props} />
 }
 
 function ControlButton({ onClick, disabled, label, title }: { onClick: () => void, disabled: boolean, label: string, title: string }) {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useExecutionMode } from '@/contexts/ExecutionModeContext'
 
 type Evidence = {
   gameId: string
@@ -47,7 +48,7 @@ function buildInspectorHref(gameId: string, ply: number) {
   return `/?${params.toString()}`
 }
 
-export default function FirstInsightsPanel() {
+function ServerFirstInsightsPanel() {
   const [data, setData] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -201,5 +202,16 @@ export default function FirstInsightsPanel() {
       ) : null}
     </div>
   )
+}
+
+export default function FirstInsightsPanel() {
+  const executionMode = useExecutionMode()
+  
+  // Early return BEFORE any effects
+  if (executionMode === 'local') {
+    return null
+  }
+  
+  return <ServerFirstInsightsPanel />
 }
 

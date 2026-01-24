@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Sidebar from '@/components/Sidebar'
+import { ExecutionModeProvider } from '@/contexts/ExecutionModeContext'
 
 describe('components/Sidebar', () => {
   beforeEach(() => {
@@ -54,12 +55,14 @@ describe('components/Sidebar', () => {
     const onGameSelect = vi.fn()
 
     render(
-      <Sidebar
-        onGamesProcessed={() => {}}
-        onGameSelect={onGameSelect}
-        selectedGameId={null}
-        refreshKey={0}
-      />
+      <ExecutionModeProvider value="server">
+        <Sidebar
+          onGamesProcessed={() => {}}
+          onGameSelect={onGameSelect}
+          selectedGameId={null}
+          refreshKey={0}
+        />
+      </ExecutionModeProvider>
     )
 
     // Initial load request

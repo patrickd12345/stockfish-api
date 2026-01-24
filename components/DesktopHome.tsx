@@ -6,11 +6,12 @@ import GameInspector from '@/components/GameInspector'
 import OpeningExplorer from '@/components/OpeningExplorer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
+import TrainingTab from '@/components/TrainingTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
 import { useRouter } from 'next/navigation'
 
-export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna' | 'params'
+export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna' | 'training' | 'params'
 
 interface DesktopHomeProps {
   activeTab: HomeTab
@@ -77,6 +78,12 @@ export default function DesktopHome({
               special="dna"
             />
             <TabButton
+              active={activeTab === 'training'}
+              onClick={() => setActiveTab('training')}
+              label="Training"
+              special="training"
+            />
+            <TabButton
               active={activeTab === 'params'}
               onClick={() => setActiveTab('params')}
               label="Parameters"
@@ -119,6 +126,7 @@ export default function DesktopHome({
           {activeTab === 'openings' && <OpeningExplorer />}
           {activeTab === 'lichess' && <LichessLiveTab />}
           {activeTab === 'dna' && <BlunderDnaTab />}
+          {activeTab === 'training' && <TrainingTab />}
           {activeTab === 'params' && <ParametersTab />}
         </div>
       </main>
@@ -135,7 +143,7 @@ function TabButton({
   active: boolean
   onClick: () => void
   label: string
-  special?: 'lichess' | 'dna'
+  special?: 'lichess' | 'dna' | 'training'
 }) {
   let baseClass = "px-4 py-2 rounded-lg font-medium transition-all duration-200 border"
 
@@ -144,6 +152,8 @@ function TabButton({
       baseClass += " bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-900/50"
     } else if (special === 'dna') {
       baseClass += " bg-rose-600 text-white border-rose-500 shadow-lg shadow-rose-900/50"
+    } else if (special === 'training') {
+      baseClass += " bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-900/50"
     } else {
       baseClass += " bg-terracotta text-sage-900 border-terracotta shadow-lg shadow-terracotta/20"
     }

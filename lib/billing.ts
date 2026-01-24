@@ -1,6 +1,7 @@
 import { getSql } from './database';
 import { validateBillingEnv } from './env';
 import Stripe from 'stripe';
+import { getRuntimeCapabilitiesSync } from './runtimeCapabilities';
 
 // Initialize Stripe
 // We use a getter to ensure env vars are loaded/validated when needed
@@ -72,8 +73,38 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
  * Gets the entitlement for a user.
  * Uses only the database and the current time; never calls Stripe.
  * Pro access stops immediately when current_period_end is in the past.
+ * 
+ * DEV ENTITLEMENT OVERRIDE:
+ * In development mode, if DEV_ENTITLEMENT=PRO and localDb is available,
+ * this function returns PRO entitlement for local execution paths only.
+ * This is safe because:
+ * 1. Only applies when NODE_ENV === 'development' (never in production)
+ * 2. Requires explicit DEV_ENTITLEMENT=PRO (opt-in, not automatic)
+ * 3. Requires localDb capability (ensures we're not hitting hosted DB)
+ * 4. Does NOT affect server-side hosted paths (checked via executionMode)
+ * 
+ * This enables full local development without weakening production invariants.
  */
-export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
+export async function getEntitlementForUser(userId: string, executionMode?: 'local' | 'server'): Promise<Entitlement> {
+  // DEV ENTITLEMENT OVERRIDE: Only in development, only for local execution, only with explicit opt-in
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_ENTITLEMENT === 'PRO' &&
+    executionMode === 'local'
+  ) {
+    const capabilities = getRuntimeCapabilitiesSync()
+    
+    // Only grant PRO if local DB is available (ensures we're not hitting hosted quotas)
+    if (capabilities.localDb) {
+      return {
+        plan: 'PRO',
+        status: 'ACTIVE',
+        current_period_end: null,
+        cancel_at_period_end: false,
+      }
+    }
+  }
+  
   const sql = getSql();
 
   let rows: any[];
