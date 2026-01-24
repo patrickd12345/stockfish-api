@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
             '  - empathic: supportive, encouraging, never patronizing.\n' +
             '  - jockey: playful hype + light banter (never rude).\n' +
             '  - sarcastic: dry witty humor (never mean-spirited).\n' +
+            '- You will receive the full move sequence. If you recognize the opening (e.g., "Ruy Lopez", "Sicilian Defense", "Queen\'s Gambit"), mention it in your review when relevant.\n' +
             '- Stockfish evaluation is from White POV (positive = White better).\n' +
             '- Keep it short and actionable.\n' +
             '- Format:\n' +

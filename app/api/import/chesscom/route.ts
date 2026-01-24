@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
 import { fetchChessComArchives, fetchGamesFromArchive } from '@/lib/chesscom'
 import { analyzePgn, parsePgnWithoutEngine } from '@/lib/analysis'
-import { connectToDb, isDbConfigured } from '@/lib/database'
+import { connectToDb, isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { createGame, gameExists, gameExistsByPgnText } from '@/lib/models'
 import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
 
     let savedCount = 0
     let processedCount = 0
+    let quotaExceeded = false
     const newlySaved: Array<{ id: string; pgnText: string }> = []
     const shouldEmbed = process.env.EMBEDDINGS_ON_IMPORT !== 'false'
     const embedMax = Math.max(0, Math.min(500, Number(process.env.EMBEDDINGS_ON_IMPORT_MAX ?? 200)))
@@ -200,8 +201,23 @@ export async function POST(request: NextRequest) {
         }
         processedCount++
       } catch (e) {
+        if (isNeonQuotaError(e)) {
+          quotaExceeded = true
+          console.error('Database data transfer quota exceeded; stopping import.')
+          break
+        }
         console.error('Failed to process game:', e)
       }
+    }
+
+    if (quotaExceeded) {
+      return NextResponse.json(
+        {
+          error:
+            'Database data transfer quota exceeded. Upgrade your Neon plan or try again later.',
+        },
+        { status: 503 }
+      )
     }
 
     // Trigger batch analysis if any games were saved
@@ -254,11 +270,18 @@ export async function POST(request: NextRequest) {
       }`,
     })
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Import error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to import games' },
-      { status: 500 }
-    )
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            'Database data transfer quota exceeded. Upgrade your Neon plan or try again later.',
+        },
+        { status: 503 }
+      )
+    }
+    const msg = error instanceof Error ? error.message : 'Failed to import games'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

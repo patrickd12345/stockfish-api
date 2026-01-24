@@ -6,6 +6,7 @@ import ChessBoard from './ChessBoard'
 import LiveCommentary from './LiveCommentary'
 import { useLichessBoard } from '@/hooks/useLichessBoard'
 import type { LichessAccount } from '@/lib/lichess/account'
+import { detectFurthestOpening } from '@/lib/lichess/openings'
 
 interface LichessSession {
   status: 'idle' | 'connected' | 'waiting' | 'playing' | 'finished' | 'error'
@@ -162,7 +163,7 @@ function uciMovesToFenAtPly(uciMoves: string, ply: number): { fen: string; appli
 }
 
 export default function LichessLiveTab() {
-  const { state: liveGameState, displayClock, error, refreshState } = useLichessBoard(500)
+  const { state: liveGameState, displayClock, error, refreshState } = useLichessBoard(2000)
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [session, setSession] = useState<LichessSession | null>(null)
@@ -762,6 +763,11 @@ export default function LichessLiveTab() {
   const opponentMaterialBadge = materialLeader.leader === opponentColor ? materialLeader.points : 0
 
   const movePairs = useMemo(() => uciMovesToMovePairs(displayGame?.moves || ''), [displayGame?.moves])
+  const openingName = useMemo(() => {
+    if (!displayGame?.moves) return null
+    return detectFurthestOpening(displayGame.moves)
+  }, [displayGame?.moves])
+
   const lastMoveHighlights = useMemo(() => {
     const lastOne = getLastPlyUciMoves(view.moves || '', 1)
     const uci = lastOne[0]
@@ -1227,7 +1233,14 @@ export default function LichessLiveTab() {
             </div>
 
             <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5 flex flex-col h-48">
-              <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider">Moves</h4>
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="text-xs font-bold text-sage-400 uppercase tracking-wider">Moves</h4>
+                {openingName && (
+                  <span className="text-[10px] font-bold text-terracotta bg-terracotta/10 px-2 py-0.5 rounded truncate max-w-[180px]" title={openingName}>
+                    {openingName}
+                  </span>
+                )}
+              </div>
               <div className="flex-1 bg-sage-950/30 rounded-lg p-2 overflow-y-auto border border-white/5 text-xs">
                 {movePairs.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-sage-600 italic">

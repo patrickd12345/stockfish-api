@@ -15,6 +15,8 @@ interface LiveCommentaryProps {
   opponentName?: string | null
 }
 
+type CommentaryItem = { text: string; source: 'llm' | 'fallback'; timestamp: number }
+
 const MIN_DEPTH_FOR_COMMENT = 8
 const BLUNDER_SWING_CP = 300
 const MISTAKE_SWING_CP = 150
@@ -86,18 +88,35 @@ export default function LiveCommentary({
   const [position, setPosition] = useState({ x: variant === 'postGame' ? 24 : 24, y: variant === 'postGame' ? 84 : 120 })
   const [isDragging, setIsDragging] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
-  const [commentary, setCommentary] = useState<string>('Waiting for the next move…')
-  const [commentarySource, setCommentarySource] = useState<'llm' | 'fallback'>('fallback')
+  const [commentaryHistory, setCommentaryHistory] = useState<CommentaryItem[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
   const lastMoveRef = useRef<string | null>(null)
   const lastEvalRef = useRef<number | null>(null)
   const lastCommentedMoveRef = useRef<string | null>(null)
   const llmAbortRef = useRef<AbortController | null>(null)
+
+  // Auto-scroll to bottom when new commentary arrives
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [commentaryHistory])
 
   const lastMove = useMemo(() => {
     const trimmed = moves.trim()
     if (!trimmed) return null
     const parts = trimmed.split(/\s+/)
     return parts[parts.length - 1] || null
+  }, [moves])
+
+  // Clear history when game resets (moves become empty)
+  useEffect(() => {
+    if (!moves) {
+      setCommentaryHistory([])
+      lastMoveRef.current = null
+      lastEvalRef.current = null
+      lastCommentedMoveRef.current = null
+    }
   }, [moves])
 
   useEffect(() => {
@@ -126,8 +145,9 @@ export default function LiveCommentary({
       : null
 
     const evalLabelCompact = formatEvalLabel(engineState.evaluation, engineState.mate)
+    let fallbackText = ''
     if (swing === null) {
-      setCommentary(`After ${lastMove}, evaluation is ${evalLabelCompact}.`)
+      fallbackText = `After ${lastMove}, evaluation is ${evalLabelCompact}.`
     } else {
       const swingLabel = formatSwing(swing)
       const descriptor = describeSwing(swing)
@@ -138,11 +158,24 @@ export default function LiveCommentary({
           : myColor === 'black'
             ? (directionSide === 'black' ? 'toward you' : 'toward your opponent')
             : (directionSide === 'white' ? 'toward White' : 'toward Black')
-      setCommentary(
-        `After ${lastMove}, evaluation moved ${swingLabel} pawns ${direction} (${descriptor}). Now ${evalLabelCompact}.`
-      )
+      fallbackText = `After ${lastMove}, evaluation moved ${swingLabel} pawns ${direction} (${descriptor}). Now ${evalLabelCompact}.`
     }
-    setCommentarySource('fallback')
+
+    // Add fallback commentary immediately, but we might replace it with LLM version if it arrives for the SAME move.
+    setCommentaryHistory(prev => {
+      const isNewMove = prev.length === 0 || lastCommentedMoveRef.current !== lastMove
+      if (isNewMove) {
+        const next: CommentaryItem[] = [...prev, { text: fallbackText, source: 'fallback', timestamp: Date.now() }]
+        return next.slice(-50) // Keep last 50 entries
+      }
+      const last = prev[prev.length - 1]
+      if (last.source === 'fallback') {
+        const newHistory: CommentaryItem[] = [...prev]
+        newHistory[newHistory.length - 1] = { ...last, text: fallbackText }
+        return newHistory
+      }
+      return prev
+    })
 
     // Ask the onboard LLM to write interpreted feedback using history + Stockfish output.
     llmAbortRef.current?.abort()
@@ -172,8 +205,18 @@ export default function LiveCommentary({
       .then(async (res) => {
         const json = await res.json().catch(() => null)
         if (!json || typeof json.commentary !== 'string') return
-        setCommentary(json.commentary)
-        setCommentarySource(json.source === 'llm' ? 'llm' : 'fallback')
+        
+        setCommentaryHistory(prev => {
+          if (prev.length === 0) return prev
+          const newHistory: CommentaryItem[] = [...prev]
+          const lastIndex = newHistory.length - 1
+          newHistory[lastIndex] = { 
+            text: json.commentary, 
+            source: (json.source === 'llm' ? 'llm' : 'fallback') as 'llm' | 'fallback',
+            timestamp: Date.now() 
+          }
+          return newHistory
+        })
       })
       .catch(() => null)
 
@@ -210,8 +253,7 @@ export default function LiveCommentary({
     const points = Math.abs(diff)
     const materialLine = leader ? `Material: ${leader} +${points}.` : 'Material is equal.'
 
-    setCommentary(`Post-game recap… ${materialLine}`)
-    setCommentarySource('fallback')
+    setCommentaryHistory([{ text: `Post-game recap… ${materialLine}`, source: 'fallback', timestamp: Date.now() }])
   }, [fen, startAnalysis, variant])
 
   useEffect(() => {
@@ -249,8 +291,11 @@ export default function LiveCommentary({
       .then(async (res) => {
         const json = await res.json().catch(() => null)
         if (!json || typeof json.review !== 'string') return
-        setCommentary(json.review)
-        setCommentarySource(json.source === 'llm' ? 'llm' : 'fallback')
+        setCommentaryHistory([{ 
+          text: json.review, 
+          source: (json.source === 'llm' ? 'llm' : 'fallback') as 'llm' | 'fallback', 
+          timestamp: Date.now() 
+        }])
       })
       .catch(() => null)
 
@@ -298,9 +343,12 @@ export default function LiveCommentary({
     }
   }
 
-  const panelWidth = variant === 'postGame' ? 380 : 260
+  const panelWidth = variant === 'postGame' ? 380 : 300
   const panelPadding = variant === 'postGame' ? '14px 16px 16px' : '12px 14px 14px'
   const fontSize = variant === 'postGame' ? '14px' : '13px'
+
+  const currentCommentary = commentaryHistory[commentaryHistory.length - 1]
+  const isLLM = currentCommentary?.source === 'llm'
 
   return (
     <div
@@ -316,6 +364,9 @@ export default function LiveCommentary({
         border: '1px solid rgba(148, 163, 184, 0.25)',
         padding: panelPadding,
         zIndex: 60,
+        display: 'flex',
+        flexDirection: 'column',
+        maxHeight: variant === 'postGame' ? '80vh' : '400px',
       }}
     >
       <button
@@ -337,21 +388,53 @@ export default function LiveCommentary({
           textTransform: 'uppercase',
           padding: 0,
           marginBottom: '8px',
+          flexShrink: 0,
         }}
       >
         <span>
           {variant === 'postGame'
-            ? (commentarySource === 'llm' ? 'Post-game coach' : 'Post-game (Stockfish)')
-            : (commentarySource === 'llm' ? 'Coach' : 'Stockfish Coach')}
+            ? (isLLM ? 'Post-game coach' : 'Post-game (Stockfish)')
+            : (isLLM ? 'Coach' : 'Stockfish Coach')}
         </span>
         <span style={{ fontSize: '10px', opacity: 0.7 }}>Drag</span>
       </button>
-      <div style={{ fontSize, lineHeight: 1.45 }}>{commentary}</div>
-      <div style={{ marginTop: '10px' }}>
+
+      <div 
+        ref={scrollRef}
+        style={{ 
+          fontSize, 
+          lineHeight: 1.45, 
+          overflowY: 'auto', 
+          flex: 1,
+          paddingRight: '4px',
+          marginRight: '-4px',
+        }}
+      >
+        {commentaryHistory.length === 0 ? (
+          <div style={{ opacity: 0.6, fontStyle: 'italic' }}>Waiting for the next move…</div>
+        ) : (
+          commentaryHistory.map((item, i) => (
+            <div 
+              key={i} 
+              style={{ 
+                marginBottom: i === commentaryHistory.length - 1 ? 0 : '12px',
+                paddingBottom: i === commentaryHistory.length - 1 ? 0 : '12px',
+                borderBottom: i === commentaryHistory.length - 1 ? 'none' : '1px solid rgba(148, 163, 184, 0.1)',
+                opacity: i === commentaryHistory.length - 1 ? 1 : 0.6,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              {item.text}
+            </div>
+          ))
+        )}
+      </div>
+
+      <div style={{ marginTop: '10px', flexShrink: 0 }}>
         <EvalGauge evaluationCp={engineState.evaluation} mate={engineState.mate} />
       </div>
-      <div style={{ marginTop: '10px', fontSize: '11px', color: '#cbd5f5' }}>
-        {commentarySource === 'llm'
+      <div style={{ marginTop: '10px', fontSize: '11px', color: '#cbd5f5', flexShrink: 0 }}>
+        {isLLM
           ? 'LLM coach + Stockfish'
           : (engineState.isReady ? `Depth ${engineState.depth}` : 'Engine loading…')}
       </div>

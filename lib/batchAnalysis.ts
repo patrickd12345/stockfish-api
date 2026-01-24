@@ -67,21 +67,32 @@ export async function runBatchAnalysis(): Promise<ProgressionSummary> {
     await connectToDb()
     const sql = getSql()
     
-    // Step 1: Load ALL games ordered by date
-    console.log('📊 Loading all games from database...')
+    // Step 1: Load games ordered by date. Cap at 5000 to avoid egress/memory blow-up.
+    const BATCH_CAP = 5000
+    console.log(`📊 Loading games from database (cap ${BATCH_CAP})...`)
     const allGames = (await sql`
-      SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
-      FROM games
-      ORDER BY 
-        CASE WHEN date IS NOT NULL THEN date::date ELSE created_at::date END ASC
+      WITH capped AS (
+        SELECT id, date, white, black, result, opening_name, my_accuracy, blunders, pgn_text, created_at
+        FROM games
+        ORDER BY
+          CASE WHEN date IS NOT NULL AND date != '' THEN (replace(date, '.', '-'))::date
+               ELSE created_at::date END DESC NULLS LAST,
+          created_at DESC
+        LIMIT ${BATCH_CAP}
+      )
+      SELECT * FROM capped
+      ORDER BY
+        CASE WHEN date IS NOT NULL AND date != '' THEN (replace(date, '.', '-'))::date
+             ELSE created_at::date END ASC NULLS FIRST,
+        created_at ASC
     `) as DbRow[]
-    
+
     if (allGames.length === 0) {
       console.log('⚠️  No games found in database')
       return createEmptySummary()
     }
-    
-    console.log(`📈 Processing ${allGames.length} games...`)
+
+    console.log(`📈 Processing ${allGames.length} games (cap ${BATCH_CAP})...`)
     
     // Step 2: Process games in chunks to avoid memory issues
     const CHUNK_SIZE = 100

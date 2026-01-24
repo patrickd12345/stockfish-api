@@ -62,3 +62,19 @@ export async function connectToDb(): Promise<void> {
 export async function initDb(): Promise<void> {
   await connectToDb()
 }
+
+/**
+ * Detect Neon DB HTTP 402 / data transfer quota errors.
+ * Use to return a clear user-facing message instead of the raw NeonDbError.
+ */
+export function isNeonQuotaError(e: unknown): boolean {
+  const msg =
+    typeof e === 'object' && e !== null && 'message' in e
+      ? String((e as { message?: unknown }).message)
+      : String(e)
+  return (
+    msg.includes('402') ||
+    /data transfer quota/i.test(msg) ||
+    /exceeded.*quota/i.test(msg)
+  )
+}

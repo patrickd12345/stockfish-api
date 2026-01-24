@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server'
 import { connectToDb, isDbConfigured } from '@/lib/database'
 import {
-  getGames,
+  getGameSummaries,
   searchGames,
   getGamesByOpeningOutcome,
   getGamesByOpeningOutcomeCount,
@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
       ])
       games = [...lichessGames, ...dbGames]
     } else {
-      // Show more than 100 so newest imports don't push "today" off the list.
+      // List without pgn_text to cut egress. PGN is fetched on demand from /api/games/[id]/pgn.
       const [dbGames, lichessGames] = await Promise.all([
-        getGames(500),
+        getGameSummaries(limit),
         getLichessGameSummaries(120),
       ])
       games = [...lichessGames, ...dbGames]

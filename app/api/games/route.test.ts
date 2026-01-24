@@ -1,7 +1,7 @@
 const {
   connectToDb,
   isDbConfigured,
-  getGames,
+  getGameSummaries,
   searchGames,
   getLichessGameSummaries,
   searchLichessGameSummaries,
@@ -10,7 +10,7 @@ const {
 } = vi.hoisted(() => ({
   connectToDb: vi.fn(async () => {}),
   isDbConfigured: vi.fn(() => true),
-  getGames: vi.fn(async (): Promise<any[]> => []),
+  getGameSummaries: vi.fn(async (): Promise<any[]> => []),
   searchGames: vi.fn(async (): Promise<any[]> => []),
   getLichessGameSummaries: vi.fn(async (): Promise<any[]> => []),
   searchLichessGameSummaries: vi.fn(async (): Promise<any[]> => []),
@@ -20,7 +20,7 @@ const {
 
 vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
 vi.mock('@/lib/models', () => ({
-  getGames,
+  getGameSummaries,
   searchGames,
   getLichessGameSummaries,
   searchLichessGameSummaries,
@@ -33,7 +33,7 @@ import { GET } from '@/app/api/games/route'
 describe('app/api/games', () => {
   beforeEach(() => {
     connectToDb.mockClear()
-    getGames.mockClear()
+    getGameSummaries.mockClear()
     searchGames.mockClear()
     isDbConfigured.mockReset().mockReturnValue(true)
   })
@@ -46,8 +46,8 @@ describe('app/api/games', () => {
     expect(connectToDb).not.toHaveBeenCalled()
   })
 
-  it('calls getGames when no query', async () => {
-    getGames.mockResolvedValueOnce([{ id: 'g1' }])
+  it('calls getGameSummaries when no query', async () => {
+    getGameSummaries.mockResolvedValueOnce([{ id: 'g1' }])
     getLichessGameSummaries.mockResolvedValueOnce([{ id: 'lichess:abcd', createdAt: new Date('2026-01-01T00:00:00Z') }])
     const res = await GET({ url: 'http://test.local/api/games' } as any)
     expect(res.status).toBe(200)
@@ -58,7 +58,7 @@ describe('app/api/games', () => {
       ],
       totalCount: null,
     })
-    expect(getGames).toHaveBeenCalledWith(500)
+    expect(getGameSummaries).toHaveBeenCalledWith(500)
     expect(getLichessGameSummaries).toHaveBeenCalledWith(120)
     expect(searchGames).not.toHaveBeenCalled()
   })

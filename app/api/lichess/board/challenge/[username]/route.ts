@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { lichessFetch } from '@/lib/lichess/apiClient'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
+import { startBoardSession } from '@/lib/lichess/sessionService'
 
 export const runtime = 'nodejs'
 
@@ -19,18 +20,26 @@ export async function POST(
   }
 
   try {
+    // Ensure the background event stream is running so "gameStart" gets detected
+    await startBoardSession(lichessUserId).catch((err) => {
+      console.warn('[Lichess Challenge] Failed to auto-start board session (continuing):', err)
+    })
+
     const body = await request.json().catch(() => ({}))
     const limit = (body.time || 3) * 60
     const increment = body.increment || 2
     const rated = typeof body.rated === 'boolean' ? body.rated : false
     
     const formData = new URLSearchParams()
-    formData.append('clock.limit', limit.toString())
-    formData.append('clock.increment', increment.toString())
+    formData.append('clockLimit', limit.toString())
+    formData.append('clockIncrement', increment.toString())
     formData.append('rated', rated ? 'true' : 'false')
     formData.append('color', 'random')
+    formData.append('variant', 'standard')
 
-    const response = await lichessFetch(`/api/challenge/${params.username}`, {
+    console.log(`[Lichess Challenge] Challenging ${params.username}: ${limit}s+${increment}s, rated=${rated}`)
+
+    const response = await lichessFetch(`/api/board/challenge/${params.username}`, {
       method: 'POST',
       token: stored.token.accessToken,
       headers: {
