@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from './ChessBoard'
 
 type ModuleId = 'basics' | 'pieces' | 'tactics' | 'endgames' | 'strategy'
@@ -275,12 +275,177 @@ This is a fundamental endgame pattern you should master.`,
   },
 ]
 
-export default function TrainingTab() {
+const TRAINING_PROGRESS_STORAGE_KEY = 'mychesscoach:trainingProgress:v1'
+
+type TrainingProgressV1 = {
+  version: 1
+  activeModuleId: ModuleId
+  activeLessonId: LessonId | null
+  completedLessonIds: LessonId[]
+}
+
+function isModuleId(value: unknown): value is ModuleId {
+  return value === 'basics' || value === 'pieces' || value === 'tactics' || value === 'endgames' || value === 'strategy'
+}
+
+function findModule(moduleId: ModuleId): Module | null {
+  return TRAINING_MODULES.find((m) => m.id === moduleId) ?? null
+}
+
+function hasLesson(module: Module, lessonId: LessonId): boolean {
+  return module.lessons.some((l) => l.id === lessonId)
+}
+
+function clearTrainingProgressStorage(): void {
+  try {
+    window.localStorage.removeItem(TRAINING_PROGRESS_STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+class TrainingTabErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state: { hasError: boolean } = { hasError: false }
+
+  static getDerivedStateFromError(): { hasError: true } {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: unknown) {
+    // eslint-disable-next-line no-console
+    console.error('[TrainingTab] crashed:', error)
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children
+
+    return (
+      <div className="glass-panel p-6 flex flex-col gap-4 min-h-[420px]">
+        <div className="text-lg font-black tracking-tight text-sage-100">Training temporarily unavailable</div>
+        <div className="text-sm text-sage-300 leading-relaxed">
+          Something went wrong while rendering the Training tab. You can reload it, or reset saved progress if the issue
+          persists.
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false })
+              window.location.reload()
+            }}
+            className="btn-primary"
+          >
+            Reload
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearTrainingProgressStorage()
+              this.setState({ hasError: false })
+              window.location.reload()
+            }}
+            className="btn-secondary"
+          >
+            Reset saved progress
+          </button>
+        </div>
+      </div>
+    )
+  }
+}
+
+function TrainingTabInner() {
   const [activeModuleId, setActiveModuleId] = useState<ModuleId>('basics')
   const [activeLessonId, setActiveLessonId] = useState<LessonId | null>(null)
   const [completedLessons, setCompletedLessons] = useState<Set<LessonId>>(new Set())
   const [exerciseResult, setExerciseResult] = useState<{ correct: boolean; message: string } | null>(null)
   const [showHint, setShowHint] = useState(false)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const [hydratedFromStorage, setHydratedFromStorage] = useState(false)
+
+  const autoAdvanceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isAutoAdvancingRef = useRef(false)
+
+  const clearAutoAdvanceTimeout = useCallback(() => {
+    if (autoAdvanceTimeoutRef.current) {
+      clearTimeout(autoAdvanceTimeoutRef.current)
+      autoAdvanceTimeoutRef.current = null
+    }
+    isAutoAdvancingRef.current = false
+  }, [])
+
+  // Hydrate progress from localStorage once on mount.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(TRAINING_PROGRESS_STORAGE_KEY)
+      if (!raw) {
+        setHydratedFromStorage(true)
+        return
+      }
+
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Invalid progress format')
+      }
+
+      const v = parsed as Partial<TrainingProgressV1>
+      if (v.version !== 1 || !isModuleId(v.activeModuleId) || !Array.isArray(v.completedLessonIds)) {
+        throw new Error('Unsupported progress version or fields')
+      }
+
+      const savedModule = findModule(v.activeModuleId)
+      if (!savedModule) {
+        throw new Error('Unknown module')
+      }
+
+      const nextCompleted = new Set<LessonId>()
+      for (const id of v.completedLessonIds) {
+        if (typeof id === 'string') nextCompleted.add(id)
+      }
+
+      setCompletedLessons(nextCompleted)
+      setActiveModuleId(v.activeModuleId)
+
+      const nextLessonId = typeof v.activeLessonId === 'string' ? v.activeLessonId : null
+      setActiveLessonId(nextLessonId && hasLesson(savedModule, nextLessonId) ? nextLessonId : null)
+      setStorageError(null)
+    } catch (e) {
+      // Corrupt JSON or invalid schema — ignore and continue with defaults.
+      setStorageError('Saved progress could not be loaded (it may be corrupted).')
+    } finally {
+      setHydratedFromStorage(true)
+    }
+  }, [])
+
+  // Persist progress to localStorage after hydration.
+  useEffect(() => {
+    if (!hydratedFromStorage) return
+
+    try {
+      const completedLessonIds: LessonId[] = []
+      completedLessons.forEach((id) => completedLessonIds.push(id))
+
+      const payload: TrainingProgressV1 = {
+        version: 1,
+        activeModuleId,
+        activeLessonId,
+        completedLessonIds,
+      }
+
+      window.localStorage.setItem(TRAINING_PROGRESS_STORAGE_KEY, JSON.stringify(payload))
+      setStorageError(null)
+    } catch (e) {
+      setStorageError('Progress could not be saved (storage may be blocked).')
+    }
+  }, [activeLessonId, activeModuleId, completedLessons, hydratedFromStorage])
+
+  // Cleanup pending timeouts on unmount.
+  useEffect(() => {
+    return () => clearAutoAdvanceTimeout()
+  }, [clearAutoAdvanceTimeout])
 
   const activeModule = useMemo(
     () => TRAINING_MODULES.find((m) => m.id === activeModuleId) || TRAINING_MODULES[0],
@@ -293,52 +458,67 @@ export default function TrainingTab() {
   )
 
   const handleModuleSelect = useCallback((moduleId: ModuleId) => {
+    clearAutoAdvanceTimeout()
     setActiveModuleId(moduleId)
     setActiveLessonId(null)
     setExerciseResult(null)
     setShowHint(false)
-  }, [])
+  }, [clearAutoAdvanceTimeout])
 
   const handleLessonSelect = useCallback((lessonId: LessonId) => {
+    clearAutoAdvanceTimeout()
     setActiveLessonId(lessonId)
     setExerciseResult(null)
     setShowHint(false)
-  }, [])
+  }, [clearAutoAdvanceTimeout])
 
   const handleMove = useCallback(
     (from: string, to: string) => {
       if (!activeLesson?.exercise) return false
+      if (exerciseResult?.correct) return false
+      if (isAutoAdvancingRef.current) return false
 
-      const userMove = `${from}${to}`.toLowerCase()
-      const correctMove = activeLesson.exercise.correctMove.toLowerCase()
+      try {
+        if (typeof from !== 'string' || typeof to !== 'string') return false
+        if (from.length < 2 || to.length < 2) return false
 
-      if (userMove === correctMove) {
-        setExerciseResult({ correct: true, message: 'Excellent! You got it right!' })
-        setCompletedLessons((prev) => {
-          const next = new Set(prev)
-          next.add(activeLesson.id)
-          return next
-        })
-        setTimeout(() => {
-          setExerciseResult(null)
-          // Auto-advance to next lesson after 1.5 seconds
-          const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
-          if (currentIndex < activeModule.lessons.length - 1) {
-            handleLessonSelect(activeModule.lessons[currentIndex + 1].id)
-          }
-        }, 1500)
-        return true
-      } else {
-        setExerciseResult({
-          correct: false,
-          message: showHint && activeLesson.exercise.hint
-            ? activeLesson.exercise.hint
-            : "Not quite right. Try again!",
-        })
+        const userMove = `${from}${to}`.toLowerCase()
+        const correctMove = activeLesson.exercise.correctMove.toLowerCase()
+
+        if (userMove === correctMove) {
+          setExerciseResult({ correct: true, message: 'Excellent! You got it right!' })
+          setCompletedLessons((prev) => {
+            const next = new Set(prev)
+            next.add(activeLesson.id)
+            return next
+          })
+
+          clearAutoAdvanceTimeout()
+          isAutoAdvancingRef.current = true
+          autoAdvanceTimeoutRef.current = setTimeout(() => {
+            isAutoAdvancingRef.current = false
+            setExerciseResult(null)
+            // Auto-advance to next lesson after 1.5 seconds
+            const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
+            if (currentIndex < activeModule.lessons.length - 1) {
+              handleLessonSelect(activeModule.lessons[currentIndex + 1].id)
+            }
+          }, 1500)
+          return true
+        } else {
+          setExerciseResult({
+            correct: false,
+            message:
+              showHint && activeLesson.exercise.hint ? activeLesson.exercise.hint : 'Not quite right. Try again!',
+          })
+          return false
+        }
+      } catch (e) {
+        setExerciseResult({ correct: false, message: 'Something went wrong evaluating that move. Please try again.' })
         return false
       }
     },
-    [activeLesson, showHint, activeModule.lessons, handleLessonSelect]
+    [activeLesson, activeModule.lessons, clearAutoAdvanceTimeout, exerciseResult?.correct, handleLessonSelect, showHint]
   )
 
   const progressPercentage = useMemo(() => {
@@ -356,6 +536,21 @@ export default function TrainingTab() {
           <div className="mt-1 text-sm text-sage-400">
             Master chess fundamentals step by step
           </div>
+          {storageError && (
+            <div className="mt-3 text-xs text-rose-300">
+              {storageError}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  clearTrainingProgressStorage()
+                  setStorageError(null)
+                }}
+                className="underline hover:text-rose-200"
+              >
+                Reset saved progress
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="text-sm text-sage-300">
@@ -478,7 +673,7 @@ export default function TrainingTab() {
                     <div className="font-bold text-purple-200 mb-2">{activeLesson.exercise.question}</div>
                     {activeLesson.exercise.hint && (
                       <button
-                        onClick={() => setShowHint(!showHint)}
+                        onClick={() => setShowHint((v) => !v)}
                         className="text-xs text-purple-400 hover:text-purple-300 underline"
                       >
                         {showHint ? 'Hide hint' : 'Show hint'}
@@ -520,18 +715,20 @@ export default function TrainingTab() {
                 <div className="flex gap-3 mt-6">
                   <button
                     onClick={() => {
+                      clearAutoAdvanceTimeout()
                       const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
                       if (currentIndex > 0) {
                         handleLessonSelect(activeModule.lessons[currentIndex - 1].id)
                       }
                     }}
-                    disabled={activeModule.lessons.findIndex((l) => l.id === activeLesson.id) === 0}
+                    disabled={isAutoAdvancingRef.current || activeModule.lessons.findIndex((l) => l.id === activeLesson.id) === 0}
                     className="btn-secondary flex-1"
                   >
                     Previous Lesson
                   </button>
                   <button
                     onClick={() => {
+                      clearAutoAdvanceTimeout()
                       const currentIndex = activeModule.lessons.findIndex((l) => l.id === activeLesson.id)
                       if (currentIndex < activeModule.lessons.length - 1) {
                         handleLessonSelect(activeModule.lessons[currentIndex + 1].id)
@@ -543,6 +740,7 @@ export default function TrainingTab() {
                         }
                       }
                     }}
+                    disabled={isAutoAdvancingRef.current}
                     className="btn-primary flex-1"
                   >
                     {activeModule.lessons.findIndex((l) => l.id === activeLesson.id) < activeModule.lessons.length - 1
@@ -556,5 +754,13 @@ export default function TrainingTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function TrainingTab() {
+  return (
+    <TrainingTabErrorBoundary>
+      <TrainingTabInner />
+    </TrainingTabErrorBoundary>
   )
 }

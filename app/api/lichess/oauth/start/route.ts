@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { buildOAuthUrl, createCodeChallenge, createCodeVerifier, createOAuthState } from '@/lib/lichess/oauth'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const fetchCache = 'force-no-store'
 
 export async function GET(request: NextRequest) {
   try {
