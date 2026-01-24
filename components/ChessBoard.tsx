@@ -76,6 +76,7 @@ const CustomPiece = ({ isWhite, piece }: { isWhite: boolean, piece: string }) =>
       cursor: 'grab'
     }}>
       {/* react-chessboard provides the piece image as children or we can just let it render its default and apply filter to the container */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img 
         src={`https://react-chessboard.com/static/media/${piece}.png`} 
         style={{ width: '100%', height: '100%' }}
@@ -104,6 +105,7 @@ const customPieces = (theme: ChessBoardProps['theme']) => {
         justifyContent: 'center'
       }}>
         {/* We use a high-quality 3D piece set URL if available, or just standard with filters */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img 
           src={`https://lichess1.org/assets/piece/cburnett/${p}.svg`} 
           style={{ width: '90%', height: '90%' }}
@@ -303,7 +305,7 @@ export default function ChessBoard({
     }
 
     return styles
-  }, [highlightSquares, legalTargetSquares, selectedSquare, theme])
+  }, [focusedSquare, highlightSquares, legalTargetSquares, selectedSquare, theme])
 
   const handlePieceDrop = (sourceSquare: string, targetSquare: string) => {
     if (!canInteract || !isMyTurn) return false
