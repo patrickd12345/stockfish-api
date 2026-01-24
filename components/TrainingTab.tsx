@@ -314,7 +314,11 @@ export default function TrainingTab() {
 
       if (userMove === correctMove) {
         setExerciseResult({ correct: true, message: 'Excellent! You got it right!' })
-        setCompletedLessons((prev) => new Set([...prev, activeLesson.id]))
+        setCompletedLessons((prev) => {
+          const next = new Set(prev)
+          next.add(activeLesson.id)
+          return next
+        })
         setTimeout(() => {
           setExerciseResult(null)
           // Auto-advance to next lesson after 1.5 seconds
