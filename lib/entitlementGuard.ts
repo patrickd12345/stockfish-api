@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { getEntitlementForUser, type Entitlement } from './billing';
 
 export class ForbiddenError extends Error {
+  public readonly code = 'PRO_REQUIRED';
+  
   constructor(message: string) {
     super(message);
     this.name = 'ForbiddenError';

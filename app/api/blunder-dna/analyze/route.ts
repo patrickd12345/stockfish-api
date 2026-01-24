@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     if (error instanceof ForbiddenError) {
-      return NextResponse.json({ error: error.message }, { status: 403 })
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 403 })
     }
     console.error('[Blunder DNA] analyze failed:', error)
     return NextResponse.json({ error: error.message || 'Analysis failed' }, { status: 500 })

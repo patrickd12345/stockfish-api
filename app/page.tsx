@@ -5,13 +5,16 @@ import { useSearchParams } from 'next/navigation'
 import DesktopHome, { type HomeTab } from '@/components/DesktopHome'
 import MobileHome from '@/components/MobileHome'
 import { ExecutionModeProvider, useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { EntitlementProvider } from '@/contexts/EntitlementContext'
 import { serverAnalysisFetch } from '@/lib/serverAnalysisFetch'
 
 export default function Home() {
   return (
     <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#6b7280' }}>Loading application...</div>}>
       <ExecutionModeProvider>
-        <HomeContent />
+        <EntitlementProvider>
+          <HomeContent />
+        </EntitlementProvider>
       </ExecutionModeProvider>
     </Suspense>
   )
@@ -55,6 +58,11 @@ function HomeContent() {
   }, [searchParams])
 
   useEffect(() => {
+    // Early return BEFORE any async work
+    if (executionMode === 'local') {
+      return
+    }
+    
     if (disableAutoImport && !forceAutoImport) {
       return
     }

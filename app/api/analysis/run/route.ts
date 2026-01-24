@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     if (error instanceof ForbiddenError) {
       return NextResponse.json(
-        { ok: false, error: error.message },
+        { ok: false, error: error.message, code: error.code },
         { status: 403 }
       );
     }
