@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   // In development with hosted DB, return empty data to avoid quota errors
   if (process.env.NODE_ENV === 'development') {
     const capabilities = getRuntimeCapabilitiesSync()
-    if (capabilities.hostedDb && process.env.LOCAL_DB !== 'true') {
+    if (capabilities.hostedDb && process.env.ALLOW_HOSTED_DB !== 'true') {
       console.warn('[Blunder DNA] daily: Hosted DB blocked in dev mode. Returning empty drills.')
       const today = new Date().toISOString().slice(0, 10)
       return NextResponse.json({ date: today, drills: [], patterns: [] })

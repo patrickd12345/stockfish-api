@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   // In development with hosted DB, return empty share to avoid quota errors
   if (process.env.NODE_ENV === 'development') {
     const capabilities = getRuntimeCapabilitiesSync()
-    if (capabilities.hostedDb && process.env.LOCAL_DB !== 'true') {
+    if (capabilities.hostedDb && process.env.ALLOW_HOSTED_DB !== 'true') {
       return NextResponse.json({ ok: true, share: null })
     }
   }
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   // In development with hosted DB, return empty share to avoid quota errors
   if (process.env.NODE_ENV === 'development') {
     const capabilities = getRuntimeCapabilitiesSync()
-    if (capabilities.hostedDb && process.env.LOCAL_DB !== 'true') {
+    if (capabilities.hostedDb && process.env.ALLOW_HOSTED_DB !== 'true') {
       return NextResponse.json({ ok: true, share: null })
     }
   }

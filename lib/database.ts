@@ -38,7 +38,9 @@ function getConnectionStringSource(): 'POSTGRES_URL' | 'DATABASE_URL' | 'POSTGRE
 function isLocalConnection(connectionString: string): boolean {
   // Check explicit override first
   if (process.env.LOCAL_DB === 'true') {
-    return false // LOCAL_DB=true means "allow hosted DB", so this is NOT local
+    // LOCAL_DB=true is an explicit opt-in to treat the DB as local-capable.
+    // This keeps runtime capability detection and driver selection consistent.
+    return true
   }
   
   try {
@@ -114,10 +116,12 @@ export function checkHostedDbGuard(executionMode?: 'local' | 'server'): void {
   
   const capabilities = getRuntimeCapabilitiesSync()
   
-  if (capabilities.hostedDb) {
+  // Allow hosted DB explicitly when needed (e.g. staging-like dev)
+  if (capabilities.hostedDb && process.env.ALLOW_HOSTED_DB !== 'true') {
     throw new Error(
       'Hosted DB access blocked in local execution mode. ' +
-      'Set DATABASE_URL to a local PostgreSQL instance or set LOCAL_DB=true to use a local database.'
+      'Set DATABASE_URL to a local PostgreSQL instance, set LOCAL_DB=true if you are running a local DB, ' +
+      'or set ALLOW_HOSTED_DB=true to explicitly allow hosted DB usage.'
     )
   }
 }
@@ -162,14 +166,14 @@ export function getSql(): SqlClient {
   } else {
     // Use Neon serverless driver for hosted connections
     // In development, prevent accidental hosted DB usage that causes quota errors
-    if (process.env.NODE_ENV === 'development' && process.env.LOCAL_DB !== 'true') {
+    if (process.env.NODE_ENV === 'development' && process.env.ALLOW_HOSTED_DB !== 'true') {
       const capabilities = getRuntimeCapabilitiesSync()
       if (capabilities.hostedDb) {
         throw new Error(
           'Hosted database access blocked in development mode to prevent quota errors.\n' +
           'Options:\n' +
           '1. Set DATABASE_URL to a local PostgreSQL instance (e.g., postgres://localhost:5432/dbname)\n' +
-          '2. Set LOCAL_DB=true to explicitly allow hosted DB in development\n' +
+          '2. Set ALLOW_HOSTED_DB=true to explicitly allow hosted DB in development\n' +
           '3. Use NODE_ENV=production for production-like testing'
         )
       }
