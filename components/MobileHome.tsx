@@ -7,6 +7,7 @@ import OpeningExplorer from '@/components/OpeningExplorer'
 import MobileGameDrawer from '@/components/MobileGameDrawer'
 import LichessLiveTab from '@/components/LichessLiveTab'
 import BlunderDnaTab from '@/components/BlunderDnaTab'
+import TrainingTab from '@/components/TrainingTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
 import type { HomeTab } from '@/components/DesktopHome'
@@ -79,6 +80,7 @@ export default function MobileHome({
           <MobileTabButton active={activeTab === 'openings'} onClick={() => setActiveTab('openings')} label="Openings" />
           <MobileTabButton active={activeTab === 'lichess'} onClick={() => setActiveTab('lichess')} label="Lichess" special="lichess" />
           <MobileTabButton active={activeTab === 'dna'} onClick={() => setActiveTab('dna')} label="DNA" special="dna" />
+          <MobileTabButton active={activeTab === 'training'} onClick={() => setActiveTab('training')} label="Training" special="training" />
           <MobileTabButton active={activeTab === 'params'} onClick={() => setActiveTab('params')} label="Params" />
         </div>
 
@@ -98,6 +100,7 @@ export default function MobileHome({
             {activeTab === 'openings' && <OpeningExplorer />}
             {activeTab === 'lichess' && <LichessLiveTab />}
             {activeTab === 'dna' && <BlunderDnaTab />}
+            {activeTab === 'training' && <TrainingTab />}
             {activeTab === 'params' && <ParametersTab />}
           </div>
         )}
@@ -127,7 +130,7 @@ function MobileTabButton({
   active: boolean
   onClick: () => void
   label: string
-  special?: 'lichess' | 'dna'
+  special?: 'lichess' | 'dna' | 'training'
 }) {
   let baseClass = "flex-1 py-2 px-3 rounded-lg text-sm font-bold border transition-all whitespace-nowrap "
 
@@ -136,6 +139,8 @@ function MobileTabButton({
       baseClass += "bg-purple-600 text-white border-purple-500"
     } else if (special === 'dna') {
       baseClass += "bg-rose-600 text-white border-rose-500"
+    } else if (special === 'training') {
+      baseClass += "bg-blue-600 text-white border-blue-500"
     } else {
       baseClass += "bg-terracotta text-sage-900 border-terracotta"
     }
