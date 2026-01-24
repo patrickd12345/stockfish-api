@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { connectToDb, getSql, isDbConfigured } from '@/lib/database'
+import { connectToDb, getSql, isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { getAnalysisCoverage } from '@/lib/engineStorage'
 import { loadProgressionSummary } from '@/lib/progressionStorage'
 import type { OpeningStats } from '@/types/ProgressionSummary'
@@ -13,6 +13,25 @@ import {
 export const dynamic = 'force-dynamic'
 
 const MIN_ANALYZED_GAMES = 20
+const CACHE_TTL_MS = 15_000
+const QUOTA_CIRCUIT_BREAKER_MS = 60_000
+
+type FirstInsightsResponse = {
+  ok: true
+  ready: boolean
+  reason?: string
+  errorCode?: 'db_quota' | 'db_error'
+  retryable?: boolean
+  nextPollMs?: number
+  minAnalyzedGames: number
+  analysisDepth?: number
+  coverage?: { totalGames: number; analyzedGames: number; failedGames: number; pendingGames: number }
+  generatedAt?: string
+  insights: any[]
+}
+
+const cacheByDepth = new Map<number, { at: number; payload: FirstInsightsResponse }>()
+let quotaBlockedUntil = 0
 
 function clampInt(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.trunc(n)))
@@ -79,68 +98,102 @@ async function loadTopBlunders(limit: number, analysisDepth: number): Promise<Bl
 async function loadTopMissedTactics(limit: number): Promise<MissedTacticFactRow[]> {
   const sql = getSql()
 
-  // We only read stored JSONB; no recomputation.
-  const rows = (await sql`
-    SELECT game_id, missed_tactics
-    FROM engine_analysis
-    WHERE analysis_failed = false
-    ORDER BY analyzed_at DESC
-    LIMIT 200
-  `) as Array<{ game_id: string; missed_tactics: unknown }>
+  try {
+    // We only read stored JSONB; no recomputation.
+    // IMPORTANT: Do JSONB expansion in Postgres so we don't transfer large blobs.
+    const rows = (await sql`
+      SELECT
+        ea.game_id,
+        (t.elem->>'ply')::int AS ply,
+        (t.elem->>'moveNumber')::int AS move_number,
+        (t.elem->>'playedMove')::text AS played_move,
+        NULLIF((t.elem->>'bestMove')::text, '') AS best_move,
+        (t.elem->>'deltaMagnitude')::double precision AS delta_magnitude
+      FROM engine_analysis ea
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(ea.missed_tactics, '[]'::jsonb)) AS t(elem)
+      WHERE ea.analysis_failed = false
+        AND ea.missed_tactics IS NOT NULL
+        AND (t.elem->>'playedMove') IS NOT NULL
+        AND (t.elem->>'playedMove') <> ''
+        AND (t.elem->>'ply') ~ '^[0-9]+$'
+        AND (t.elem->>'moveNumber') ~ '^[0-9]+$'
+        AND (t.elem->>'deltaMagnitude') ~ '^[0-9]+(\\.[0-9]+)?$'
+      ORDER BY (t.elem->>'deltaMagnitude')::double precision DESC NULLS LAST, ea.analyzed_at DESC
+      LIMIT ${limit}
+    `) as Array<Record<string, unknown>>
 
-  const facts: MissedTacticFactRow[] = []
-
-  for (const row of rows) {
-    const gameId = String(row.game_id)
-    const raw = row.missed_tactics
-    const arr = Array.isArray(raw) ? raw : []
-    for (const item of arr) {
-      const it = item as any
-      const ply = Number(it?.ply)
-      const moveNumber = Number(it?.moveNumber)
-      const playedMove = typeof it?.playedMove === 'string' ? it.playedMove : ''
-      const bestMove = typeof it?.bestMove === 'string' ? it.bestMove : null
-      const deltaMagnitude = Number(it?.deltaMagnitude)
-      if (!gameId || !Number.isFinite(ply) || ply < 0) continue
-      if (!Number.isFinite(moveNumber) || moveNumber <= 0) continue
-      if (!Number.isFinite(deltaMagnitude) || deltaMagnitude <= 0) continue
-      if (!playedMove) continue
-      facts.push({ gameId, ply, moveNumber, playedMove, bestMove, deltaMagnitude })
+    return rows.map((r) => ({
+      gameId: String(r.game_id),
+      ply: Number(r.ply),
+      moveNumber: Number(r.move_number),
+      playedMove: String(r.played_move),
+      bestMove: r.best_move ? String(r.best_move) : null,
+      deltaMagnitude: Number(r.delta_magnitude),
+    }))
+  } catch (e) {
+    // If column/table doesn't exist yet (or JSON format differs), treat as no facts.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[first-insights] failed to query missed_tactics:', e)
     }
+    return []
   }
-
-  facts.sort((a, b) => (b.deltaMagnitude - a.deltaMagnitude) || (b.ply - a.ply) || a.gameId.localeCompare(b.gameId))
-  return facts.slice(0, limit)
 }
 
 export async function GET(req: NextRequest) {
   const analysisDepth = clampInt(Number(new URL(req.url).searchParams.get('analysisDepth') ?? process.env.ANALYSIS_DEPTH ?? 15), 8, 25)
 
   if (!isDbConfigured()) {
-    return NextResponse.json({
+    const payload: FirstInsightsResponse = {
       ok: true,
       ready: false,
       reason: 'Database not configured',
+      retryable: false,
       minAnalyzedGames: MIN_ANALYZED_GAMES,
       coverage: { totalGames: 0, analyzedGames: 0, failedGames: 0, pendingGames: 0 },
       insights: [],
-    })
+    }
+    return NextResponse.json(payload)
   }
 
   try {
+    const now = Date.now()
+    if (quotaBlockedUntil > now) {
+      const payload: FirstInsightsResponse = {
+        ok: true,
+        ready: false,
+        reason: 'Database transfer quota exceeded. Insights are temporarily unavailable.',
+        errorCode: 'db_quota',
+        retryable: false,
+        minAnalyzedGames: MIN_ANALYZED_GAMES,
+        analysisDepth,
+        coverage: { totalGames: 0, analyzedGames: 0, failedGames: 0, pendingGames: 0 },
+        insights: [],
+      }
+      return NextResponse.json(payload)
+    }
+
+    const cached = cacheByDepth.get(analysisDepth)
+    if (cached && now - cached.at < CACHE_TTL_MS) {
+      return NextResponse.json(cached.payload)
+    }
+
     await connectToDb()
 
     const coverage = await getAnalysisCoverage('stockfish', analysisDepth)
     if (coverage.analyzedGames < MIN_ANALYZED_GAMES) {
-      return NextResponse.json({
+      const payload: FirstInsightsResponse = {
         ok: true,
         ready: false,
         reason: 'Not enough analyzed games yet',
         minAnalyzedGames: MIN_ANALYZED_GAMES,
         analysisDepth,
         coverage,
+        retryable: coverage.pendingGames > 0,
+        nextPollMs: coverage.pendingGames > 0 ? 5_000 : undefined,
         insights: [],
-      })
+      }
+      cacheByDepth.set(analysisDepth, { at: now, payload })
+      return NextResponse.json(payload)
     }
 
     const [missedTactics, blunders, progression] = await Promise.all([
@@ -175,25 +228,50 @@ export async function GET(req: NextRequest) {
     // Strict rule: no citations => no insights.
     const filtered = insights.filter((i) => (i.evidence?.length ?? 0) > 0)
 
-    return NextResponse.json({
+    const payload: FirstInsightsResponse = {
       ok: true,
       ready: filtered.length > 0,
       minAnalyzedGames: MIN_ANALYZED_GAMES,
       analysisDepth,
       coverage,
       generatedAt: new Date().toISOString(),
+      retryable: false,
       insights: filtered,
-    })
+    }
+
+    cacheByDepth.set(analysisDepth, { at: now, payload })
+    return NextResponse.json(payload)
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      quotaBlockedUntil = Date.now() + QUOTA_CIRCUIT_BREAKER_MS
+      console.error('First insights API failed (Neon quota):', error)
+      const payload: FirstInsightsResponse = {
+        ok: true,
+        ready: false,
+        reason: 'Database transfer quota exceeded. Insights are temporarily unavailable.',
+        errorCode: 'db_quota',
+        retryable: false,
+        minAnalyzedGames: MIN_ANALYZED_GAMES,
+        analysisDepth,
+        coverage: { totalGames: 0, analyzedGames: 0, failedGames: 0, pendingGames: 0 },
+        insights: [],
+      }
+      return NextResponse.json(payload)
+    }
+
     console.error('First insights API failed:', error)
     // Resilient: return 200 with usable shape.
-    return NextResponse.json({
+    const payload: FirstInsightsResponse = {
       ok: true,
       ready: false,
-      reason: error?.message || 'Failed to build first insights',
+      reason: 'Failed to build first insights',
+      errorCode: 'db_error',
+      retryable: false,
       minAnalyzedGames: MIN_ANALYZED_GAMES,
+      analysisDepth,
       insights: [],
-    })
+    }
+    return NextResponse.json(payload)
   }
 }
 
