@@ -9,10 +9,10 @@ test('has title and tabs', async ({ page }) => {
 
   // Check for tab buttons
   await expect(page.getByRole('button', { name: 'Dashboard & Chat' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Game Inspector (Replay)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Game Inspector' })).toBeVisible();
   
   // Test navigation to Replay tab
-  await page.getByRole('button', { name: 'Game Inspector (Replay)' }).click();
+  await page.getByRole('button', { name: 'Game Inspector' }).click();
 
   // Ensure the Replay tab actually rendered (avoid false positives where "Loading..." is simply absent)
   const gameInspectorHeading = page.getByRole('heading', { name: 'Game Inspector' });
@@ -33,7 +33,7 @@ test('game search functionality', async ({ page }) => {
   await page.goto('/');
 
   // Check that search input exists in sidebar
-  const searchInput = page.getByPlaceholder('Search white, black, opening...');
+  const searchInput = page.getByPlaceholder('Search opponent, opening...');
   await expect(searchInput).toBeVisible();
 
   // Type a search query
@@ -104,7 +104,7 @@ test('chat posts selected gameId (network stub)', async ({ page }) => {
   await page.goto('/')
 
   // Wait for the sidebar to be ready.
-  await expect(page.getByPlaceholder('Search white, black, opening...')).toBeVisible()
+  await expect(page.getByPlaceholder('Search opponent, opening...')).toBeVisible()
 
   // Select the game in the sidebar.
   await page.getByText('Alice vs Bob').click({ timeout: 30_000 })

@@ -5,8 +5,8 @@ import { connectToDb, isDbConfigured } from '@/lib/database'
 import { createGame } from '@/lib/models'
 import { buildEmbeddingText, getEmbedding } from '@/lib/embeddings'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
-import { analyzeGameWithEngine } from '@/lib/engineAnalysis'
-import { storeEngineAnalysis } from '@/lib/engineStorage'
+import { executeServerSideAnalysis } from '@/lib/engineGateway'
+import { getEntitlementForUser } from '@/lib/billing'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,19 +76,41 @@ export async function POST(request: NextRequest) {
 
     // Run engine analysis for a small subset immediately so blunders are real, not defaults.
     // Keep this bounded for serverless/dev responsiveness; the full backlog can be analyzed via /api/engine/analyze or scripts/run-engine-analysis.ts.
-    const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false'
-    if (analyzeNow && created.length > 0) {
+    // Only for Pro users - Free users can use client-side analysis.
+    const lichessUserId = request.cookies.get('lichess_user_id')?.value
+    let hasProAccess = false
+    
+    if (lichessUserId) {
+      try {
+        const entitlement = await getEntitlementForUser(lichessUserId)
+        hasProAccess = entitlement.plan === 'PRO'
+      } catch (e) {
+        console.warn('Failed to check entitlement:', e)
+      }
+    }
+    
+    const analyzeNow = process.env.ENGINE_ANALYZE_AFTER_IMPORT !== 'false' && hasProAccess
+    if (analyzeNow && created.length > 0 && lichessUserId) {
       const envPlayerNames =
         process.env.CHESS_PLAYER_NAMES?.split(',').map(s => s.trim()).filter(Boolean) ?? []
       const playerNames = Array.from(new Set([username, ...envPlayerNames].filter(Boolean)))
-      const stockfishPathResolved = process.env.STOCKFISH_PATH?.trim() || stockfishPath
       const depth = Math.max(8, Math.min(25, Number(process.env.ANALYSIS_DEPTH ?? 15)))
       const maxToAnalyze = Math.min(5, created.length)
 
       for (let i = 0; i < maxToAnalyze; i++) {
         try {
-          const result = await analyzeGameWithEngine(created[i].pgnText, stockfishPathResolved, playerNames, depth)
-          await storeEngineAnalysis(created[i].id, result, 'stockfish')
+          // Use gateway to enforce entitlement and budget
+          const result = await executeServerSideAnalysis({
+            userId: lichessUserId,
+            type: 'game',
+            gameId: created[i].id,
+            playerNames,
+            depth,
+          })
+          if (result.ok && result.result) {
+            // Result is already stored by gateway
+            console.log(`Analyzed game ${created[i].id}`)
+          }
         } catch (e) {
           // Non-fatal: game is imported; engine analysis can be re-run later.
           console.warn('Immediate engine analysis failed:', e)

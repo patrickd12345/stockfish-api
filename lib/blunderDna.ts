@@ -214,7 +214,13 @@ function classifyPatternV1(args: {
   return 'missed_threat'
 }
 
-export async function analyzeBlunderDnaFromGames(params: {
+/**
+ * Analyze blunder DNA from games (internal)
+ * 
+ * @internal This function should only be called through executeServerSideAnalysis() in engineGateway.ts
+ * to ensure entitlement and budget checks are enforced.
+ */
+export async function analyzeBlunderDnaFromGamesInternal(params: {
   lichessUserId: string
   games: InputGame[]
   stockfishPath?: string
@@ -514,6 +520,23 @@ export async function analyzeBlunderDnaFromGames(params: {
 
   const patterns = await getPatternSummaries(lichessUserId)
   return { patterns, drills: inserted }
+}
+
+/**
+ * @deprecated Use executeServerSideAnalysis() from engineGateway.ts instead.
+ * This function is kept for backward compatibility but will be removed.
+ * It does NOT enforce entitlement or budget checks.
+ */
+export async function analyzeBlunderDnaFromGames(params: {
+  lichessUserId: string
+  games: InputGame[]
+  stockfishPath?: string
+  nPerPattern?: number
+  depth?: number
+  thresholdCp?: number
+}): Promise<{ patterns: PatternSummaryRow[]; drills: DrillRow[] }> {
+  console.warn('analyzeBlunderDnaFromGames is deprecated. Use executeServerSideAnalysis() from engineGateway.ts instead.');
+  return analyzeBlunderDnaFromGamesInternal(params);
 }
 
 function parseScoreFromLines(lines: string[]): number {
