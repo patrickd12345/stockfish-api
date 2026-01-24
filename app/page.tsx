@@ -4,16 +4,21 @@ import { Suspense, useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import DesktopHome, { type HomeTab } from '@/components/DesktopHome'
 import MobileHome from '@/components/MobileHome'
+import { ExecutionModeProvider, useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { serverAnalysisFetch } from '@/lib/serverAnalysisFetch'
 
 export default function Home() {
   return (
     <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#6b7280' }}>Loading application...</div>}>
-      <HomeContent />
+      <ExecutionModeProvider>
+        <HomeContent />
+      </ExecutionModeProvider>
     </Suspense>
   )
 }
 
 function HomeContent() {
+  const executionMode = useExecutionMode()
   const [activeTab, setActiveTab] = useState<HomeTab>('chat')
   const [refreshKey, setRefreshKey] = useState(0)
   const [importStatus, setImportStatus] = useState<string>('')
@@ -151,64 +156,62 @@ function HomeContent() {
         }
       }
       setImportStatus('')
-      // Refresh games list
       setRefreshKey(prev => prev + 1)
 
-      // After import, enqueue + drain ALL pending Stockfish jobs so new games are always analyzed.
-      // This is rate-limited per browser (localStorage lock) to avoid multiple tabs stampeding.
-      try {
+      if (executionMode === 'server') {
         const lockKey = 'engine_worker_lock_v2'
         const now = Date.now()
         const lockUntil = Number(localStorage.getItem(lockKey) ?? '0')
         if (!Number.isFinite(lockUntil) || lockUntil < now) {
           localStorage.setItem(lockKey, String(now + 5 * 60_000))
-
-          // 1) Enqueue everything pending, in chunks.
-          setEngineStatus('Queueing Stockfish analysis…')
-          for (let i = 0; i < 500; i++) {
-            const res = await fetch('/api/engine/analyze', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ limit: 25, mode: 'enqueue' }),
-            })
-            const data = await res.json().catch(() => ({} as any))
-            if (!res.ok) {
-              throw new Error(data?.error || 'Engine enqueue failed')
+          try {
+            setEngineStatus('Queueing Stockfish analysis…')
+            for (let i = 0; i < 500; i++) {
+              const res = await serverAnalysisFetch(
+                '/api/engine/analyze',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ limit: 25, mode: 'enqueue' }),
+                },
+                executionMode
+              )
+              const data = await res.json().catch(() => ({} as any))
+              if (!res.ok) throw new Error(data?.error || 'Engine enqueue failed')
+              const enqueued = typeof data?.enqueued === 'number' ? data.enqueued : 0
+              if (enqueued <= 0) break
+              await new Promise((r) => setTimeout(r, 100))
             }
-            const enqueued = typeof data?.enqueued === 'number' ? data.enqueued : 0
-            if (enqueued <= 0) break
-            await new Promise((r) => setTimeout(r, 100))
-          }
-
-          // 2) Drain the queue fully, in chunks.
-          setEngineStatus('Processing Stockfish analysis…')
-          for (let i = 0; i < 2000; i++) {
-            const res = await fetch('/api/engine/analyze/worker', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ limit: 10 }),
-            })
-            const data = await res.json().catch(() => ({} as any))
-            if (!res.ok) {
-              throw new Error(data?.error || 'Engine worker failed')
+            setEngineStatus('Processing Stockfish analysis…')
+            for (let i = 0; i < 2000; i++) {
+              const res = await serverAnalysisFetch(
+                '/api/engine/analyze/worker',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ limit: 10 }),
+                },
+                executionMode
+              )
+              const data = await res.json().catch(() => ({} as any))
+              if (!res.ok) throw new Error(data?.error || 'Engine worker failed')
+              const processed = typeof data?.processed === 'number' ? data.processed : 0
+              if (processed <= 0) break
+              await new Promise((r) => setTimeout(r, 50))
             }
-            const processed = typeof data?.processed === 'number' ? data.processed : 0
-            if (processed <= 0) break
-            await new Promise((r) => setTimeout(r, 50))
+            setEngineStatus('Stockfish analysis complete.')
+          } catch (e) {
+            console.warn('Startup Stockfish processing failed:', e)
+            setEngineStatus('')
+          } finally {
+            setTimeout(() => setEngineStatus(''), 5000)
           }
-
-          setEngineStatus('Stockfish analysis complete.')
         }
-      } catch (e) {
-        console.warn('Startup Stockfish processing failed:', e)
-        setEngineStatus('')
-      } finally {
-        setTimeout(() => setEngineStatus(''), 5000)
       }
     }
 
     autoImport()
-  }, [disableAutoImport, forceAutoImport])
+  }, [disableAutoImport, forceAutoImport, executionMode])
 
   const handleGamesProcessed = () => {
     setRefreshKey(prev => prev + 1)

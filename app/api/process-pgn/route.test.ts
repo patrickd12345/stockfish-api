@@ -7,6 +7,7 @@ const {
   runBatchAnalysis,
   buildEmbeddingText,
   getEmbedding,
+  getEntitlementForUser,
 } = vi.hoisted(() => ({
   analyzePgn: vi.fn(async (): Promise<any[]> => []),
   parsePgnWithoutEngine: vi.fn(async (): Promise<any[]> => []),
@@ -20,6 +21,7 @@ const {
   })),
   buildEmbeddingText: vi.fn(() => 'embed'),
   getEmbedding: vi.fn(async (): Promise<number[] | null> => [0.1, 0.2]),
+  getEntitlementForUser: vi.fn(async (): Promise<{ plan: string }> => ({ plan: 'FREE' })),
 }))
 
 vi.mock('@/lib/analysis', () => ({ analyzePgn, parsePgnWithoutEngine }))
@@ -27,6 +29,7 @@ vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
 vi.mock('@/lib/models', () => ({ createGame }))
 vi.mock('@/lib/batchAnalysis', () => ({ runBatchAnalysis }))
 vi.mock('@/lib/embeddings', () => ({ buildEmbeddingText, getEmbedding }))
+vi.mock('@/lib/billing', () => ({ getEntitlementForUser }))
 
 import { POST } from '@/app/api/process-pgn/route'
 
@@ -40,6 +43,7 @@ describe('app/api/process-pgn', () => {
     runBatchAnalysis.mockReset()
     buildEmbeddingText.mockReset().mockReturnValue('embed')
     getEmbedding.mockReset().mockResolvedValue([0.1, 0.2])
+    getEntitlementForUser.mockReset().mockResolvedValue({ plan: 'FREE' })
     delete process.env.ENGINE_ANALYSIS_MODE
   })
 
@@ -76,7 +80,8 @@ describe('app/api/process-pgn', () => {
     expect(runBatchAnalysis).not.toHaveBeenCalled()
   })
 
-  it('saves games, generates embeddings, and triggers batch analysis when db configured', async () => {
+  it('saves games, generates embeddings, and triggers batch analysis when db configured and user is Pro', async () => {
+    getEntitlementForUser.mockResolvedValue({ plan: 'PRO' })
     parsePgnWithoutEngine.mockResolvedValueOnce([
       { game: { blunders: 0, pgn_text: 'PGN1' }, moves: [] },
       { game: { blunders: 1, pgn_text: 'PGN2' }, moves: [] },
@@ -84,14 +89,34 @@ describe('app/api/process-pgn', () => {
 
     const fd = new FormData()
     fd.set('pgn', 'PGN')
-    const res = await POST({ formData: async () => fd } as any)
+    const req = {
+      formData: async () => fd,
+      cookies: { get: (name: string) => (name === 'lichess_user_id' ? { value: 'pro-user' } : undefined) },
+    } as any
+    const res = await POST(req)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.count).toBe(2)
+    expect(body.message).toContain('updated progression analysis')
     expect(createGame).toHaveBeenCalledTimes(2)
     expect(buildEmbeddingText).toHaveBeenCalledTimes(2)
     expect(getEmbedding).toHaveBeenCalledTimes(2)
     expect(runBatchAnalysis).toHaveBeenCalledTimes(1)
+  })
+
+  it('saves games but does not run batch when user is Free', async () => {
+    parsePgnWithoutEngine.mockResolvedValueOnce([
+      { game: { blunders: 0, pgn_text: 'PGN1' }, moves: [] },
+    ] as any)
+    const fd = new FormData()
+    fd.set('pgn', 'PGN')
+    const req = { formData: async () => fd, cookies: { get: () => undefined } } as any
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.count).toBe(1)
+    expect(body.message).not.toContain('progression analysis')
+    expect(runBatchAnalysis).not.toHaveBeenCalled()
   })
 
   it('uses inline engine analysis when mode is inline', async () => {
@@ -99,7 +124,8 @@ describe('app/api/process-pgn', () => {
     analyzePgn.mockResolvedValueOnce([{ game: { blunders: 0, pgn_text: 'PGN' }, moves: [] }] as any)
     const fd = new FormData()
     fd.set('pgn', 'PGN')
-    const res = await POST({ formData: async () => fd } as any)
+    const req = { formData: async () => fd, cookies: { get: () => undefined } } as any
+    const res = await POST(req)
     expect(res.status).toBe(200)
     expect(analyzePgn).toHaveBeenCalled()
     expect(parsePgnWithoutEngine).not.toHaveBeenCalled()

@@ -19,17 +19,15 @@ export function getStripe() {
 }
 
 function getCurrentPeriodEndFromSubscription(subscription: Stripe.Subscription): Date | null {
+  const sub = subscription as { current_period_end?: number };
+  if (typeof sub.current_period_end === 'number') {
+    return new Date(sub.current_period_end * 1000);
+  }
   const latestInvoice = subscription.latest_invoice;
-  if (!latestInvoice || typeof latestInvoice === 'string') return null;
-
-  // Stripe v20+ doesn't include `current_period_end` on Subscription typings.
-  // When `latest_invoice` is expanded, `period_end` is the most reliable proxy for current billing period end.
-  const periodEnd =
-    typeof (latestInvoice as Stripe.Invoice).period_end === 'number'
-      ? (latestInvoice as Stripe.Invoice).period_end
-      : null;
-
-  return periodEnd ? new Date(periodEnd * 1000) : null;
+  if (latestInvoice && typeof latestInvoice === 'object' && typeof (latestInvoice as Stripe.Invoice).period_end === 'number') {
+    return new Date((latestInvoice as Stripe.Invoice).period_end * 1000);
+  }
+  return null;
 }
 
 export type Plan = 'FREE' | 'PRO';
@@ -72,22 +70,20 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
 
 /**
  * Gets the entitlement for a user.
- * This is the canonical source of truth for "Is this user Pro?".
+ * Uses only the database and the current time; never calls Stripe.
+ * Pro access stops immediately when current_period_end is in the past.
  */
 export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
   const sql = getSql();
 
   let rows: any[];
   try {
-    // Query the entitlements table
     rows = await sql`
       SELECT plan, status, current_period_end, cancel_at_period_end
       FROM entitlements
       WHERE user_id = ${userId}
     `;
   } catch (error) {
-    // Local/dev environments may not have billing tables yet.
-    // Degrade gracefully: treat as FREE instead of 500-ing the app.
     if (isMissingRelationError(error, 'entitlements')) {
       if (!warnedMissingEntitlementsTable) {
         warnedMissingEntitlementsTable = true;
@@ -95,7 +91,6 @@ export async function getEntitlementForUser(userId: string): Promise<Entitlement
       }
       return defaultEntitlement();
     }
-
     console.error('Failed to fetch entitlement:', error);
     return defaultEntitlement();
   }
@@ -105,16 +100,18 @@ export async function getEntitlementForUser(userId: string): Promise<Entitlement
   }
 
   const row = rows[0];
+  const currentPeriodEnd = row.current_period_end ? new Date(row.current_period_end as string) : null;
+  let plan = row.plan as Plan;
+  const status = (row.status as string).toUpperCase() as SubscriptionStatus;
 
-  // Double-check the plan logic here, although the webhook should have set 'plan' correctly.
-  // We trust the DB 'plan' column which is derived from status during webhook processing.
-  // But we can also re-derive it to be safe or just return what's there.
-  // The prompt says: "Source of truth for entitlement: Stripe Subscription object status... plan is PRO only if status in {active, trialing}"
+  if (plan === 'PRO' && currentPeriodEnd && new Date() > currentPeriodEnd) {
+    plan = 'FREE';
+  }
 
   return {
-    plan: row.plan as Plan,
-    status: (row.status as string).toUpperCase() as SubscriptionStatus,
-    current_period_end: row.current_period_end ? new Date(row.current_period_end as string) : null,
+    plan,
+    status,
+    current_period_end: currentPeriodEnd,
     cancel_at_period_end: !!row.cancel_at_period_end,
   };
 }
@@ -237,7 +234,6 @@ export async function handleWebhook(event: Stripe.Event) {
     return;
   }
 
-  // 2. Process specific events
   switch (event.type) {
     case 'checkout.session.completed':
     case 'customer.subscription.created':
@@ -246,15 +242,13 @@ export async function handleWebhook(event: Stripe.Event) {
       await updateEntitlementFromSubscription(event);
       break;
 
-    // Invoices can be useful for identifying failures, but subscription status usually reflects this (past_due).
-    // The prompt lists these events to handle.
+    case 'invoice.paid':
     case 'invoice.payment_succeeded':
     case 'invoice.payment_failed':
       await updateEntitlementFromInvoice(event);
       break;
 
     default:
-      // console.log(`Unhandled relevant event type: ${event.type}`);
       break;
   }
 }
@@ -326,13 +320,8 @@ async function updateEntitlementFromSubscription(event: Stripe.Event) {
 }
 
 async function updateEntitlementFromInvoice(event: Stripe.Event) {
-  // Usually the subscription update event follows invoice events and carries the status change (e.g. to past_due),
-  // so we might not strictly need to process invoice events if we rely on subscription.* events.
-  // However, the prompt asked to handle them.
-  // We can just fetch the subscription and update the same way to be sure.
-
-  const invoice = event.data.object as Stripe.Invoice;
-  const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+  const invoice = event.data.object as Stripe.Invoice & { subscription?: string | { id: string }; parent?: { subscription_details?: { subscription?: string | { id: string } } } };
+  const subscriptionRef = invoice.subscription ?? invoice.parent?.subscription_details?.subscription;
   if (!subscriptionRef) return;
 
   const subscriptionId = typeof subscriptionRef === 'string' ? subscriptionRef : subscriptionRef.id;

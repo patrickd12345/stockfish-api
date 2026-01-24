@@ -2,6 +2,19 @@
 
 A chess analysis and coaching application built with Next.js and deployed on Vercel.
 
+## Execution Invariant
+
+Server-side engine analysis is a paid resource.
+
+Rules:
+
+- Local execution (WASM) must never invoke server analysis endpoints.
+- Server analysis endpoints are Pro-only and are the sole place where Stockfish runs server-side.
+- Plan limits and budgets apply only to server-side analysis.
+- Cached reads are plan-agnostic.
+
+Violating these rules breaks the business model.
+
 ## Features
 
 - **PGN Analysis**: Upload and analyze chess games from PGN files

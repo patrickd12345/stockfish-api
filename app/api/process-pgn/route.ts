@@ -118,19 +118,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Trigger batch analysis after successful import
-    console.log('🔄 Triggering batch analysis after PGN import...')
-    try {
-      await runBatchAnalysis()
-      console.log('✅ Batch analysis completed')
-    } catch (batchError) {
-      console.error('❌ Batch analysis failed:', batchError)
-      // Don't fail the entire request if batch analysis fails
+    if (hasProAccess) {
+      console.log('🔄 Triggering batch analysis after PGN import...')
+      try {
+        await runBatchAnalysis()
+        console.log('✅ Batch analysis completed')
+      } catch (batchError) {
+        console.error('❌ Batch analysis failed:', batchError)
+      }
     }
 
-    return NextResponse.json({ 
-      count, 
-      message: `Processed ${count} game(s) and updated progression analysis` 
+    return NextResponse.json({
+      count,
+      message: hasProAccess
+        ? `Processed ${count} game(s) and updated progression analysis`
+        : `Processed ${count} game(s)`
     })
   } catch (error: any) {
     console.error('Error processing PGN:', error)

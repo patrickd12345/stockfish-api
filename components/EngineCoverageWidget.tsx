@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useExecutionMode } from '@/contexts/ExecutionModeContext'
+import { serverAnalysisFetch } from '@/lib/serverAnalysisFetch'
 
 type CoverageSnapshot = {
   totalGames: number
@@ -44,6 +46,7 @@ export default function EngineCoverageWidget({
   active?: boolean
   compact?: boolean
 }) {
+  const executionMode = useExecutionMode()
   const [data, setData] = useState<CoverageResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -73,10 +76,12 @@ export default function EngineCoverageWidget({
   }, [analysisDepth])
 
   useEffect(() => {
+    if (executionMode !== 'server') return
     let mounted = true
     let timeout: number | null = null
 
     const run = async () => {
+      if (executionMode !== 'server') return
       abortRef.current?.abort()
       const controller = new AbortController()
       abortRef.current = controller
@@ -134,7 +139,7 @@ export default function EngineCoverageWidget({
       if (timeout) window.clearTimeout(timeout)
       abortRef.current?.abort()
     }
-  }, [coverageUrl, pollMs, queueUrl])
+  }, [coverageUrl, pollMs, queueUrl, executionMode])
 
   const coverage = data?.coverage
   const done = coverage ? coverage.analyzedGames + coverage.failedGames : 0
@@ -178,6 +183,7 @@ export default function EngineCoverageWidget({
 
   const handleResume = async () => {
     if (isResuming) return
+    if (executionMode !== 'server') return
     setIsResuming(true)
     setQueueError(null)
     setResumeError(null)
@@ -185,14 +191,17 @@ export default function EngineCoverageWidget({
     try {
       const depth = typeof analysisDepth === 'number' ? analysisDepth : undefined
 
-      // 1) Enqueue in a bounded loop until it stops adding new jobs.
       let totalEnqueued = 0
       for (let i = 0; i < 25; i++) {
-        const res = await fetch('/api/engine/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'enqueue', limit: 25, analysisDepth: depth }),
-        })
+        const res = await serverAnalysisFetch(
+          '/api/engine/analyze',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'enqueue', limit: 25, analysisDepth: depth }),
+          },
+          executionMode
+        )
         const json = (await res.json().catch(() => null)) as any
         if (!res.ok) {
           throw new Error(json?.error || 'Engine enqueue failed')
@@ -219,11 +228,15 @@ export default function EngineCoverageWidget({
       let totalFailed = 0
       let totalAutoEnqueued = 0
       for (let i = 0; i < 200; i++) {
-        const res = await fetch('/api/engine/analyze/worker', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 10, analysisDepth: depth }),
-        })
+        const res = await serverAnalysisFetch(
+          '/api/engine/analyze/worker',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit: 10, analysisDepth: depth }),
+          },
+          executionMode
+        )
         const json = (await res.json().catch(() => null)) as any
         if (!res.ok) {
           throw new Error(json?.error || 'Engine worker failed')
@@ -249,6 +262,18 @@ export default function EngineCoverageWidget({
     } finally {
       setIsResuming(false)
     }
+  }
+
+  if (executionMode === 'local') {
+    return (
+      <div
+        className={`border border-white/5 bg-sage-800/50 rounded-xl ${compact ? 'p-2 min-w-[220px]' : 'p-3 min-w-[260px]'}`}
+        title="Server analysis disabled (local mode)"
+      >
+        <div className="text-sage-400 text-xs font-bold">Engine: local only</div>
+        <div className="mt-1 text-sage-500 text-[11px]">Server analysis off in this mode.</div>
+      </div>
+    )
   }
 
   if (isLoading && !data) {
@@ -296,10 +321,11 @@ export default function EngineCoverageWidget({
         <button
           type="button"
           onClick={handleResume}
-          disabled={isResuming}
+          disabled={isResuming || executionMode !== 'server'}
           className="px-2 py-1 rounded-md text-[11px] font-bold border border-white/10 bg-sage-900/40 text-sage-200 hover:bg-sage-900/60 disabled:opacity-50"
+          title={executionMode !== 'server' ? 'Server analysis disabled (local mode)' : undefined}
         >
-          {isResuming ? 'Resuming…' : 'Resume'}
+          {isResuming ? 'Resuming…' : executionMode === 'server' ? 'Resume' : 'Local only'}
         </button>
       </div>
 

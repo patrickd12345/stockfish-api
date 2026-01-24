@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured } from '@/lib/database'
+import { isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { getEngineQueueStats, requeueStaleProcessingJobs } from '@/lib/engineQueue'
 
 export const dynamic = 'force-dynamic'
@@ -18,19 +18,34 @@ export async function GET(request: NextRequest) {
   const engineName = String(request.nextUrl.searchParams.get('engineName') ?? 'stockfish')
   const requeue = String(request.nextUrl.searchParams.get('requeue') ?? 'false') === 'true'
 
-  const requeued = requeue
-    ? await requeueStaleProcessingJobs({ engineName, analysisDepth }).catch(() => ({ requeued: 0 }))
-    : { requeued: 0 }
+  try {
+    const requeued = requeue
+      ? await requeueStaleProcessingJobs({ engineName, analysisDepth }).catch(() => ({ requeued: 0 }))
+      : { requeued: 0 }
 
-  const stats = await getEngineQueueStats(engineName, analysisDepth)
+    const stats = await getEngineQueueStats(engineName, analysisDepth)
 
-  return NextResponse.json({
-    ok: true,
-    engineName,
-    analysisDepth,
-    stats,
-    requeued,
-    updatedAt: new Date().toISOString(),
-  })
+    return NextResponse.json({
+      ok: true,
+      engineName,
+      analysisDepth,
+      stats,
+      requeued,
+      updatedAt: new Date().toISOString(),
+    })
+  } catch (error: unknown) {
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json({
+        ok: true,
+        engineName,
+        analysisDepth,
+        stats: { total: 0, pending: 0, processing: 0, done: 0, failed: 0, staleProcessing: 0 },
+        requeued: { requeued: 0 },
+        updatedAt: new Date().toISOString(),
+        quotaExceeded: true,
+      })
+    }
+    throw error
+  }
 }
 

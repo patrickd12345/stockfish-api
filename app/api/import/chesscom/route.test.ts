@@ -9,6 +9,7 @@ const {
   gameExistsByPgnText,
   createGame,
   runBatchAnalysis,
+  getEntitlementForUser,
 } = vi.hoisted(() => ({
   fetchChessComArchives: vi.fn(async (): Promise<string[]> => []),
   fetchGamesFromArchive: vi.fn(async (): Promise<any[]> => []),
@@ -20,13 +21,18 @@ const {
   gameExistsByPgnText: vi.fn(async (): Promise<boolean> => false),
   createGame: vi.fn(async () => {}),
   runBatchAnalysis: vi.fn(async (): Promise<any> => ({})),
+  getEntitlementForUser: vi.fn(async (): Promise<{ plan: string }> => ({ plan: 'FREE' })),
 }))
 
 vi.mock('@/lib/chesscom', () => ({ fetchChessComArchives, fetchGamesFromArchive }))
 vi.mock('@/lib/analysis', () => ({ analyzePgn, parsePgnWithoutEngine }))
-vi.mock('@/lib/database', () => ({ connectToDb, isDbConfigured }))
+vi.mock('@/lib/database', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/database')>()
+  return { ...actual, connectToDb, isDbConfigured }
+})
 vi.mock('@/lib/models', () => ({ createGame, gameExists, gameExistsByPgnText }))
 vi.mock('@/lib/batchAnalysis', () => ({ runBatchAnalysis }))
+vi.mock('@/lib/billing', () => ({ getEntitlementForUser }))
 
 import { POST } from '@/app/api/import/chesscom/route'
 
@@ -44,6 +50,7 @@ describe('app/api/import/chesscom', () => {
     gameExistsByPgnText.mockReset().mockResolvedValue(false)
     createGame.mockReset()
     runBatchAnalysis.mockReset()
+    getEntitlementForUser.mockReset().mockResolvedValue({ plan: 'FREE' })
     delete process.env.ENGINE_ANALYSIS_MODE
   })
 
@@ -86,7 +93,8 @@ describe('app/api/import/chesscom', () => {
     expect(runBatchAnalysis).not.toHaveBeenCalled()
   })
 
-  it('saves analyzed games and triggers batch analysis when new games saved', async () => {
+  it('saves analyzed games and triggers batch analysis when new games saved and user is Pro', async () => {
+    getEntitlementForUser.mockResolvedValue({ plan: 'PRO' })
     fetchChessComArchives.mockResolvedValueOnce([
       'https://api.chess.com/pub/player/p/games/2026/01',
     ])
@@ -94,12 +102,34 @@ describe('app/api/import/chesscom', () => {
     parsePgnWithoutEngine.mockResolvedValueOnce([{ game: { blunders: 0, pgn_text: 'PGN' }, moves: [] }] as any)
     gameExistsByPgnText.mockResolvedValueOnce(false)
 
-    const res = await POST({ json: async () => ({ username: 'p', mode: 'recent', runBatch: true }) } as any)
+    const req = {
+      json: async () => ({ username: 'p', mode: 'recent', runBatch: true }),
+      cookies: { get: (name: string) => (name === 'lichess_user_id' ? { value: 'pro-user' } : undefined) },
+    } as any
+    const res = await POST(req)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.saved).toBe(1)
+    expect(body.message).toContain('Progression analysis updated')
     expect(createGame).toHaveBeenCalledTimes(1)
     expect(runBatchAnalysis).toHaveBeenCalledTimes(1)
+  })
+
+  it('saves games but does not run batch when user is Free', async () => {
+    fetchChessComArchives.mockResolvedValueOnce([
+      'https://api.chess.com/pub/player/p/games/2026/01',
+    ])
+    fetchGamesFromArchive.mockResolvedValueOnce([{ pgn: 'PGN' }] as any)
+    parsePgnWithoutEngine.mockResolvedValueOnce([{ game: { blunders: 0, pgn_text: 'PGN' }, moves: [] }] as any)
+    gameExistsByPgnText.mockResolvedValueOnce(false)
+
+    const req = { json: async () => ({ username: 'p', mode: 'recent', runBatch: true }), cookies: { get: () => undefined } } as any
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.saved).toBe(1)
+    expect(body.message).not.toContain('Progression analysis updated')
+    expect(runBatchAnalysis).not.toHaveBeenCalled()
   })
 
   it('uses inline engine analysis when mode is inline', async () => {
@@ -110,7 +140,8 @@ describe('app/api/import/chesscom', () => {
     fetchGamesFromArchive.mockResolvedValueOnce([{ pgn: 'PGN' }] as any)
     analyzePgn.mockResolvedValueOnce([{ game: { blunders: 0, pgn_text: 'PGN' }, moves: [] }] as any)
 
-    const res = await POST({ json: async () => ({ username: 'p', mode: 'recent', runBatch: true }) } as any)
+    const req = { json: async () => ({ username: 'p', mode: 'recent', runBatch: true }), cookies: { get: () => undefined } } as any
+    const res = await POST(req)
     expect(res.status).toBe(200)
     expect(analyzePgn).toHaveBeenCalled()
     expect(parsePgnWithoutEngine).not.toHaveBeenCalled()

@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runBatchAnalysis } from '@/lib/batchAnalysis'
 import { getProgressionSummaryMetadata } from '@/lib/progressionStorage'
+import { requireProEntitlement, ForbiddenError } from '@/lib/entitlementGuard'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes for batch analysis
 
 /**
- * Manual batch analysis trigger endpoint
+ * Manual batch analysis trigger endpoint.
+ * Pro-only: requires authenticated Pro user.
  * POST /api/batch-analysis - Run batch analysis
- * GET /api/batch-analysis - Get batch analysis status
+ * GET /api/batch-analysis - Get batch analysis status (no auth required for read)
  */
 
 export async function POST(request: NextRequest) {
   try {
+    await requireProEntitlement(request)
     console.log('🔄 Manual batch analysis triggered via API')
-    
+
     const summary = await runBatchAnalysis()
-    
+
     return NextResponse.json({
       success: true,
       message: 'Batch analysis completed successfully',
@@ -26,13 +29,17 @@ export async function POST(request: NextRequest) {
         period: summary.period
       }
     })
-  } catch (error: any) {
-    console.error('❌ Manual batch analysis failed:', error)
+  } catch (error: unknown) {
+    if (error instanceof ForbiddenError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 403 }
+      )
+    }
+    const err = error as Error
+    console.error('❌ Manual batch analysis failed:', err)
     return NextResponse.json(
-      { 
-        success: false,
-        error: error.message || 'Batch analysis failed' 
-      },
+      { success: false, error: err?.message || 'Batch analysis failed' },
       { status: 500 }
     )
   }

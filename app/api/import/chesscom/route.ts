@@ -220,13 +220,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trigger batch analysis if any games were saved
+    // Trigger batch analysis if any games were saved (Pro only)
     const done = normalizedMode !== 'all' || sliceEnd >= archivesToProcess.length
+    let hasProAccess = false
     if (savedCount > 0 && done && runBatch) {
-      // Check if user has Pro entitlement before triggering server-side analysis
       const lichessUserId = request.cookies.get('lichess_user_id')?.value
-      let hasProAccess = false
-      
       if (lichessUserId) {
         try {
           const entitlement = await getEntitlementForUser(lichessUserId)
@@ -265,13 +263,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log('🔄 Triggering batch analysis after Chess.com import...')
-      try {
-        await runBatchAnalysis()
-        console.log('✅ Batch analysis completed')
-      } catch (batchError) {
-        console.error('❌ Batch analysis failed:', batchError)
-        // Don't fail the entire request if batch analysis fails
+      if (hasProAccess) {
+        console.log('🔄 Triggering batch analysis after Chess.com import...')
+        try {
+          await runBatchAnalysis()
+          console.log('✅ Batch analysis completed')
+        } catch (batchError) {
+          console.error('❌ Batch analysis failed:', batchError)
+        }
       }
     }
 
@@ -284,7 +283,7 @@ export async function POST(request: NextRequest) {
       nextCursor: done ? null : sliceEnd,
       done,
       message: `Processed ${processedCount} games (saved ${savedCount}) out of ${rawGames.length} found in ${archiveChunk.length} archive(s). (Limited to ${gamesToProcess.length})${
-        savedCount > 0 && done && runBatch ? ' - Progression analysis updated' : ''
+        savedCount > 0 && done && runBatch && hasProAccess ? ' - Progression analysis updated' : ''
       }`,
     })
 
