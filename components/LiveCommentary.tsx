@@ -13,6 +13,7 @@ interface LiveCommentaryProps {
   status?: string | null
   winner?: 'white' | 'black' | null
   opponentName?: string | null
+  lichessGameId?: string | null
 }
 
 type CommentaryItem = { text: string; source: 'llm' | 'fallback'; timestamp: number }
@@ -82,6 +83,7 @@ export default function LiveCommentary({
   status = null,
   winner = null,
   opponentName = null,
+  lichessGameId = null,
 }: LiveCommentaryProps) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 16, lines: 1 })
   const { tone } = useAgentTone()
@@ -94,6 +96,11 @@ export default function LiveCommentary({
   const lastEvalRef = useRef<number | null>(null)
   const lastCommentedMoveRef = useRef<string | null>(null)
   const llmAbortRef = useRef<AbortController | null>(null)
+  const [creatingDrill, setCreatingDrill] = useState<boolean>(false)
+  const [drillCreated, setDrillCreated] = useState<boolean>(false)
+  const [drillError, setDrillError] = useState<string | null>(null)
+  const [relatedDrills, setRelatedDrills] = useState<Array<{ drillId: string; ply: number; patternTag: string }>>([])
+  const [loadingDrills, setLoadingDrills] = useState<boolean>(false)
 
   // Auto-scroll to bottom when new commentary arrives
   useEffect(() => {
@@ -343,6 +350,90 @@ export default function LiveCommentary({
     }
   }
 
+  // Load related drills when in post-game mode and gameId is available
+  useEffect(() => {
+    if (variant !== 'postGame' || !lichessGameId || !commentaryHistory.length) return
+
+    setLoadingDrills(true)
+    fetch(`/api/blunder-dna/game-drills?gameId=${encodeURIComponent(lichessGameId)}`)
+      .then(async (res) => {
+        const json = await res.json().catch(() => null)
+        if (json?.drills) {
+          setRelatedDrills(json.drills)
+        }
+      })
+      .catch(() => null)
+      .finally(() => setLoadingDrills(false))
+  }, [variant, lichessGameId, commentaryHistory.length])
+
+  /**
+   * Creates a drill from the post-game review.
+   * 
+   * This function is called when the user clicks "Create Drill from Review"
+   * in the post-game review UI. It sends the game data and review text to
+   * the API endpoint which analyzes the position and creates a drill record.
+   * 
+   * The drill is automatically integrated into the Blunder DNA system and
+   * appears in the Daily Drills section for practice.
+   * 
+   * @see docs/POST_GAME_REVIEW_DRILLS.md
+   */
+  const handleCreateDrill = async () => {
+    if (!lichessGameId || !commentaryHistory.length || !fen || !moves) {
+      setDrillError('Missing game information')
+      return
+    }
+
+    const review = commentaryHistory[commentaryHistory.length - 1]?.text
+    if (!review) {
+      setDrillError('No review available')
+      return
+    }
+
+    setCreatingDrill(true)
+    setDrillError(null)
+
+    try {
+      const res = await fetch('/api/blunder-dna/create-drill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lichessGameId,
+          fen,
+          moves,
+          myColor: myColor ?? null,
+          review,
+          evaluation: engineState.evaluation,
+          bestMove: engineState.bestMove,
+          bestLine: engineState.bestLine,
+          depth: engineState.depth
+        })
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to create drill')
+      }
+
+      setDrillCreated(true)
+      // Reload related drills
+      if (lichessGameId) {
+        fetch(`/api/blunder-dna/game-drills?gameId=${encodeURIComponent(lichessGameId)}`)
+          .then(async (res) => {
+            const json = await res.json().catch(() => null)
+            if (json?.drills) {
+              setRelatedDrills(json.drills)
+            }
+          })
+          .catch(() => null)
+      }
+    } catch (err: any) {
+      setDrillError(err.message || 'Failed to create drill')
+    } finally {
+      setCreatingDrill(false)
+    }
+  }
+
   const panelWidth = variant === 'postGame' ? 380 : 300
   const panelPadding = variant === 'postGame' ? '14px 16px 16px' : '12px 14px 14px'
   const fontSize = variant === 'postGame' ? '14px' : '13px'
@@ -431,13 +522,74 @@ export default function LiveCommentary({
       </div>
 
       <div style={{ marginTop: '10px', flexShrink: 0 }}>
-        <EvalGauge evaluationCp={engineState.evaluation} mate={engineState.mate} />
+        <EvalGauge evaluationCp={engineState.evaluation} mate={engineState.mate} myColor={myColor} />
       </div>
       <div style={{ marginTop: '10px', fontSize: '11px', color: '#cbd5f5', flexShrink: 0 }}>
         {isLLM
           ? 'LLM coach + Stockfish'
           : (engineState.isReady ? `Depth ${engineState.depth}` : 'Engine loading…')}
       </div>
+
+      {variant === 'postGame' && commentaryHistory.length > 0 && (
+        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(148, 163, 184, 0.1)', flexShrink: 0 }}>
+          {lichessGameId && relatedDrills.length > 0 && (
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#86efac' }}>
+              ✓ {relatedDrills.length} drill{relatedDrills.length !== 1 ? 's' : ''} from this game
+              {' '}
+              <a
+                href="/?tab=dna"
+                style={{ color: '#fbbf24', textDecoration: 'underline' }}
+                onClick={(e) => {
+                  e.preventDefault()
+                  // Trigger tab switch - this is a simple approach
+                  window.location.href = '/?tab=dna'
+                }}
+              >
+                View in Blunder DNA →
+              </a>
+            </div>
+          )}
+          {drillCreated ? (
+            <div style={{ fontSize: '11px', color: '#86efac', fontWeight: 500 }}>
+              ✓ Drill created! Check the Blunder DNA tab to practice it.
+            </div>
+          ) : drillError ? (
+            <div style={{ fontSize: '11px', color: '#fca5a5' }}>{drillError}</div>
+          ) : (
+            <>
+              <button
+                onClick={handleCreateDrill}
+                disabled={creatingDrill || !lichessGameId}
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  fontSize: '11px',
+                  backgroundColor: creatingDrill || !lichessGameId ? 'rgba(148, 163, 184, 0.2)' : 'rgba(251, 146, 60, 0.2)',
+                  border: '1px solid rgba(251, 146, 60, 0.5)',
+                  borderRadius: '6px',
+                  color: '#fbbf24',
+                  cursor: creatingDrill || !lichessGameId ? 'not-allowed' : 'pointer',
+                  opacity: creatingDrill || !lichessGameId ? 0.6 : 1,
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  if (!creatingDrill && lichessGameId) {
+                    e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.3)'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = creatingDrill || !lichessGameId ? 'rgba(148, 163, 184, 0.2)' : 'rgba(251, 146, 60, 0.2)'
+                }}
+              >
+                {creatingDrill ? 'Creating drill...' : '📚 Create Drill from Review'}
+              </button>
+              <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px', textAlign: 'center' }}>
+                {lichessGameId ? 'Add this game to your Blunder DNA training' : 'Game ID required to create drill'}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -4,7 +4,9 @@ import { fetchAccount } from '@/lib/lichess/account'
 import { getLichessToken } from '@/lib/lichess/tokenStorage'
 import { LichessApiError } from '@/lib/lichess/apiClient'
 import { startBoardSession } from '@/lib/lichess/sessionService'
+import { getStreamHandler } from '@/lib/lichess/streamRegistry'
 import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
+import { getAuthContext } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 
@@ -76,40 +78,120 @@ function isMissingChallengeWriteScope(payload?: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  // Check app authentication first
+  const authContext = getAuthContext(request)
+  if (!authContext) {
+    console.error('[Lichess Seek] No auth context')
+    return NextResponse.json({ error: 'Unauthorized - please sign in' }, { status: 401 })
+  }
+
+  // Lichess features require Lichess OAuth connection
   const lichessUserId = request.cookies.get('lichess_user_id')?.value
   if (!lichessUserId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('[Lichess Seek] No lichess_user_id cookie')
+    return NextResponse.json({ 
+      error: 'Lichess account not connected. Please connect your Lichess account to use matching features.',
+      requiresLichessConnection: true
+    }, { status: 403 })
   }
 
   const stored = await getLichessToken(lichessUserId)
   if (!stored) {
-    return NextResponse.json({ error: 'Missing token' }, { status: 401 })
+    console.error('[Lichess Seek] No stored token for lichessUserId:', lichessUserId)
+    return NextResponse.json({ 
+      error: 'Lichess token missing. Please reconnect your Lichess account.',
+      requiresLichessConnection: true
+    }, { status: 403 })
   }
 
   try {
     await requireLichessLiveAccess(request)
     // Ensure the background event stream is running so "gameStart" gets detected
-    // and the UI can immediately transition into the game when a match is found.
-    await startBoardSession(lichessUserId).catch((err) => {
-      console.warn('[Lichess Seek] Failed to auto-start board session (continuing):', err)
-    })
+    // Check if handler exists first to avoid starting a new connection attempt
+    // that would conflict with the seek request (Lichess doesn't allow concurrent requests)
+    const existingHandler = getStreamHandler(lichessUserId)
+    if (!existingHandler) {
+      // Start session but don't wait - Lichess doesn't allow concurrent requests
+      await startBoardSession(lichessUserId, false).catch((err) => {
+        console.warn('[Lichess Seek] Failed to auto-start board session (continuing):', err)
+      })
+      // Longer delay to ensure any initial connection attempt has completed or failed
+      // This avoids the "Please only run 1 request(s) at a time" error
+      await new Promise(resolve => setTimeout(resolve, 2000))
+    } else if (!existingHandler.isStreamConnected()) {
+      // Handler exists but not connected - wait a bit for it to connect or fail
+      // This avoids conflicts if the handler is currently retrying
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
 
     const body: SeekRequest = await request.json().catch(() => ({}))
     
     // Lichess API expects time in minutes for this endpoint.
     // If "any" is chosen, prefer a very common time control to maximize match speed.
-    const fallbackTime = 5
-    const fallbackIncrement = 0
-    const time = body.any ? fallbackTime : (body.time ?? fallbackTime)
-    const increment = body.any ? fallbackIncrement : (body.increment ?? fallbackIncrement)
+    const fallbackTime = 10
+    const fallbackIncrement = 5
+    let time = body.any ? fallbackTime : (body.time ?? fallbackTime)
+    let increment = body.any ? fallbackIncrement : (body.increment ?? fallbackIncrement)
+    
+    // Lichess /api/board/seek ONLY supports Rapid and Classical time controls.
+    // Blitz and Bullet are NOT supported. We normalize Blitz/Bullet to Rapid equivalents.
+    const VALID_PRESETS = [
+      { time: 10, increment: 0 },  // Rapid
+      { time: 10, increment: 5 },   // Rapid
+      { time: 15, increment: 10 },  // Rapid
+      { time: 30, increment: 0 },    // Classical
+      { time: 30, increment: 20 },  // Classical
+    ]
+    
+    // Normalize to nearest valid preset if the exact combination isn't in our list
+    // This converts Blitz/Bullet to Rapid equivalents
+    const normalizeToPreset = (t: number, inc: number): { time: number; increment: number } => {
+      // Check if exact match exists
+      const exactMatch = VALID_PRESETS.find(p => p.time === t && p.increment === inc)
+      if (exactMatch) return exactMatch
+      
+      // Find closest preset by total time
+      const totalMinutes = t + inc / 60
+      let closest = VALID_PRESETS[0]
+      let minDiff = Math.abs(totalMinutes - (closest.time + closest.increment / 60))
+      
+      for (const preset of VALID_PRESETS) {
+        const diff = Math.abs(totalMinutes - (preset.time + preset.increment / 60))
+        if (diff < minDiff) {
+          minDiff = diff
+          closest = preset
+        }
+      }
+      return closest
+    }
+    
+    // Normalize the time control to a valid Rapid/Classical preset
+    // This converts Blitz (3+0, 5+0) and Bullet (1+0, 2+1) to Rapid (10+0, 10+5)
+    const normalized = normalizeToPreset(time, increment)
+    const originalTime = time
+    const originalIncrement = increment
+    time = normalized.time
+    increment = normalized.increment
+    
+    // Log if we converted Blitz/Bullet to Rapid
+    const perfKey = resolvePerfKey(originalTime, originalIncrement)
+    if (perfKey === 'bullet' || perfKey === 'blitz') {
+      console.log(`[Lichess Seek] Converted ${perfKey} ${originalTime}+${originalIncrement} to Rapid ${time}+${increment} (Lichess board API only supports Rapid/Classical)`)
+    }
+    
+    // Lichess /api/board/seek expects time in MINUTES (not seconds).
+    // The API documentation indicates time should be in minutes.
+    const timeMinutes = Math.max(1, Math.min(180, Math.trunc(time)))
+    const incrementSeconds = Math.max(0, Math.min(60, Math.trunc(increment)))
+    
     const rated = body.rated ?? false
     const variant = body.variant ?? 'standard'
     const color = body.color ?? 'random'
 
     // Lichess seek endpoint expects form data
     const formData = new URLSearchParams()
-    formData.append('time', time.toString())
-    formData.append('increment', increment.toString())
+    formData.append('time', timeMinutes.toString())
+    formData.append('increment', incrementSeconds.toString())
     formData.append('rated', rated.toString())
     // Only send optional params when non-default to avoid server-side validation quirks.
     if (variant && variant !== 'standard') formData.append('variant', variant)
@@ -151,10 +233,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Lichess Seek] Seeking match: ${time}+${increment}, rated=${rated}, variant=${variant}, color=${color}`)
+    console.log(`[Lichess Seek] Seeking match: ${timeMinutes}min+${incrementSeconds}sec, rated=${rated}, variant=${variant}, color=${color}`)
     console.log(`[Lichess Seek] Payload: ${formData.toString()}`)
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:212',message:'Seek request received',data:{originalTime,originalIncrement,timeMinutes,incrementSecondsInput:increment,incrementSeconds,rated,variant,color,normalized:originalTime!==time||originalIncrement!==increment},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+    // #endregion
 
-    const doSeek = async (payload: URLSearchParams) => {
+    const doSeek = async (payload: URLSearchParams, retryCount: number = 0): Promise<string> => {
+      console.log(`[Lichess Seek] Calling /api/board/seek with payload: ${payload.toString()}`)
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:219',message:'About to call Lichess API',data:{payload:payload.toString(),timeValue:payload.get('time'),incrementValue:payload.get('increment'),retryCount},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
       const response = await lichessFetch('/api/board/seek', {
         method: 'POST',
         token: stored.token.accessToken,
@@ -164,7 +254,41 @@ export async function POST(request: NextRequest) {
         },
         body: payload.toString()
       })
-      const result = await response.text().catch(() => '')
+      const status = response.status
+      // Lichess /api/board/seek returns empty body on success, so skip reading if 200
+      let result = ''
+      if (status === 200) {
+        // Empty response is expected for successful seeks
+        result = ''
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:227',message:'Seek API call succeeded',data:{status,timeMinutes,incrementSeconds,rated},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
+      } else {
+        result = await Promise.race([
+          response.text().catch(() => ''),
+          new Promise<string>((resolve) => setTimeout(() => resolve(''), 5000))
+        ])
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:235',message:'Seek API call failed',data:{status,result:result.substring(0,200),timeMinutes,incrementSeconds,rated},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
+      }
+      console.log(`[Lichess Seek] Response status: ${status}, body length: ${result.length}, body: "${result.substring(0, 100)}"`)
+      if (!response.ok) {
+        // Handle 429 "concurrent request" error with retry
+        // Check for various forms of the concurrent request error message
+        const isConcurrentRequestError = status === 429 && 
+          (result.includes('Please only run 1 request') || 
+           result.includes('only run 1 request') ||
+           result.includes('concurrent request'))
+        
+        if (isConcurrentRequestError && retryCount < 3) {
+          const delay = (retryCount + 1) * 1000 // 1s, 2s, 3s delays
+          console.log(`[Lichess Seek] Concurrent request detected, retrying after ${delay}ms (attempt ${retryCount + 1}/3)`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          return doSeek(payload, retryCount + 1)
+        }
+        throw new LichessApiError(`Seek failed: ${status}`, status, result)
+      }
       return result
     }
 
@@ -201,9 +325,43 @@ export async function POST(request: NextRequest) {
 
     try {
       const result = await doSeek(formData)
-      console.log(`[Lichess Seek] Success: ${result}`)
-
-      return NextResponse.json({ success: true, message: 'Seeking match...' })
+      console.log(`[Lichess Seek] Seek submitted successfully, waiting for match...`)
+      
+      // Wait for gameStart event (synchronous matching)
+      // Get the stream handler to wait for game start
+      const handler = getStreamHandler(lichessUserId)
+      if (!handler) {
+        console.warn('[Lichess Seek] No stream handler available, returning immediately')
+        return NextResponse.json({ success: true, message: 'Seeking match...' })
+      }
+      
+      try {
+        // Wait up to 60 seconds for a match
+        const gameId = await handler.waitForGameStart(60000)
+        console.log(`[Lichess Seek] Match found! Game ID: ${gameId}`)
+        return NextResponse.json({ 
+          success: true, 
+          gameId,
+          message: 'Match found!' 
+        })
+      } catch (waitError: any) {
+        // Timeout or error waiting for match
+        if (waitError.message?.includes('Timeout')) {
+          console.log(`[Lichess Seek] Timeout waiting for match, but seek is still active`)
+          return NextResponse.json({ 
+            success: true, 
+            stillSeeking: true,
+            message: 'Seeking match... (still waiting)' 
+          })
+        }
+        // Other error - return success anyway since seek was submitted
+        console.warn(`[Lichess Seek] Error waiting for match:`, waitError)
+        return NextResponse.json({ 
+          success: true, 
+          stillSeeking: true,
+          message: 'Seeking match...' 
+        })
+      }
     } catch (err: any) {
       if (err instanceof LichessApiError) {
         const msg = extractLichessErrorMessage(err.payload)
@@ -217,9 +375,32 @@ export async function POST(request: NextRequest) {
           )
           try {
             const result = await doSeek(fallbackPayload)
-            console.log(`[Lichess Seek] Success (ratingRange skipped): ${result}`)
+            console.log(`[Lichess Seek] Success (ratingRange skipped), waiting for match...`)
+            
+            // Wait for gameStart event
+            const handler = getStreamHandler(lichessUserId)
+            if (handler) {
+              try {
+                const gameId = await handler.waitForGameStart(60000)
+                return NextResponse.json({
+                  success: true,
+                  gameId,
+                  message: 'Match found!'
+                })
+              } catch (waitError: any) {
+                if (waitError.message?.includes('Timeout')) {
+                  return NextResponse.json({
+                    success: true,
+                    stillSeeking: true,
+                    message: 'Seeking match... (still waiting)'
+                  })
+                }
+              }
+            }
+            
             return NextResponse.json({
               success: true,
+              stillSeeking: true,
               message: 'Seeking match... (rating filter not supported for this account/time control)',
             })
           } catch (retryErr: any) {
@@ -228,50 +409,33 @@ export async function POST(request: NextRequest) {
               console.warn(`[Lichess Seek] Retry failed: ${retryErr.status} - ${retryMsg}`)
 
               if (retryErr.status === 400 && isInvalidTimeControl(retryMsg)) {
-                const timeSeconds = Math.max(60, Math.min(10800, time * 60))
-                const secondsPayload = new URLSearchParams(fallbackPayload)
-                secondsPayload.set('time', String(timeSeconds))
-                console.warn(
-                  `[Lichess Seek] Retrying with time in seconds: ${secondsPayload.toString()}`
-                )
+                // Time is already in seconds, so try open challenge fallback
+                console.warn(`[Lichess Seek] Time control still invalid after retry, trying open challenge fallback`)
                 try {
-                  const secondsResult = await doSeek(secondsPayload)
-                  console.log(`[Lichess Seek] Success (seconds time): ${secondsResult}`)
-                  return NextResponse.json({
-                    success: true,
-                    message: 'Seeking match... (time control normalized)',
-                  })
-                } catch (secondsErr: any) {
-                  if (secondsErr instanceof LichessApiError) {
-                    const secondsMsg = extractLichessErrorMessage(secondsErr.payload)
-                    console.warn(`[Lichess Seek] Seconds retry failed: ${secondsErr.status} - ${secondsMsg}`)
-                    // Final fallback: open challenge
-                    try {
-                      const opened = await doOpenChallenge(time, increment)
-                      if (opened?.challengeId) {
-                        return NextResponse.json({
-                          success: true,
-                          mode: 'open_challenge',
-                          challengeId: opened.challengeId,
-                          message: 'Seeking match... (open challenge)',
-                        })
-                      }
-                    } catch (openErr: any) {
-                      if (openErr instanceof LichessApiError && openErr.status === 403 && isMissingChallengeWriteScope(openErr.payload)) {
-                        return NextResponse.json(
-                          {
-                            error:
-                              'Lichess token is missing scope challenge:write. Disconnect + Reconnect Lichess to enable open-challenge fallback.',
-                          },
-                          { status: 403 }
-                        )
-                      }
-                      console.warn('[Lichess Seek] Open challenge fallback failed:', openErr)
-                    }
-                    return NextResponse.json({ error: secondsMsg }, { status: secondsErr.status })
+                  const opened = await doOpenChallenge(time, increment)
+                  if (opened?.challengeId) {
+                    // For open challenges, we can't wait for gameStart the same way
+                    // Return immediately with challenge ID
+                    return NextResponse.json({
+                      success: true,
+                      mode: 'open_challenge',
+                      challengeId: opened.challengeId,
+                      message: 'Seeking match... (open challenge)',
+                    })
                   }
-                  throw secondsErr
+                } catch (openErr: any) {
+                  if (openErr instanceof LichessApiError && openErr.status === 403 && isMissingChallengeWriteScope(openErr.payload)) {
+                    return NextResponse.json(
+                      {
+                        error:
+                          'Lichess token is missing scope challenge:write. Disconnect + Reconnect Lichess to enable open-challenge fallback.',
+                      },
+                      { status: 403 }
+                    )
+                  }
+                  console.warn('[Lichess Seek] Open challenge fallback failed:', openErr)
                 }
+                return NextResponse.json({ error: retryMsg }, { status: retryErr.status })
               }
 
               return NextResponse.json({ error: retryMsg }, { status: retryErr.status })
@@ -280,54 +444,17 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        if (err.status === 400 && isInvalidTimeControl(msg)) {
-          const timeSeconds = Math.max(60, Math.min(10800, time * 60))
-          const secondsPayload = new URLSearchParams(formData)
-          secondsPayload.delete('ratingRange')
-          secondsPayload.set('time', String(timeSeconds))
-          console.warn(`[Lichess Seek] Retrying with time in seconds: ${secondsPayload.toString()}`)
-          try {
-            const secondsResult = await doSeek(secondsPayload)
-            console.log(`[Lichess Seek] Success (seconds time): ${secondsResult}`)
-            return NextResponse.json({
-              success: true,
-              message: 'Seeking match... (time control normalized)',
-            })
-          } catch (secondsErr: any) {
-            if (secondsErr instanceof LichessApiError) {
-              const secondsMsg = extractLichessErrorMessage(secondsErr.payload)
-              console.warn(`[Lichess Seek] Seconds retry failed: ${secondsErr.status} - ${secondsMsg}`)
-              // Final fallback: open challenge
-              try {
-                const opened = await doOpenChallenge(time, increment)
-                if (opened?.challengeId) {
-                  return NextResponse.json({
-                    success: true,
-                    mode: 'open_challenge',
-                    challengeId: opened.challengeId,
-                    message: 'Seeking match... (open challenge)',
-                  })
-                }
-              } catch (openErr: any) {
-                if (openErr instanceof LichessApiError && openErr.status === 403 && isMissingChallengeWriteScope(openErr.payload)) {
-                  return NextResponse.json(
-                    {
-                      error:
-                        'Lichess token is missing scope challenge:write. Disconnect + Reconnect Lichess to enable open-challenge fallback.',
-                    },
-                    { status: 403 }
-                  )
-                }
-                console.warn('[Lichess Seek] Open challenge fallback failed:', openErr)
-              }
-              return NextResponse.json({ error: secondsMsg }, { status: secondsErr.status })
-            }
-            throw secondsErr
-          }
-        }
-
         console.warn(`[Lichess Seek] Lichess rejected seek: ${err.status} - ${msg}`)
-        return NextResponse.json({ error: msg }, { status: err.status })
+        // Provide user-friendly error messages
+        let userMessage = msg
+        if (err.status === 400 && isInvalidTimeControl(msg)) {
+          userMessage = `Invalid time control (${time}min+${increment}sec). Lichess board API only supports Rapid (10+0, 10+5) and Classical (30+0, 30+20) time controls.`
+        } else if (err.status === 429) {
+          userMessage = 'Rate limit exceeded. Please wait a moment before seeking again.'
+        } else if (err.status === 403) {
+          userMessage = 'Access denied. Please check your Lichess account connection.'
+        }
+        return NextResponse.json({ error: userMessage }, { status: err.status })
       }
       throw err
     }

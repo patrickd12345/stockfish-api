@@ -158,16 +158,29 @@ export default function BlunderDnaTab() {
     setError(null)
     setLastAttemptResult(null)
     try {
+      console.log('[Blunder DNA] Starting analysis...')
       const res = await fetch('/api/blunder-dna/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ n: 50 }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Analysis failed')
+      console.log('[Blunder DNA] Response:', { status: res.status, ok: res.ok, json })
+      if (!res.ok) {
+        const errorMsg = json.error || 'Analysis failed'
+        console.error('[Blunder DNA] Analysis failed:', errorMsg)
+        throw new Error(errorMsg)
+      }
+      console.log('[Blunder DNA] Analysis succeeded, refreshing data...')
+      // Refresh both daily drills and trigger report refresh
       await refresh()
+      // Force refresh the report by triggering a page reload or state update
+      // The report component will fetch with force=1 on mount
+      window.dispatchEvent(new Event('blunder-dna-updated'))
     } catch (e: any) {
-      setError(e?.message || 'Analysis failed')
+      const errorMsg = e?.message || 'Analysis failed'
+      console.error('[Blunder DNA] Error:', errorMsg, e)
+      setError(errorMsg)
     } finally {
       setAnalyzing(false)
     }

@@ -81,7 +81,8 @@ export default function BlunderDnaReport({ onTrainPattern }: BlunderDnaReportPro
       setError(null)
       
       try {
-        const res = await fetch('/api/blunder-dna')
+        // Force refresh to get latest snapshot
+        const res = await fetch('/api/blunder-dna?force=1')
         const data: BlunderDnaApiResponse = await res.json()
         
         if (cancelled) return
@@ -96,6 +97,7 @@ export default function BlunderDnaReport({ onTrainPattern }: BlunderDnaReportPro
         }
         
         if (data.ok && data.snapshot) {
+          console.log('[Blunder DNA Report] Loaded snapshot:', data.snapshot)
           setSnapshot(data.snapshot)
         }
       } catch (e: any) {
@@ -111,8 +113,17 @@ export default function BlunderDnaReport({ onTrainPattern }: BlunderDnaReportPro
     
     fetchSnapshot()
     
+    // Listen for updates from analysis completion
+    const handleUpdate = () => {
+      if (!cancelled) {
+        fetchSnapshot()
+      }
+    }
+    window.addEventListener('blunder-dna-updated', handleUpdate)
+    
     return () => {
       cancelled = true
+      window.removeEventListener('blunder-dna-updated', handleUpdate)
     }
   }, [])
 

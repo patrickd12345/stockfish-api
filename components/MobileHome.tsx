@@ -10,6 +10,7 @@ import BlunderDnaTab from '@/components/BlunderDnaTab'
 import TrainingTab from '@/components/TrainingTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
+import AuthButton from '@/components/AuthButton'
 import type { HomeTab } from '@/components/DesktopHome'
 import { useRouter } from 'next/navigation'
 
@@ -50,6 +51,7 @@ export default function MobileHome({
           <div className="font-black text-terracotta text-lg tracking-tight">Chess Coach</div>
 
           <div className="flex items-center justify-end gap-2">
+            <AuthButton />
             <button
               type="button"
               onClick={() => router.push('/account')}

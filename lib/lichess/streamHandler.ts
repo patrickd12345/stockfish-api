@@ -13,18 +13,63 @@ export class BoardStreamHandler {
   private activeGameId: string | null = null
   private running = false
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS
+  private streamConnected = false
+  private gameStartPromiseResolvers: Array<{ resolve: (gameId: string) => void; reject: (error: Error) => void }> = []
 
   constructor(token: string, lichessUserId: string) {
     this.token = token
     this.lichessUserId = lichessUserId
   }
 
+  /**
+   * Wait for a gameStart event. Returns a promise that resolves with the gameId when a match is found.
+   * @param timeoutMs Maximum time to wait in milliseconds (default: 60000 = 60 seconds)
+   */
+  async waitForGameStart(timeoutMs: number = 60000): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.gameStartPromiseResolvers = this.gameStartPromiseResolvers.filter(r => r.resolve !== resolve)
+        reject(new Error(`Timeout waiting for game start after ${timeoutMs}ms`))
+      }, timeoutMs)
+      
+      this.gameStartPromiseResolvers.push({
+        resolve: (gameId: string) => {
+          clearTimeout(timeout)
+          resolve(gameId)
+        },
+        reject: (error: Error) => {
+          clearTimeout(timeout)
+          reject(error)
+        }
+      })
+    })
+  }
+
+  isStreamConnected(): boolean {
+    return this.streamConnected && this.running
+  }
+
+  async waitForConnection(timeoutMs: number = 5000): Promise<boolean> {
+    if (this.isStreamConnected()) return true
+    
+    const startTime = Date.now()
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.isStreamConnected()) return true
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    return this.isStreamConnected()
+  }
+
   async start(): Promise<void> {
-    console.log(`[Lichess Stream] Starting stream for user ${this.lichessUserId}`)
+    // Only log stream start once, not on every retry
+    if (!this.running) {
+      console.log(`[Lichess Stream] Starting stream for user ${this.lichessUserId}`)
+    }
     this.running = true
+    this.streamConnected = false
+    
     try {
     await ensureBoardSession(this.lichessUserId)
-      console.log(`[Lichess Stream] Session ensured. Connecting to stream...`)
     } catch (err) {
       console.error(`[Lichess Stream] Failed to ensure session:`, err)
       this.running = false
@@ -33,11 +78,11 @@ export class BoardStreamHandler {
 
     while (this.running) {
       try {
-        console.log(`[Lichess Stream] Consuming stream...`)
         await this.consumeStream()
         // If consumeStream returns normally (e.g. server closed connection), 
         // reset the delay for the next attempt.
         this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS
+        this.streamConnected = false
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown stream error'
         const isRateLimit = message.includes('429')
@@ -46,9 +91,27 @@ export class BoardStreamHandler {
         console.error(`[Lichess Stream] Error: ${message}`)
         await updateSessionError(this.lichessUserId, message)
         
+        this.streamConnected = false
+        
+        // Only reject waitForGameStart promises on fatal errors (401 unauthorized)
+        // Rate limit errors (429) are temporary and shouldn't cancel pending seeks
+        if (isUnauthorized) {
+          const resolvers = [...this.gameStartPromiseResolvers]
+          this.gameStartPromiseResolvers = []
+          resolvers.forEach(r => r.reject(new Error(message)))
+        }
+        // For rate limits (429), keep the promises pending - the seek is still active
+        // and we'll reconnect and potentially receive the gameStart event
+        
         if (!this.running || isUnauthorized) {
           console.log(`[Lichess Stream] Stopping stream due to ${isUnauthorized ? 'unauthorized error' : 'request'}.`)
           this.running = false
+          // Reject any remaining promises when stopping
+          if (!this.running) {
+            const resolvers = [...this.gameStartPromiseResolvers]
+            this.gameStartPromiseResolvers = []
+            resolvers.forEach(r => r.reject(new Error('Stream stopped')))
+          }
           break
         }
         
@@ -70,13 +133,15 @@ export class BoardStreamHandler {
 
   stop(): void {
     this.running = false
+    this.streamConnected = false
     this.abortController?.abort()
     this.gameAbortController?.abort()
   }
 
   private async consumeStream(): Promise<void> {
     this.abortController = new AbortController()
-    console.log(`[Lichess Stream] Connecting to Event Stream (/api/stream/event)...`)
+    this.streamConnected = false
+    // Connection logs only in debug mode - too verbose for normal operation
     
     // Connect to the main event stream to detect when games start
     const response = await lichessFetch('/api/stream/event', {
@@ -84,11 +149,17 @@ export class BoardStreamHandler {
       signal: this.abortController.signal
     })
 
-    console.log(`[Lichess Stream] Connected. Status: ${response.status}`)
+    // Only log connection errors, not successful connections
+    if (!response.ok) {
+      console.error(`[Lichess Stream] Connection failed. Status: ${response.status}`)
+    }
 
     if (!response.body) {
       throw new Error('Lichess stream did not provide a body')
     }
+
+    // Mark as connected once we have a valid response body
+    this.streamConnected = true
 
     // If we're already playing a game according to our DB, ensure we track it
     // But the event stream is the primary "keep-alive" connection
@@ -101,24 +172,36 @@ export class BoardStreamHandler {
     let buffer = ''
 
     while (this.running) {
-      const { value, done } = await reader.read()
-      if (done) {
-        console.log(`[Lichess Stream] Stream closed by server.`)
-        break
-      }
-      
-      const chunk = decoder.decode(value, { stream: true })
-      buffer += chunk
-      
-      let newlineIndex = buffer.indexOf('\n')
-      while (newlineIndex >= 0) {
-        const line = buffer.slice(0, newlineIndex).trim()
-        buffer = buffer.slice(newlineIndex + 1)
-        if (line) {
-          console.log(`[Lichess Stream] Event received: ${line.substring(0, 50)}...`)
-          await this.handleLine(line)
+      try {
+        const { value, done } = await reader.read()
+        if (done) {
+          console.log(`[Lichess Stream] Stream closed by server (done=true)`)
+          break
         }
-        newlineIndex = buffer.indexOf('\n')
+        
+        if (!value || value.length === 0) {
+          // Keep-alive ping - no need to log
+          continue
+        }
+        
+        const chunk = decoder.decode(value, { stream: true })
+        // Only log chunks in debug mode or if they contain actual events
+        buffer += chunk
+        
+        let newlineIndex = buffer.indexOf('\n')
+        while (newlineIndex >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim()
+          buffer = buffer.slice(newlineIndex + 1)
+          if (line) {
+            // Only log actual events, not keep-alive pings
+            await this.handleLine(line)
+          }
+          // Empty lines are keep-alive pings - no need to log
+          newlineIndex = buffer.indexOf('\n')
+        }
+      } catch (readError) {
+        console.error(`[Lichess Stream] Error reading from stream:`, readError)
+        throw readError
       }
     }
   }
@@ -133,19 +216,25 @@ export class BoardStreamHandler {
       return
     }
 
-    console.log(`[Lichess Stream] Processing event type: ${event.type}`)
-
+    // Only log important events, not every event type
     switch (event.type) {
       case 'gameStart':
         console.log(`[Lichess Stream] Game start detected: ${event.game.id}`)
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'lib/lichess/streamHandler.ts:178',message:'GameStart event received',data:{gameId:event.game.id,color:event.game.color,opponent:event.game.opponent?.username,rated:event.game.rated,timeControl:event.game.clock},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
         await recordGameStart(this.lichessUserId, event)
+        // Resolve any pending waitForGameStart promises
+        const resolvers = [...this.gameStartPromiseResolvers]
+        this.gameStartPromiseResolvers = []
+        resolvers.forEach(r => r.resolve(event.game.id))
         // Start streaming the actual game events (moves, chat, clocks).
         this.startGameStream(event.game.id).catch((err) =>
           console.warn('[Lichess Stream] Failed to start game stream:', err)
         )
         return
       case 'gameState':
-        console.log(`[Lichess Stream] Game state update.`)
+        // Game state updates are frequent - only log errors
         await this.safeRecordGameState(event)
         return
       case 'gameFull':
@@ -159,7 +248,7 @@ export class BoardStreamHandler {
         this.gameAbortController?.abort()
         return
       case 'chatLine':
-        console.log(`[Lichess Stream] Chat received: ${event.username}: ${event.text}`)
+        // Chat messages are frequent - only log in debug mode
         await recordChatMessage(this.lichessUserId, event)
         return
       default:
@@ -192,12 +281,19 @@ export class BoardStreamHandler {
     this.activeGameId = gameId
     this.gameAbortController = new AbortController()
 
-    console.log(`[Lichess Stream] Connecting to Game Stream (/api/board/game/stream/${gameId})...`)
+    // Game stream connection - only log errors
     const response = await lichessFetch(`/api/board/game/stream/${gameId}`, {
       token: this.token,
       signal: this.gameAbortController.signal
     })
-    if (!response.body) return
+    if (!response.body) {
+      console.warn(`[Lichess Stream] Game stream ${gameId} did not provide a body`)
+      return
+    }
+    if (!response.ok) {
+      console.error(`[Lichess Stream] Game stream ${gameId} connection failed. Status: ${response.status}`)
+      return
+    }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -224,6 +320,7 @@ export class BoardStreamHandler {
           } else if (event.type === 'gameState') {
             await this.safeRecordGameState(event)
           } else if (event.type === 'chatLine') {
+            // Chat messages are frequent - only log in debug mode
             await recordChatMessage(this.lichessUserId, event, gameId)
           }
         } catch (err) {

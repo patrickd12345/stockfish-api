@@ -23,6 +23,9 @@ Violating these rules breaks the business model.
 - **Stockfish Integration**: Chess engine analysis with centipawn loss and blunder detection
 - **Semantic Game Search**: Vector embeddings for game retrieval
 - **Billing**: Stripe integration for Pro subscriptions (Monthly/Annual) with entitlement gating
+- **Lichess Live Integration**: Play and analyze live games on Lichess with real-time AI commentary
+- **Blunder DNA**: Pattern-based training system that identifies weaknesses and creates personalized drills
+- **Post-Game Review Drills**: Convert AI coach suggestions into practice drills automatically
 
 ## Deployment to Vercel
 

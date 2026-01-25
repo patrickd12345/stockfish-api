@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { RuntimeCapabilitiesBanner } from '@/components/RuntimeCapabilitiesBanner'
+import { EntitlementProvider } from '@/contexts/EntitlementContext'
+import { CapabilityFactsProvider } from '@/contexts/CapabilityFactsContext'
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -24,7 +26,11 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <RuntimeCapabilitiesBanner />
-        {children}
+        <CapabilityFactsProvider>
+          <EntitlementProvider>
+            {children}
+          </EntitlementProvider>
+        </CapabilityFactsProvider>
       </body>
     </html>
   )

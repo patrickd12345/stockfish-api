@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntitlementForUser } from '@/lib/billing';
 import { getRuntimeCapabilitiesSync } from '@/lib/runtimeCapabilities';
+import { getAuthContext } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const lichessUserId = request.cookies.get('lichess_user_id')?.value;
-    if (!lichessUserId) {
+    const authContext = getAuthContext(request);
+    if (!authContext?.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const entitlement = await getEntitlementForUser(lichessUserId);
+    const entitlement = await getEntitlementForUser(authContext.userId);
     return NextResponse.json(entitlement);
   } catch (error: any) {
     // Handle hosted DB guard error gracefully

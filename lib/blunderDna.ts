@@ -109,7 +109,14 @@ function parseCreatedAtFromPgn(pgn: string): string | null {
 
 export async function fetchRecentLichessGames(lichessUserId: string, n: number): Promise<InputGame[]> {
   const stored = await getLichessToken(lichessUserId)
-  if (!stored) throw new Error('Missing Lichess token')
+  if (!stored) {
+    console.error(`[Blunder DNA] No Lichess token found for user: ${lichessUserId}`)
+    throw new Error('Missing Lichess token')
+  }
+  if (stored.revokedAt) {
+    console.error(`[Blunder DNA] Lichess token is revoked for user: ${lichessUserId}`)
+    throw new Error('Lichess token has been revoked. Please reconnect your account.')
+  }
 
   const max = clampInt(n, 1, 200)
   const params = new URLSearchParams()
@@ -118,6 +125,7 @@ export async function fetchRecentLichessGames(lichessUserId: string, n: number):
   params.set('clocks', 'true')
   params.set('moves', 'true')
 
+  console.log(`[Blunder DNA] Fetching ${max} games from Lichess API for user: ${lichessUserId}`)
   const response = await lichessFetch(`/api/games/user/${encodeURIComponent(lichessUserId)}?${params.toString()}`, {
     token: stored.token.accessToken,
     headers: {
@@ -125,7 +133,16 @@ export async function fetchRecentLichessGames(lichessUserId: string, n: number):
     }
   })
 
-  if (!response.body) return []
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error')
+    console.error(`[Blunder DNA] Lichess API error: ${response.status} ${errorText}`)
+    throw new Error(`Failed to fetch games from Lichess: ${response.status} ${errorText}`)
+  }
+
+  if (!response.body) {
+    console.warn(`[Blunder DNA] No response body from Lichess API`)
+    return []
+  }
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

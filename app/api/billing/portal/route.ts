@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPortalSession } from '@/lib/billing';
+import { getAuthContext } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -19,12 +20,12 @@ function parseMissingBillingEnvVars(error: unknown): string[] | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const lichessUserId = request.cookies.get('lichess_user_id')?.value;
-    if (!lichessUserId) {
+    const authContext = getAuthContext(request);
+    if (!authContext?.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { url } = await createPortalSession(lichessUserId);
+    const { url } = await createPortalSession(authContext.userId);
 
     return NextResponse.json({ url });
   } catch (error: any) {

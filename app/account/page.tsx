@@ -1,18 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-
-interface Entitlement {
-  plan: 'FREE' | 'PRO'
-  status: string
-  current_period_end: string | null
-  cancel_at_period_end: boolean
-}
+import AuthButton from '@/components/AuthButton'
+import { useEntitlement, useIsAuthenticated } from '@/contexts/EntitlementContext'
 
 export default function AccountPage() {
-  const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
-  const [loading, setLoading] = useState(true)
+  const entitlement = useEntitlement()
+  const isAuthenticated = useIsAuthenticated()
   const [portalLoading, setPortalLoading] = useState(false)
   const [portalError, setPortalError] = useState<string | null>(null)
   const router = useRouter()
@@ -26,22 +21,6 @@ export default function AccountPage() {
     ],
     []
   )
-
-  useEffect(() => {
-    fetch('/api/billing/subscription')
-      .then(res => {
-        if (res.status === 401) return null
-        return res.json()
-      })
-      .then(data => {
-        if (data) setEntitlement(data)
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error(err)
-        setLoading(false)
-      })
-  }, [])
 
   const handleManageBilling = async () => {
     setPortalError(null)
@@ -72,18 +51,40 @@ export default function AccountPage() {
     }
   }
 
-  if (loading) {
+  if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-sage-900 flex items-center justify-center text-sage-100">
-        Loading…
-      </div>
-    )
-  }
+      <div className="min-h-screen bg-sage-900 flex flex-col items-center justify-center text-sage-100 p-6">
+        <div className="max-w-md w-full space-y-8">
+          <div className="text-center space-y-4">
+            <h1 className="text-3xl font-black tracking-tight">Welcome to Chess Coach</h1>
+            <p className="text-sage-300 text-lg">
+              Sign in to access your account, view your subscription, and manage billing.
+            </p>
+          </div>
+          
+          <div className="glass-panel p-8 space-y-6">
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-black">DEV Mode Authentication</h2>
+              <p className="text-sm text-sage-400">
+                This is a development-only login. In production, you&apos;ll use a real authentication system.
+              </p>
+            </div>
+            
+            <div className="flex justify-center">
+              <AuthButton />
+            </div>
+          </div>
 
-  if (!entitlement) {
-    return (
-      <div className="min-h-screen bg-sage-900 flex items-center justify-center text-sage-100">
-        Sign in required.
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              className="text-sage-400 hover:text-sage-200 text-sm underline"
+            >
+              Back to app
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -99,9 +100,12 @@ export default function AccountPage() {
           <button type="button" onClick={() => router.push('/')} className="btn-secondary">
             Back to app
           </button>
-          <button type="button" onClick={() => router.push('/pricing')} className="btn-secondary">
-            Pricing
-          </button>
+          <div className="flex items-center gap-3">
+            <AuthButton />
+            <button type="button" onClick={() => router.push('/pricing')} className="btn-secondary">
+              Pricing
+            </button>
+          </div>
         </div>
 
         <h1 className="mt-10 text-3xl font-black tracking-tight">Account & Billing</h1>

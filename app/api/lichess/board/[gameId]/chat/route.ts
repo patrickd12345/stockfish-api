@@ -38,9 +38,12 @@ export async function POST(
 
     if (!response.ok) {
       const errorText = await response.text()
+      console.error(`[Lichess Chat] Failed to send: ${errorText || response.status}`)
       return NextResponse.json({ error: errorText || 'Failed to send chat' }, { status: response.status })
     }
 
+    const responseText = await response.text()
+    console.log(`[Lichess Chat] Message sent successfully: "${text}" to room "${room || 'player'}"`)
     return NextResponse.json({ success: true })
   } catch (error: any) {
     if (error instanceof LichessAccessError) {

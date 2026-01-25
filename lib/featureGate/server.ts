@@ -6,12 +6,14 @@ import { getServerCapabilityFacts } from '../capabilities'
 import type { FeatureKey } from '../featureRegistry'
 import type { Tier } from '../tierPolicy'
 import { getEntitlementForUser } from '../billing'
+import { getAuthContext } from '../auth'
 import { evaluateFeatureAccess, FeatureAccessError, getFeatureErrorMessage } from './core'
 
 export { FeatureAccessError } from './core'
 
 async function resolveTierFromRequest(request?: NextRequest): Promise<{ tier: Tier; userId: string | null }> {
-  const userId = request?.cookies.get('lichess_user_id')?.value ?? null
+  const authContext = request ? getAuthContext(request) : null
+  const userId = authContext?.userId ?? null
   if (!userId) {
     return { tier: 'ANON', userId: null }
   }

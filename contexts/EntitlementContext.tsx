@@ -25,6 +25,8 @@ const defaultState: EntitlementState = {
 
 const EntitlementContext = createContext<EntitlementState>(defaultState)
 
+const RefreshContext = createContext<(() => void) | null>(null)
+
 export function EntitlementProvider({
   children,
   initialState,
@@ -34,9 +36,16 @@ export function EntitlementProvider({
 }) {
   const [state, setState] = useState<EntitlementState>(initialState ?? defaultState)
   const [loading, setLoading] = useState(!initialState)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  const refreshEntitlement = () => {
+    setRefreshTrigger(prev => prev + 1)
+  }
 
   useEffect(() => {
-    if (initialState) return
+    if (initialState) {
+      return
+    }
     fetch('/api/billing/subscription')
       .then(async (res) => {
         if (res.status === 401) {
@@ -55,7 +64,7 @@ export function EntitlementProvider({
           isAuthenticated: true,
         })
       })
-      .catch(() => {
+      .catch((err) => {
         setState({
           entitlement: defaultEntitlement,
           tier: 'ANON',
@@ -65,7 +74,7 @@ export function EntitlementProvider({
       .finally(() => {
         setLoading(false)
       })
-  }, [initialState])
+  }, [initialState, refreshTrigger])
 
   const value = useMemo(() => state, [state])
 
@@ -73,7 +82,13 @@ export function EntitlementProvider({
     return null
   }
 
-  return <EntitlementContext.Provider value={value}>{children}</EntitlementContext.Provider>
+  return (
+    <EntitlementContext.Provider value={value}>
+      <RefreshContext.Provider value={refreshEntitlement}>
+        {children}
+      </RefreshContext.Provider>
+    </EntitlementContext.Provider>
+  )
 }
 
 export function useEntitlement(): Entitlement {
@@ -89,4 +104,14 @@ export function useTier(): Tier {
 export function useIsAuthenticated(): boolean {
   const state = useContext(EntitlementContext)
   return state.isAuthenticated
+}
+
+export function useRefreshEntitlement(): () => void {
+  const refresh = useContext(RefreshContext)
+  if (!refresh) {
+    return () => {
+      console.warn('useRefreshEntitlement called outside EntitlementProvider')
+    }
+  }
+  return refresh
 }

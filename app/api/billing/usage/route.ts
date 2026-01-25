@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUsageForPeriod } from '@/lib/budget';
 import { getEntitlementForUser } from '@/lib/billing';
+import { getAuthContext } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.cookies.get('lichess_user_id')?.value ?? null;
+    const authContext = getAuthContext(request);
+    const userId = authContext?.userId ?? null;
     
     if (!userId) {
       return NextResponse.json(

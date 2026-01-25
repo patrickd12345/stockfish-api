@@ -9,6 +9,7 @@ import BlunderDnaTab from '@/components/BlunderDnaTab'
 import TrainingTab from '@/components/TrainingTab'
 import EngineCoverageWidget from '@/components/EngineCoverageWidget'
 import ParametersTab from '@/components/ParametersTab'
+import AuthButton from '@/components/AuthButton'
 import { useRouter } from 'next/navigation'
 
 export type HomeTab = 'chat' | 'replay' | 'openings' | 'lichess' | 'dna' | 'training' | 'params'
@@ -92,6 +93,7 @@ export default function DesktopHome({
 
           <div className="flex items-center gap-4 flex-wrap justify-end">
             <div className="flex items-center gap-2">
+              <AuthButton />
               <button
                 type="button"
                 onClick={() => router.push('/account')}

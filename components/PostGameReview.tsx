@@ -16,7 +16,8 @@ export default function PostGameReview({
   myColor,
   status,
   winner,
-  opponentName
+  opponentName,
+  lichessGameId
 }: {
   fen: string
   moves: string
@@ -24,12 +25,16 @@ export default function PostGameReview({
   status: string
   winner?: 'white' | 'black'
   opponentName?: string | null
+  lichessGameId?: string | null
 }) {
   const { state: engineState, startAnalysis } = useStockfish({ depth: 18, lines: 1 })
   const { tone } = useAgentTone()
   const [review, setReview] = useState<string>('')
   const [source, setSource] = useState<'llm' | 'fallback'>('fallback')
   const [loading, setLoading] = useState<boolean>(true)
+  const [creatingDrill, setCreatingDrill] = useState<boolean>(false)
+  const [drillCreated, setDrillCreated] = useState<boolean>(false)
+  const [drillError, setDrillError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const evalLabel = useMemo(
@@ -99,6 +104,49 @@ export default function PostGameReview({
     winner
   ])
 
+  const handleCreateDrill = async () => {
+    if (!lichessGameId || !review || !fen || !moves) {
+      setDrillError('Missing game information')
+      return
+    }
+
+    setCreatingDrill(true)
+    setDrillError(null)
+
+    try {
+      const res = await fetch('/api/blunder-dna/create-drill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lichessGameId,
+          fen,
+          moves,
+          myColor,
+          review,
+          evaluation: engineState.evaluation,
+          bestMove: engineState.bestMove,
+          bestLine: engineState.bestLine,
+          depth: engineState.depth
+        })
+      })
+
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to create drill')
+      }
+
+      setDrillCreated(true)
+      // Refresh the daily drills queue
+      setTimeout(() => {
+        window.location.reload()
+      }, 1500)
+    } catch (err: any) {
+      setDrillError(err.message || 'Failed to create drill')
+    } finally {
+      setCreatingDrill(false)
+    }
+  }
+
   const title = 'Post-game review'
   const subtitle = source === 'llm' ? 'LLM coach + Stockfish' : `Stockfish depth ${engineState.depth}`
 
@@ -123,6 +171,31 @@ export default function PostGameReview({
           <div className="text-sage-500">No review available.</div>
         )}
       </div>
+
+      {review && lichessGameId && !loading && (
+        <div className="mt-4 pt-4 border-t border-white/5 flex flex-col gap-2">
+          {drillCreated ? (
+            <div className="text-xs text-emerald-400 font-medium">
+              ✓ Drill created! Check the Blunder DNA tab to practice it.
+            </div>
+          ) : drillError ? (
+            <div className="text-xs text-rose-400">{drillError}</div>
+          ) : (
+            <>
+              <button
+                onClick={handleCreateDrill}
+                disabled={creatingDrill}
+                className="btn-secondary text-xs py-2 px-3 bg-terracotta/20 hover:bg-terracotta/30 border-terracotta/50 text-terracotta-light disabled:opacity-50"
+              >
+                {creatingDrill ? 'Creating drill...' : '📚 Create Drill from Review'}
+              </button>
+              <div className="text-[10px] text-sage-500">
+                This will add a practice drill to your Blunder DNA training based on this game.
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

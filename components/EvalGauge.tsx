@@ -31,12 +31,14 @@ export default function EvalGauge({
   evaluationCp,
   mate,
   height = 14,
-  showLabel = true
+  showLabel = true,
+  myColor
 }: {
   evaluationCp: number | null
   mate: number | null
   height?: number
   showLabel?: boolean
+  myColor?: 'white' | 'black' | null
 }) {
   const percent = useMemo(() => evalToPercent(evaluationCp, mate), [evaluationCp, mate])
   const label = useMemo(() => formatEvalLabel(evaluationCp, mate), [evaluationCp, mate])
@@ -57,10 +59,13 @@ export default function EvalGauge({
     return `+${pawns}`
   }, [evaluationCp, mate])
 
+  // When playing as Black, flip the bar horizontally
+  const shouldFlip = myColor === 'black'
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', transform: shouldFlip ? 'scaleX(-1)' : undefined }}>
       {showLabel ? (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5f5' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#cbd5f5', transform: shouldFlip ? 'scaleX(-1)' : undefined }}>
           <div style={{ fontWeight: 700 }}>{favored} ahead {advantageLabel}</div>
           <div style={{ fontFamily: 'monospace', opacity: 0.95 }}>{label}</div>
         </div>
@@ -68,6 +73,7 @@ export default function EvalGauge({
 
       <div
         aria-label="Evaluation gauge"
+        key={`eval-${evaluationCp}-${mate}`}
         style={{
           height,
           width: '100%',
@@ -85,7 +91,8 @@ export default function EvalGauge({
             left: 0,
             height: '100%',
             width: `${percent}%`,
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(226,232,240,0.92))'
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.98), rgba(226,232,240,0.92))',
+            transition: 'width 0.2s ease-out'
           }}
         />
         <div
@@ -95,7 +102,8 @@ export default function EvalGauge({
             right: 0,
             height: '100%',
             width: `${100 - percent}%`,
-            background: 'linear-gradient(90deg, rgba(17,24,39,0.92), rgba(2,6,23,0.98))'
+            background: 'linear-gradient(90deg, rgba(17,24,39,0.92), rgba(2,6,23,0.98))',
+            transition: 'width 0.2s ease-out'
           }}
         />
         {/* Center tick */}

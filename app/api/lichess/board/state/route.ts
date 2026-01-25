@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getActiveGameState } from '@/lib/lichess/sessionManager'
 import { startBoardSession } from '@/lib/lichess/sessionService'
+import { getStreamHandler } from '@/lib/lichess/streamRegistry'
 import { requireLichessLiveAccess, LichessAccessError } from '@/lib/lichess/featureAccess'
 
 export const runtime = 'nodejs'
@@ -21,31 +22,45 @@ export async function GET(request: NextRequest) {
 
   // Best-effort: ensure the background stream is running whenever we poll state.
   // We don't await this to keep the polling route fast.
-  startBoardSession(lichessUserId).catch((err) => {
-    console.warn('[Lichess State] Failed to auto-start board session:', err)
-  })
-
-  const state = await getActiveGameState(lichessUserId)
-  if (!state) {
-    return NextResponse.json(null, { status: 200 })
+  // Only start if handler doesn't exist (avoid excessive logging)
+  const existingHandler = getStreamHandler(lichessUserId)
+  if (!existingHandler) {
+    startBoardSession(lichessUserId).catch((err) => {
+      console.warn('[Lichess State] Failed to auto-start board session:', err)
+    })
   }
 
-  return NextResponse.json({
-    gameId: state.gameId,
-    fen: state.fen,
-    moves: state.moves,
-    status: state.status,
-    wtime: state.wtime,
-    btime: state.btime,
-    winc: state.winc,
-    binc: state.binc,
-    winner: state.winner,
-    myColor: state.myColor,
-    opponentName: state.opponentName,
-    opponentRating: state.opponentRating,
-    initialTimeMs: state.initialTimeMs,
-    initialIncrementMs: state.initialIncrementMs,
-    chatMessages: state.chatMessages,
-    lastClockUpdateAt: state.lastClockUpdateAt ? state.lastClockUpdateAt.toISOString() : null
-  })
+  try {
+    const state = await getActiveGameState(lichessUserId)
+    if (!state) {
+      return NextResponse.json(null, { status: 200 })
+    }
+
+    return NextResponse.json({
+      gameId: state.gameId,
+      fen: state.fen,
+      moves: state.moves,
+      status: state.status,
+      wtime: state.wtime,
+      btime: state.btime,
+      winc: state.winc,
+      binc: state.binc,
+      winner: state.winner,
+      myColor: state.myColor,
+      opponentName: state.opponentName,
+      opponentRating: state.opponentRating,
+      initialTimeMs: state.initialTimeMs,
+      initialIncrementMs: state.initialIncrementMs,
+      chatMessages: state.chatMessages?.map(msg => ({
+        username: msg.username,
+        text: msg.text,
+        room: msg.room,
+        receivedAt: msg.receivedAt instanceof Date ? msg.receivedAt.toISOString() : msg.receivedAt
+      })) || [],
+      lastClockUpdateAt: state.lastClockUpdateAt ? state.lastClockUpdateAt.toISOString() : null
+    })
+  } catch (error: any) {
+    console.error('[Lichess State] Error fetching game state:', error)
+    return NextResponse.json({ error: error.message || 'Failed to fetch game state' }, { status: 500 })
+  }
 }

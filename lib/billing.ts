@@ -7,6 +7,11 @@ import { getRuntimeCapabilitiesSync } from './runtimeCapabilities';
 // We use a getter to ensure env vars are loaded/validated when needed
 let stripeInstance: Stripe | null = null;
 let warnedMissingEntitlementsTable = false;
+// Use a global flag that persists across module reloads
+declare global {
+  // eslint-disable-next-line no-var
+  var __devEntitlementLogged: boolean | undefined;
+}
 
 export function getStripe() {
   if (!stripeInstance) {
@@ -95,7 +100,9 @@ export async function getEntitlementForUser(userId: string): Promise<Entitlement
     
     // Only grant PRO if local DB is available (ensures we're not hitting hosted quotas)
     if (capabilities.localDb) {
-      if (process.env.NODE_ENV === 'development') {
+      // Only log once per process to reduce verbosity (using global to persist across module reloads)
+      if (!global.__devEntitlementLogged && process.env.NODE_ENV === 'development') {
+        global.__devEntitlementLogged = true
         console.log('[Dev Entitlement] Override active: granting PRO access for local dev')
       }
       return {
@@ -104,7 +111,8 @@ export async function getEntitlementForUser(userId: string): Promise<Entitlement
         current_period_end: null,
         cancel_at_period_end: false,
       }
-    } else if (process.env.NODE_ENV === 'development') {
+    } else if (process.env.NODE_ENV === 'development' && !global.__devEntitlementLogged) {
+      global.__devEntitlementLogged = true
       console.warn('[Dev Entitlement] Override skipped: localDb capability not available (hosted DB detected)')
     }
   }

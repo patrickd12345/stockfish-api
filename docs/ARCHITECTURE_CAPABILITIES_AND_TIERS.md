@@ -56,6 +56,7 @@ Tier policy: `lib/tierPolicy.ts`
 | `engine_analysis` | `serverExecution`, `database`, `persistence` | `PRO` |
 | `batch_analysis` | `serverExecution`, `database`, `persistence` | `PRO` |
 | `blunder_dna` | `serverExecution`, `database`, `persistence` | `PRO` |
+| `blunder_dna_create_drill` | `serverExecution`, `database`, `persistence` | `PRO` (inherits from `blunder_dna`) |
 | `deep_analysis` | `serverExecution`, `database`, `persistence` | `PRO` |
 | `unlimited_analysis` | `serverExecution`, `database`, `persistence` | `PRO` |
 | `engine_coverage` | `serverExecution`, `database` | `ANON`, `FREE`, `PRO` |

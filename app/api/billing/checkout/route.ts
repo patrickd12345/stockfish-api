@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/billing';
+import { getAuthContext } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -19,8 +20,8 @@ function parseMissingBillingEnvVars(error: unknown): string[] | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const lichessUserId = request.cookies.get('lichess_user_id')?.value;
-    if (!lichessUserId) {
+    const authContext = getAuthContext(request);
+    if (!authContext?.userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid interval' }, { status: 400 });
     }
 
-    const { url } = await createCheckoutSession(lichessUserId, interval);
+    const { url } = await createCheckoutSession(authContext.userId, interval);
 
     return NextResponse.json({ url });
   } catch (error: any) {

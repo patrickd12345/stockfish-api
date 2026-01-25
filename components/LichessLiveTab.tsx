@@ -211,6 +211,22 @@ function ServerLichessLiveTab() {
   const [seeking, setSeeking] = useState(false)
   const seekAbortRef = useRef<AbortController | null>(null)
   const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null)
+  
+  // Wrap setSeeking to track when it's set to false
+  const setSeekingWithLog = useCallback((value: boolean, reason: string) => {
+    if (value === false) {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:211',message:'setSeeking(false) called',data:{reason,stack:new Error().stack?.split('\n').slice(1,6).join('|')},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
+    }
+    setSeeking(value)
+  }, [])
+  
+  // #region agent log - track seeking state changes
+  useEffect(() => {
+    fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:211',message:'Seeking state changed',data:{seeking,stack:new Error().stack?.split('\n').slice(1,4).join('|')},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+  }, [seeking]);
+  // #endregion
   const [returningToLobby, setReturningToLobby] = useState(false)
   const [dismissedGameId, setDismissedGameId] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
@@ -263,6 +279,18 @@ function ServerLichessLiveTab() {
     if (liveGameState.status !== 'started' && liveGameState.status !== 'playing') return
     setPendingOpenChallengeId(null)
   }, [liveGameState?.gameId, liveGameState?.status])
+
+  // If a live game starts, reset seeking state (seek was successful, we're now in a game)
+  useEffect(() => {
+    if (!liveGameState?.gameId) return
+    if (liveGameState.status !== 'started' && liveGameState.status !== 'playing') return
+    if (seeking) {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:271',message:'Game started, resetting seeking',data:{gameId:liveGameState.gameId,status:liveGameState.status},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
+      setSeeking(false)
+    }
+  }, [liveGameState?.gameId, liveGameState?.status, seeking])
 
   const displayGame = useMemo(() => {
     if (!liveGameState) return null
@@ -377,11 +405,19 @@ function ServerLichessLiveTab() {
     const myId = (liveGameState.lichessUserId || '').toLowerCase()
     setOptimisticChatMessages((pending) =>
       pending.filter((p) => {
+        // Check if this optimistic message matches any confirmed message
+        // Match by text and room, and if it's from the user (by username or by matching user ID)
         const match = liveGameState.chatMessages?.some(
-          (m) =>
-            (m.username || '').toLowerCase() === myId &&
-            m.text === p.text &&
-            (m.room || 'player') === (p.room || 'player')
+          (m) => {
+            const mUsername = (m.username || '').toLowerCase()
+            const pUsername = (p.username || '').toLowerCase()
+            const isMyMessage = mUsername === myId || pUsername === myId || pUsername === 'me' || mUsername === pUsername
+            return (
+              isMyMessage &&
+              m.text === p.text &&
+              (m.room || 'player') === (p.room || 'player')
+            )
+          }
         )
         return !match
       })
@@ -494,6 +530,10 @@ function ServerLichessLiveTab() {
 
     setSeeking(true)
     setActionError(null)
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:503',message:'handleSeekMatch started',data:{seekTime,seekIncrement,seekRated,seekAny,ratingPayload},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+    // #endregion
 
     const controller = new AbortController()
     seekAbortRef.current = controller
@@ -511,32 +551,76 @@ function ServerLichessLiveTab() {
           ...ratingPayload,
         })
       })
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:522',message:'Seek API response received',data:{status:res.status,ok:res.ok,headers:Object.fromEntries(res.headers.entries())},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
       let data: any = {}
       try {
         data = await res.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:525',message:'Seek API response parsed',data:{data,success:data.success,error:data.error},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
       } catch {
-        data = { error: await res.text() }
+        const errorText = await res.text().catch(() => '')
+        data = { error: errorText }
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:527',message:'Seek API response parse failed',data:{errorText},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
       }
-      if (!res.ok) throw new Error(data.error || 'Failed to seek match')
-      if (typeof data?.mode === 'string' && data.mode === 'open_challenge' && typeof data?.challengeId === 'string') {
+      if (!res.ok) {
+        // Extract error message - handle both string and object formats
+        const errorMsg = typeof data.error === 'string' 
+          ? data.error 
+          : (data.error?.message || JSON.stringify(data.error) || 'Failed to seek match')
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:534',message:'Seek API error',data:{status:res.status,errorMsg},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
+        throw new Error(errorMsg)
+      }
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:536',message:'Seek API success',data:{data,mode:data.mode,challengeId:data.challengeId,gameId:data.gameId,stillSeeking:data.stillSeeking},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
+      if (typeof data?.gameId === 'string') {
+        // Match found synchronously! Update UI to show the game
+        console.log(`[Lichess Seek] Match found! Game ID: ${data.gameId}`)
+        setSeeking(false)
+        // The game state will be updated by the polling interval
+      } else if (data?.stillSeeking) {
+        // Still seeking - keep button in seeking state
+        // The button will stay as "Cancel Seeking" until a match is found or cancelled
+        console.log(`[Lichess Seek] Still seeking, waiting for match...`)
+      } else if (typeof data?.mode === 'string' && data.mode === 'open_challenge' && typeof data?.challengeId === 'string') {
         setPendingOpenChallengeId(data.challengeId)
       } else {
         setPendingOpenChallengeId(null)
       }
+      // Success: keep seeking=true so button shows "Cancel Seeking" (unless gameId was returned)
+      // Don't call refreshState() here - it will be called by the polling interval
     } catch (err) {
       // Aborting cancels the pending seek; don't surface as an error.
       if (err instanceof DOMException && err.name === 'AbortError') {
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:543',message:'Seek aborted',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+        // #endregion
         setSeeking(false)
         setActionError(null)
         return
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:548',message:'Seek error caught',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
       setActionError(err instanceof Error ? err.message : 'Failed to seek match')
       setSeeking(false)
+      // On error, refresh state to get latest board state
+      refreshState()
     } finally {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:551',message:'handleSeekMatch finally',data:{seeking,controllerMatches:seekAbortRef.current === controller},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
       if (seekAbortRef.current === controller) {
         seekAbortRef.current = null
       }
-      refreshState()
+      // Don't call refreshState() here - it's already called on error, and on success we want to keep seeking=true
     }
   }
 
@@ -759,9 +843,12 @@ function ServerLichessLiveTab() {
 
   useEffect(() => {
     if (isGameActive) {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'components/LichessLiveTab.tsx:827',message:'isGameActive useEffect resetting seeking',data:{isGameActive,displayGameStatus:displayGame?.status,gameId:displayGame?.gameId},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+      // #endregion
       setSeeking(false)
     }
-  }, [isGameActive])
+  }, [isGameActive, displayGame?.status, displayGame?.gameId])
 
   const turnColor = displayGame?.fen.split(' ')[1] === 'w' ? 'white' : 'black'
   const myColor = displayGame?.myColor ?? 'white'
@@ -1107,26 +1194,9 @@ function ServerLichessLiveTab() {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
           <div className="relative bg-[#1f1306] rounded-xl p-8 flex flex-col items-center justify-center gap-4 shadow-2xl border border-orange-900/30">
             {isPostGame ? (
-              <div className="w-full max-w-[500px] bg-amber-900/30 border border-amber-700/50 text-amber-200 px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-between gap-3">
+              <div className="w-full max-w-[500px] bg-amber-900/30 border border-amber-700/50 text-amber-200 px-4 py-2 rounded-lg text-sm font-semibold">
                 <div className="min-w-0 truncate">
                   Game over: {formatStatus(displayGame!.status)} vs {displayGame!.opponentName || 'Opponent'}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await fetch('/api/lichess/board/session/clear-active', { method: 'POST' })
-                      } finally {
-                        refreshState()
-                      }
-                    }}
-                    className="text-amber-300 hover:text-white"
-                  >
-                    Back to lobby
-                  </button>
-                  <button onClick={() => refreshState()} className="text-amber-300 hover:text-white">
-                    Refresh
-                  </button>
                 </div>
               </div>
             ) : null}
@@ -1300,19 +1370,40 @@ function ServerLichessLiveTab() {
             </div>
 
             <div className="bg-sage-900/40 rounded-xl p-4 border border-white/5 flex flex-col h-56">
-              <h4 className="text-xs font-bold text-sage-400 mb-2 uppercase tracking-wider">Chat</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-sage-400 uppercase tracking-wider">Chat</h4>
+                {liveGameState?.gameId && (
+                  <div className="text-[10px] text-sage-500">
+                    {liveGameState.chatMessages && liveGameState.chatMessages.length > 0 
+                      ? `${liveGameState.chatMessages.length} message${liveGameState.chatMessages.length !== 1 ? 's' : ''}`
+                      : 'No messages'}
+                  </div>
+                )}
+              </div>
               <div ref={chatScrollRef} className="flex-1 bg-sage-950/30 rounded-lg p-2 overflow-y-auto border border-white/5 mb-2 flex flex-col gap-2">
-                {((displayGame!.chatMessages && displayGame!.chatMessages.length > 0) || optimisticChatMessages.length > 0) ? (
-                  [...(displayGame!.chatMessages || []), ...optimisticChatMessages].map((msg: any, i) => {
-                    const isMe = (msg.username || '').toLowerCase() === (displayGame!.lichessUserId || '').toLowerCase()
+                {((displayGame?.chatMessages && displayGame.chatMessages.length > 0) || optimisticChatMessages.length > 0) ? (() => {
+                  const allMessages = [...(displayGame?.chatMessages || []), ...optimisticChatMessages]
+                  const myId = (displayGame?.lichessUserId || liveGameState?.lichessUserId || '').toLowerCase()
+                  
+                  // Deduplicate messages: if a message from chatMessages matches an optimistic one, remove the optimistic
+                  const seen = new Set<string>()
+                  const deduplicated = allMessages.filter((msg: any) => {
+                    const key = `${(msg.username || '').toLowerCase()}:${msg.text}:${msg.room || 'player'}`
+                    if (seen.has(key)) return false
+                    seen.add(key)
+                    return true
+                  })
+                  
+                  return deduplicated.map((msg: any, i) => {
+                    const isMe = (msg.username || '').toLowerCase() === myId || msg.username === 'me'
                     return (
-                      <div key={i} className={`max-w-[90%] px-2 py-1.5 rounded-lg text-xs ${isMe ? 'self-end bg-terracotta/20 text-terracotta-light border border-terracotta/30' : 'self-start bg-sage-800 text-sage-300 border border-sage-700'}`}>
+                      <div key={`${msg.username}-${msg.text}-${i}`} className={`max-w-[90%] px-2 py-1.5 rounded-lg text-xs ${isMe ? 'self-end bg-terracotta/20 text-terracotta-light border border-terracotta/30' : 'self-start bg-sage-800 text-sage-300 border border-sage-700'}`}>
                         <span className="font-bold mr-1 opacity-70">{msg.username}:</span>
                         {msg.text}
                       </div>
                     )
                   })
-                ) : (
+                })() : (
                   <div className="h-full flex items-center justify-center text-sage-600 italic text-xs">
                     No messages yet
                   </div>
@@ -1348,6 +1439,7 @@ function ServerLichessLiveTab() {
                   status={isPostGame ? String(displayGame!.status ?? '') : null}
                   winner={displayGame!.winner ?? null}
                   opponentName={displayGame!.opponentName ?? null}
+                  lichessGameId={displayGame!.gameId ?? null}
                 />
               </div>
             </div>
