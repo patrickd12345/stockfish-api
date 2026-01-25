@@ -6,6 +6,7 @@ import EvalGauge from '@/components/EvalGauge'
 import FeatureGate from '@/components/FeatureGate'
 import BlunderDnaReport from '@/components/BlunderDnaReport'
 import { BlunderTheme, GamePhase } from '@/lib/blunderDnaV1'
+import { useAgentTone } from '@/hooks/useAgentTone'
 
 type PatternTag =
   | 'hanging_piece'
@@ -85,8 +86,10 @@ export default function BlunderDnaTab() {
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<DailyDrillsResponse | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
-  const [lastAttemptResult, setLastAttemptResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [lastAttemptResult, setLastAttemptResult] = useState<{ ok: boolean; message: string; commentary?: string } | null>(null)
+  const [commentaryLoading, setCommentaryLoading] = useState(false)
   const didAutoAnalyzeRef = useRef(false)
+  const { tone } = useAgentTone()
 
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [shareLoading, setShareLoading] = useState(false)
@@ -222,7 +225,9 @@ export default function BlunderDnaTab() {
           ? { ok: true, message: 'Correct.' }
           : { ok: false, message: `Not quite. Best was ${activeDrill.bestMove}. PV: ${activeDrill.pv}` }
       )
+      setCommentaryLoading(true)
 
+      // Record the attempt
       fetch('/api/blunder-dna/attempt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,15 +238,51 @@ export default function BlunderDnaTab() {
         }),
       }).catch(() => null)
 
+      // Fetch commentary
+      try {
+        const commentaryRes = await fetch('/api/blunder-dna/drill-commentary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            drillId: activeDrill.drillId,
+            fen: activeDrill.fen,
+            sideToMove: activeDrill.sideToMove,
+            userMove,
+            bestMove: activeDrill.bestMove,
+            pv: activeDrill.pv,
+            evalBefore: activeDrill.evalBefore,
+            evalAfter: activeDrill.evalAfter,
+            patternTag: activeDrill.patternTag,
+            myMove: activeDrill.myMove,
+            ok,
+            tone,
+          }),
+        })
+        
+        if (commentaryRes.ok) {
+          const commentaryJson = await commentaryRes.json().catch(() => ({} as any))
+          const commentary = typeof commentaryJson.commentary === 'string' ? commentaryJson.commentary : null
+          if (commentary) {
+            setLastAttemptResult((prev) => prev ? { ...prev, commentary } : null)
+          }
+        }
+      } catch (error) {
+        // Silently fail - commentary is optional
+        console.warn('[Blunder DNA] Failed to fetch commentary:', error)
+      } finally {
+        setCommentaryLoading(false)
+      }
+
       if (ok) {
         setTimeout(() => {
             setActiveIdx((i) => Math.min((filteredDrills.length ?? 1) - 1, i + 1))
             setLastAttemptResult(null) // Clear result after moving
-        }, 800)
+            setCommentaryLoading(false)
+        }, 3000) // Longer delay to allow reading commentary
       }
       return ok
     },
-    [activeDrill, filteredDrills.length]
+    [activeDrill, filteredDrills.length, tone]
   )
 
   const handleCreateShare = useCallback(async () => {
@@ -447,14 +488,26 @@ export default function BlunderDnaTab() {
               </div>
 
               {lastAttemptResult ? (
-                <div
-                  className={`px-4 py-3 rounded-lg border text-sm font-semibold transition-all ${
-                      lastAttemptResult.ok
-                      ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
-                      : 'bg-rose-900/30 border-rose-700 text-rose-300'
-                  }`}
-                >
-                  {lastAttemptResult.message}
+                <div className="flex flex-col gap-3">
+                  <div
+                    className={`px-4 py-3 rounded-lg border text-sm font-semibold transition-all ${
+                        lastAttemptResult.ok
+                        ? 'bg-emerald-900/30 border-emerald-700 text-emerald-300'
+                        : 'bg-rose-900/30 border-rose-700 text-rose-300'
+                    }`}
+                  >
+                    {lastAttemptResult.message}
+                  </div>
+                  {commentaryLoading && (
+                    <div className="px-4 py-3 rounded-lg border border-sage-700 bg-sage-800/40 text-sage-400 text-sm italic">
+                      Generating commentary...
+                    </div>
+                  )}
+                  {lastAttemptResult.commentary && !commentaryLoading && (
+                    <div className="px-4 py-3 rounded-lg border border-sage-700 bg-sage-800/60 text-sage-200 text-sm leading-relaxed">
+                      {lastAttemptResult.commentary}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sage-400 text-sm italic text-center py-2">

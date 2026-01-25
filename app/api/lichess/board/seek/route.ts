@@ -126,6 +126,11 @@ export async function POST(request: NextRequest) {
 
     const body: SeekRequest = await request.json().catch(() => ({}))
     
+    // Extract request parameters early
+    const rated = body.rated ?? false
+    const variant = body.variant ?? 'standard'
+    const color = body.color ?? 'random'
+    
     // Lichess API expects time in minutes for this endpoint.
     // If "any" is chosen, prefer a very common time control to maximize match speed.
     const fallbackTime = 10
@@ -133,60 +138,91 @@ export async function POST(request: NextRequest) {
     let time = body.any ? fallbackTime : (body.time ?? fallbackTime)
     let increment = body.any ? fallbackIncrement : (body.increment ?? fallbackIncrement)
     
+    // Define doOpenChallenge early so it can be used for Blitz/Bullet
+    const doOpenChallenge = async (
+      clockMinutes: number, 
+      clockIncrementSeconds: number, 
+      ratedParam?: boolean, 
+      variantParam?: string, 
+      colorParam?: string
+    ) => {
+      // Open challenge supports all time controls (Bullet, Blitz, Rapid, Classical).
+      // It creates a lobby challenge that anyone can accept.
+      const clockLimitSeconds = Math.max(60, Math.min(10800, Math.trunc(clockMinutes) * 60))
+      const incSeconds = Math.max(0, Math.min(180, Math.trunc(clockIncrementSeconds)))
+      const ratedValue = ratedParam ?? rated
+      const variantValue = variantParam ?? variant
+      const colorValue = colorParam ?? color
+
+      const openPayload = new URLSearchParams()
+      openPayload.append('rated', ratedValue.toString())
+      openPayload.append('clock.limit', String(clockLimitSeconds))
+      openPayload.append('clock.increment', String(incSeconds))
+      if (variantValue && variantValue !== 'standard') openPayload.append('variant', variantValue)
+      if (colorValue && colorValue !== 'random') openPayload.append('color', colorValue)
+
+      console.log(`[Lichess Seek] Using /api/challenge/open: ${openPayload.toString()}`)
+
+      const response = await lichessFetch('/api/challenge/open', {
+        method: 'POST',
+        token: stored.token.accessToken,
+        signal: request.signal,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: openPayload.toString(),
+      })
+
+      // Lichess returns JSON for /api/challenge/open
+      const json = (await response.json().catch(() => null)) as any
+      const challengeId = typeof json?.challenge?.id === 'string' ? json.challenge.id : null
+      return { challengeId, raw: json }
+    }
+    
+    // Check if this is a Blitz/Bullet time control
     // Lichess /api/board/seek ONLY supports Rapid and Classical time controls.
-    // Blitz and Bullet are NOT supported. We normalize Blitz/Bullet to Rapid equivalents.
-    const VALID_PRESETS = [
-      { time: 10, increment: 0 },  // Rapid
-      { time: 10, increment: 5 },   // Rapid
-      { time: 15, increment: 10 },  // Rapid
-      { time: 30, increment: 0 },    // Classical
-      { time: 30, increment: 20 },  // Classical
-    ]
+    // For Blitz/Bullet, we must use /api/challenge/open instead to preserve the exact time control.
+    const perfKey = resolvePerfKey(time, increment)
+    const isBlitzOrBullet = perfKey === 'bullet' || perfKey === 'blitz'
     
-    // Normalize to nearest valid preset if the exact combination isn't in our list
-    // This converts Blitz/Bullet to Rapid equivalents
-    const normalizeToPreset = (t: number, inc: number): { time: number; increment: number } => {
-      // Check if exact match exists
-      const exactMatch = VALID_PRESETS.find(p => p.time === t && p.increment === inc)
-      if (exactMatch) return exactMatch
+    // If it's Blitz/Bullet, use open challenge API directly (preserves exact time control)
+    if (isBlitzOrBullet) {
+      console.log(`[Lichess Seek] ${perfKey} time control (${time}+${increment}) detected - using open challenge API to preserve exact time control`)
       
-      // Find closest preset by total time
-      const totalMinutes = t + inc / 60
-      let closest = VALID_PRESETS[0]
-      let minDiff = Math.abs(totalMinutes - (closest.time + closest.increment / 60))
-      
-      for (const preset of VALID_PRESETS) {
-        const diff = Math.abs(totalMinutes - (preset.time + preset.increment / 60))
-        if (diff < minDiff) {
-          minDiff = diff
-          closest = preset
+      try {
+        const opened = await doOpenChallenge(time, increment, rated, variant, color)
+        if (opened?.challengeId) {
+          return NextResponse.json({
+            success: true,
+            mode: 'open_challenge',
+            challengeId: opened.challengeId,
+            message: `Seeking ${perfKey} match (${time}+${increment})...`,
+          })
         }
+      } catch (openErr: any) {
+        if (openErr instanceof LichessApiError && openErr.status === 403 && isMissingChallengeWriteScope(openErr.payload)) {
+          return NextResponse.json(
+            {
+              error:
+                'Lichess token is missing scope challenge:write. Disconnect + Reconnect Lichess to enable Blitz/Bullet matching.',
+            },
+            { status: 403 }
+          )
+        }
+        console.warn('[Lichess Seek] Open challenge failed for Blitz/Bullet:', openErr)
+        return NextResponse.json({ 
+          error: `Failed to create ${perfKey} challenge: ${openErr.message || 'Unknown error'}` 
+        }, { status: openErr.status || 500 })
       }
-      return closest
     }
     
-    // Normalize the time control to a valid Rapid/Classical preset
-    // This converts Blitz (3+0, 5+0) and Bullet (1+0, 2+1) to Rapid (10+0, 10+5)
-    const normalized = normalizeToPreset(time, increment)
-    const originalTime = time
-    const originalIncrement = increment
-    time = normalized.time
-    increment = normalized.increment
-    
-    // Log if we converted Blitz/Bullet to Rapid
-    const perfKey = resolvePerfKey(originalTime, originalIncrement)
-    if (perfKey === 'bullet' || perfKey === 'blitz') {
-      console.log(`[Lichess Seek] Converted ${perfKey} ${originalTime}+${originalIncrement} to Rapid ${time}+${increment} (Lichess board API only supports Rapid/Classical)`)
-    }
+    // For Rapid/Classical, use board seek API directly with the exact time control requested
+    // No normalization - pass through exactly what the user selected
     
     // Lichess /api/board/seek expects time in MINUTES (not seconds).
     // The API documentation indicates time should be in minutes.
     const timeMinutes = Math.max(1, Math.min(180, Math.trunc(time)))
     const incrementSeconds = Math.max(0, Math.min(60, Math.trunc(increment)))
-    
-    const rated = body.rated ?? false
-    const variant = body.variant ?? 'standard'
-    const color = body.color ?? 'random'
 
     // Lichess seek endpoint expects form data
     const formData = new URLSearchParams()
@@ -237,7 +273,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Lichess Seek] Payload: ${formData.toString()}`)
     
     // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:212',message:'Seek request received',data:{originalTime,originalIncrement,timeMinutes,incrementSecondsInput:increment,incrementSeconds,rated,variant,color,normalized:originalTime!==time||originalIncrement!==increment},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7244/ingest/88284da5-0467-44ea-a88f-d6e865b71aa7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/lichess/board/seek/route.ts:212',message:'Seek request received',data:{time,increment,timeMinutes,incrementSeconds,rated,variant,color},timestamp:Date.now(),sessionId:'debug-session',runId:'debug-test'})}).catch(()=>{});
     // #endregion
 
     const doSeek = async (payload: URLSearchParams, retryCount: number = 0): Promise<string> => {
@@ -290,37 +326,6 @@ export async function POST(request: NextRequest) {
         throw new LichessApiError(`Seek failed: ${status}`, status, result)
       }
       return result
-    }
-
-    const doOpenChallenge = async (clockMinutes: number, clockIncrementSeconds: number) => {
-      // Open challenge is a reliable fallback when /api/board/seek rejects parameters.
-      // It creates a lobby challenge that anyone can accept.
-      const clockLimitSeconds = Math.max(60, Math.min(10800, Math.trunc(clockMinutes) * 60))
-      const incSeconds = Math.max(0, Math.min(180, Math.trunc(clockIncrementSeconds)))
-
-      const openPayload = new URLSearchParams()
-      openPayload.append('rated', rated.toString())
-      openPayload.append('clock.limit', String(clockLimitSeconds))
-      openPayload.append('clock.increment', String(incSeconds))
-      if (variant && variant !== 'standard') openPayload.append('variant', variant)
-      if (color && color !== 'random') openPayload.append('color', color)
-
-      console.warn(`[Lichess Seek] Falling back to /api/challenge/open: ${openPayload.toString()}`)
-
-      const response = await lichessFetch('/api/challenge/open', {
-        method: 'POST',
-        token: stored.token.accessToken,
-        signal: request.signal,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: openPayload.toString(),
-      })
-
-      // Lichess returns JSON for /api/challenge/open
-      const json = (await response.json().catch(() => null)) as any
-      const challengeId = typeof json?.challenge?.id === 'string' ? json.challenge.id : null
-      return { challengeId, raw: json }
     }
 
     try {

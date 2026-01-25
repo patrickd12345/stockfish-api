@@ -1,5 +1,6 @@
 import { getSql } from './database';
 import { getEntitlementForUser, type Entitlement } from './billing';
+import { getRuntimeCapabilitiesSync } from './runtimeCapabilities';
 
 // Default budget limits (configurable via env)
 const PRO_MONTHLY_CPU_MS_LIMIT = parseInt(
@@ -66,6 +67,22 @@ export async function checkAndIncrementBudget(
       remaining: 0,
       error: 'Pro subscription required for server-side analysis',
     };
+  }
+  
+  // DEV BUDGET OVERRIDE: Bypass budget checks in development with local DB
+  // This allows unlimited compute for local development without affecting production
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_ENTITLEMENT === 'PRO'
+  ) {
+    const capabilities = getRuntimeCapabilitiesSync();
+    if (capabilities.localDb) {
+      // Always allow in dev mode with local DB - no budget restrictions
+      return {
+        allowed: true,
+        remaining: PRO_MONTHLY_CPU_MS_LIMIT, // Return full limit for UI display
+      };
+    }
   }
   
   const billingPeriodStart = getBillingPeriodStart(entitlement);
@@ -179,6 +196,25 @@ export async function getUsageForPeriod(userId: string): Promise<{
   const sql = getSql();
   
   const entitlement = await getEntitlementForUser(userId);
+  
+  // DEV BUDGET OVERRIDE: Return unlimited budget in development with local DB
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_ENTITLEMENT === 'PRO'
+  ) {
+    const capabilities = getRuntimeCapabilitiesSync();
+    if (capabilities.localDb) {
+      return {
+        cpuMsUsed: 0,
+        cpuMsLimit: PRO_MONTHLY_CPU_MS_LIMIT,
+        jobsCount: 0,
+        jobsLimit: PRO_MONTHLY_JOBS_LIMIT,
+        remaining: PRO_MONTHLY_CPU_MS_LIMIT, // Show full budget available
+        periodStart: getBillingPeriodStart(entitlement),
+      };
+    }
+  }
+  
   const billingPeriodStart = getBillingPeriodStart(entitlement);
   
   const rows = await sql`
