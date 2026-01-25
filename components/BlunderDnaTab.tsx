@@ -499,12 +499,12 @@ export default function BlunderDnaTab() {
                     {lastAttemptResult.message}
                   </div>
                   {commentaryLoading && (
-                    <div className="px-4 py-3 rounded-lg border border-sage-700 bg-sage-800/40 text-sage-400 text-sm italic">
+                    <div className="px-4 py-3 rounded-lg bg-sage-800/40 text-sage-400 text-sm italic">
                       Generating commentary...
                     </div>
                   )}
                   {lastAttemptResult.commentary && !commentaryLoading && (
-                    <div className="px-4 py-3 rounded-lg border border-sage-700 bg-sage-800/60 text-sage-200 text-sm leading-relaxed">
+                    <div className="px-4 py-3 rounded-lg bg-sage-800/60 text-sage-200 text-sm leading-relaxed">
                       {lastAttemptResult.commentary}
                     </div>
                   )}
