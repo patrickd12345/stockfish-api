@@ -26,7 +26,9 @@ export async function requireLichessLiveAccess(request: NextRequest): Promise<st
   }
 
   try {
-    await requireFeatureForUser('lichess_live', { userId: lichessUserId })
+    // Gate on the authenticated app user (entitlements are keyed by app identity),
+    // while still requiring a connected Lichess account via cookie.
+    await requireFeatureForUser('lichess_live', { userId: authContext.userId })
   } catch (error: any) {
     if (error instanceof FeatureAccessError) {
       throw new LichessAccessError(error.message, 403)

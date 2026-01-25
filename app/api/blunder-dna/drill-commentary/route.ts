@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { normalizeAgentTone } from '@/lib/agentTone'
 import { callLlm } from '@/lib/llmHelper'
 import { PATTERN_TAXONOMY_V1 } from '@/lib/blunderDna'
+import { uciToSan } from '@/lib/chessNotation'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -56,6 +57,10 @@ export async function POST(request: NextRequest) {
   const evalBeforeLabel = formatEval(evalBefore)
   const evalAfterLabel = formatEval(evalAfter)
   
+  // Convert UCI moves to algebraic notation for display
+  const userMoveSan = uciToSan(userMove, fen)
+  const bestMoveSan = uciToSan(bestMove, fen)
+  
   const systemPrompt =
     'You are a chess coach reviewing a drill attempt. The user tried to find the best move in a position.\n' +
     `- The player to move is: ${sideToMove}.\n` +
@@ -65,9 +70,9 @@ export async function POST(request: NextRequest) {
     '  - empathic: supportive, encouraging, never patronizing.\n' +
     '  - jockey: playful hype + light banter (never rude).\n' +
     '  - sarcastic: dry witty humor (never mean-spirited).\n' +
-    `- The user attempted move: ${userMove}.\n` +
+    `- The user attempted move: ${userMoveSan}.\n` +
     `- This was ${ok ? 'CORRECT' : 'INCORRECT'}.\n` +
-    `- The best move is: ${bestMove}.\n` +
+    `- The best move is: ${bestMoveSan}.\n` +
     `- Pattern type: ${patternLabel} (${patternDescription}).\n` +
     '- Stockfish evaluation is in centipawns from White POV (positive = White better).\n' +
     '- Your task:\n' +
@@ -78,7 +83,8 @@ export async function POST(request: NextRequest) {
     '  5. Provide a brief tactical or positional insight.\n' +
     '- Keep it concise: 2-4 sentences.\n' +
     '- Do NOT dump engine lines verbatim; interpret them in plain language.\n' +
-    '- Focus on learning: help the user understand the position better.\n'
+    '- Focus on learning: help the user understand the position better.\n' +
+    '- Always use algebraic notation (e.g., "c5", "Nf3", "O-O") when referring to moves, never UCI notation.\n'
   
   const userPrompt = JSON.stringify(
     {
@@ -87,8 +93,8 @@ export async function POST(request: NextRequest) {
         sideToMove,
       },
       attempt: {
-        userMove,
-        bestMove,
+        userMove: userMoveSan,
+        bestMove: bestMoveSan,
         correct: ok,
       },
       evaluation: {
@@ -111,7 +117,7 @@ export async function POST(request: NextRequest) {
     2
   )
   
-  const fallback = fallbackCommentary({ userMove, bestMove, ok, patternTag, evalBefore, evalAfter })
+  const fallback = fallbackCommentary({ userMove: userMoveSan, bestMove: bestMoveSan, ok, patternTag, evalBefore, evalAfter })
   const result = await callLlm(userPrompt, systemPrompt, { temperature: 0.35 }, fallback)
   
   return NextResponse.json({

@@ -16,13 +16,23 @@ describe('dev entitlement override', () => {
     vi.unstubAllEnvs()
   })
 
-  it('does not override in production', async () => {
+  it('does not override in production without allowlist', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
     vi.stubEnv('LOCAL_DB', 'true')
     
     const entitlement = await getEntitlementForUser('test-user')
-    expect(entitlement.plan).toBe('FREE') // Should not override in production
+    expect(entitlement.plan).toBe('FREE')
+  })
+
+  it('overrides to PRO for allowlisted user in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
+    vi.stubEnv('DEV_ENTITLEMENT_USER_IDS', 'dev-user, lichess-123 ')
+
+    const entitlement = await getEntitlementForUser('dev-user')
+    expect(entitlement.plan).toBe('PRO')
+    expect(entitlement.status).toBe('ACTIVE')
   })
 
   it('does not override without DEV_ENTITLEMENT=PRO', async () => {

@@ -46,6 +46,16 @@ export interface Entitlement {
   cancel_at_period_end: boolean;
 }
 
+function parseCsvEnv(value: string | undefined): Set<string> {
+  if (!value) return new Set();
+  return new Set(
+    value
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+  );
+}
+
 function defaultEntitlement(): Entitlement {
   return {
     plan: 'FREE',
@@ -74,6 +84,10 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
   return 'FREE';
 }
 
+function getForceProUserIds(): Set<string> {
+  return parseCsvEnv(process.env.DEV_ENTITLEMENT_USER_IDS);
+}
+
 /**
  * Gets the entitlement for a user.
  * Uses only the database and the current time; never calls Stripe.
@@ -91,6 +105,20 @@ export function mapStatusToPlan(status: string | null | undefined): Plan {
  * This enables full local development without weakening production invariants.
  */
 export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
+  // FORCE PRO OVERRIDE (allowlist): for internal/dev accounts in any environment.
+  // Requires explicit opt-in via both DEV_ENTITLEMENT=PRO and DEV_ENTITLEMENT_USER_IDS.
+  if (process.env.DEV_ENTITLEMENT === 'PRO') {
+    const forceProUserIds = getForceProUserIds();
+    if (forceProUserIds.has(userId)) {
+      return {
+        plan: 'PRO',
+        status: 'ACTIVE',
+        current_period_end: null,
+        cancel_at_period_end: false,
+      };
+    }
+  }
+
   // DEV ENTITLEMENT OVERRIDE: Only in development, only for local execution, only with explicit opt-in
   if (
     process.env.NODE_ENV === 'development' &&

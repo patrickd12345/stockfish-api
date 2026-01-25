@@ -7,6 +7,7 @@ import FeatureGate from '@/components/FeatureGate'
 import BlunderDnaReport from '@/components/BlunderDnaReport'
 import { BlunderTheme, GamePhase } from '@/lib/blunderDnaV1'
 import { useAgentTone } from '@/hooks/useAgentTone'
+import { uciToSan, uciSequenceToSan } from '@/lib/chessNotation'
 
 type PatternTag =
   | 'hanging_piece'
@@ -223,7 +224,10 @@ export default function BlunderDnaTab() {
       setLastAttemptResult(
         ok
           ? { ok: true, message: 'Correct.' }
-          : { ok: false, message: `Not quite. Best was ${activeDrill.bestMove}. PV: ${activeDrill.pv}` }
+          : { 
+              ok: false, 
+              message: `Not quite. Best was ${uciToSan(activeDrill.bestMove, activeDrill.fen)}. PV: ${uciSequenceToSan(activeDrill.pv, activeDrill.fen, 3)}` 
+            }
       )
       setCommentaryLoading(true)
 
