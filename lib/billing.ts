@@ -106,17 +106,15 @@ function getForceProUserIds(): Set<string> {
  */
 export async function getEntitlementForUser(userId: string): Promise<Entitlement> {
   // FORCE PRO OVERRIDE (allowlist): for internal/dev accounts in any environment.
-  // Requires explicit opt-in via both DEV_ENTITLEMENT=PRO and DEV_ENTITLEMENT_USER_IDS.
-  if (process.env.DEV_ENTITLEMENT === 'PRO') {
-    const forceProUserIds = getForceProUserIds();
-    if (forceProUserIds.has(userId)) {
-      return {
-        plan: 'PRO',
-        status: 'ACTIVE',
-        current_period_end: null,
-        cancel_at_period_end: false,
-      };
-    }
+  // Explicit opt-in via DEV_ENTITLEMENT_USER_IDS (separate from local dev override below).
+  const forceProUserIds = getForceProUserIds();
+  if (forceProUserIds.has(userId)) {
+    return {
+      plan: 'PRO',
+      status: 'ACTIVE',
+      current_period_end: null,
+      cancel_at_period_end: false,
+    };
   }
 
   // DEV ENTITLEMENT OVERRIDE: Only in development, only for local execution, only with explicit opt-in

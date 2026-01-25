@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured, connectToDb, getSql } from '@/lib/database'
+import { isDbConfigured, connectToDb, getSql, isNeonQuotaError } from '@/lib/database'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -57,6 +57,15 @@ export async function GET(request: NextRequest) {
       }))
     })
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+          quotaExceeded: true,
+        },
+        { status: 503 }
+      )
+    }
     console.error('[Get Game Drills] Failed:', error)
     return NextResponse.json(
       { error: error.message || 'Failed to get drills' },

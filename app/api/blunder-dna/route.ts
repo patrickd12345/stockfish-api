@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 import { getLatestBlunderDnaSnapshot, storeBlunderDnaSnapshot, isSnapshotValid } from '@/lib/blunderDnaStorage'
 import { getPatternSummaries, type PatternTag } from '@/lib/blunderDna'
-import { connectToDb, getSql } from '@/lib/database'
+import { connectToDb, getSql, isNeonQuotaError } from '@/lib/database'
 import type { BlunderDnaSnapshot, BlunderPattern } from '@/lib/blunderDnaV1'
 import { BlunderTheme, GamePhase } from '@/lib/blunderDnaV1'
 
@@ -207,6 +207,16 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     if (error instanceof FeatureAccessError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 403 })
+    }
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          quotaExceeded: true,
+          error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+        },
+        { status: 503 }
+      )
     }
     console.error('[Blunder DNA] GET failed:', error)
     return NextResponse.json(

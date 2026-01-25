@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured } from '@/lib/database'
+import { isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { fetchRecentLichessGames, persistInputGames } from '@/lib/blunderDna'
 import { executeServerSideAnalysis } from '@/lib/engineGateway'
 import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
@@ -70,6 +70,15 @@ export async function POST(request: NextRequest) {
       console.error(`[Blunder DNA] Feature access denied: ${error.message}`)
       return NextResponse.json({ error: error.message }, { status: 403 })
     }
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+          quotaExceeded: true,
+        },
+        { status: 503 }
+      )
+    }
     console.error('[Blunder DNA] analyze failed:', error)
     const errorMessage = error?.message || 'Analysis failed'
     // Provide more helpful error messages
@@ -81,4 +90,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
-

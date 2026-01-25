@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured } from '@/lib/database'
+import { isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { createOrRotateDnaShare, getActiveDnaShareForUser } from '@/lib/dnaShare'
 import { getRuntimeCapabilitiesSync } from '@/lib/runtimeCapabilities'
 
@@ -33,6 +33,9 @@ export async function GET(request: NextRequest) {
       }
     })
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json({ ok: true, share: null, quotaExceeded: true })
+    }
     // Handle hosted DB guard error gracefully
     if (error.message?.includes('Hosted database access blocked')) {
       return NextResponse.json({ ok: true, share: null })
@@ -67,6 +70,9 @@ export async function POST(request: NextRequest) {
       }
     })
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json({ ok: true, share: null, quotaExceeded: true })
+    }
     // Handle hosted DB guard error gracefully
     if (error.message?.includes('Hosted database access blocked')) {
       return NextResponse.json({ ok: true, share: null })

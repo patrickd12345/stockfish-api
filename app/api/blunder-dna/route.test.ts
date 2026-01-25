@@ -6,6 +6,9 @@ import * as featureGate from '@/lib/featureGate/server'
 import type { BlunderDnaSnapshot } from '@/lib/blunderDnaV1'
 
 // Mock dependencies
+const sqlMock = vi.fn()
+const getPatternSummariesMock = vi.fn()
+
 vi.mock('@/lib/featureGate/server', () => ({
   requireFeatureForUser: vi.fn(),
   FeatureAccessError: class extends Error {
@@ -16,6 +19,19 @@ vi.mock('@/lib/featureGate/server', () => ({
   },
 }))
 
+vi.mock('@/lib/database', () => ({
+  connectToDb: vi.fn(async () => undefined),
+  getSql: () => ((...args: any[]) => sqlMock(...args)),
+  isNeonQuotaError: (e: any) => {
+    const msg = e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e)
+    return msg.includes('402') || /data transfer quota/i.test(msg) || /exceeded.*quota/i.test(msg)
+  },
+}))
+
+vi.mock('@/lib/blunderDna', () => ({
+  getPatternSummaries: (...args: any[]) => getPatternSummariesMock(...args),
+}))
+
 vi.mock('@/lib/blunderDnaStorage', () => ({
   getUserAnalyzedGamesWithBlunders: vi.fn(),
   getLatestBlunderDnaSnapshot: vi.fn(),
@@ -24,14 +40,44 @@ vi.mock('@/lib/blunderDnaStorage', () => ({
   normalizePlayerName: vi.fn(),
 }))
 
-vi.mock('@/lib/blunderDnaV1', () => ({
-  detectBlunders: vi.fn(() => []),
-  aggregateBlunders: vi.fn(() => []),
-}))
-
 describe('GET /api/blunder-dna', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
+    getPatternSummariesMock.mockResolvedValue([
+      {
+        patternTag: 'missed_threat',
+        label: 'Missed threat',
+        occurrences: 5,
+        weaknessScore: 1,
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    sqlMock.mockImplementation(async (strings: TemplateStringsArray) => {
+      const text = strings.join('')
+      if (text.includes('SELECT DISTINCT lichess_game_id')) {
+        return [{ lichess_game_id: 'g1' }, { lichess_game_id: 'g2' }]
+      }
+      if (text.includes('SELECT COUNT(DISTINCT lichess_game_id) as count')) {
+        return [{ count: 50 }]
+      }
+      if (text.includes('SELECT COUNT(*) as count')) {
+        return [{ count: 8 }]
+      }
+      if (text.includes('SELECT lichess_game_id, ply, pattern_tag, eval_before, eval_after')) {
+        return [
+          {
+            lichess_game_id: 'g1',
+            ply: 10,
+            pattern_tag: 'missed_threat',
+            eval_before: 0.2,
+            eval_after: -1.2,
+          },
+        ]
+      }
+      return []
+    })
   })
   
   const mockUserId = 'testuser'
@@ -61,7 +107,7 @@ describe('GET /api/blunder-dna', () => {
     expect(response.status).toBe(200)
     expect(data.ok).toBe(true)
     expect(data.snapshot).toEqual(mockSnapshot)
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).not.toHaveBeenCalled()
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).not.toHaveBeenCalled()
   })
   
   it('recomputes snapshot if expired (older than 24h)', async () => {
@@ -87,8 +133,9 @@ describe('GET /api/blunder-dna', () => {
     
     expect(response.status).toBe(200)
     expect(data.ok).toBe(true)
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).toHaveBeenCalledWith(mockUserId, 50)
-    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalled()
+    expect(data.snapshot.userId).toBe(mockUserId)
+    expect(data.snapshot.gamesAnalyzed).toBe(50)
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalledTimes(1)
   })
   
   it('recomputes snapshot if none exists', async () => {
@@ -108,8 +155,9 @@ describe('GET /api/blunder-dna', () => {
     
     expect(response.status).toBe(200)
     expect(data.ok).toBe(true)
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).toHaveBeenCalledWith(mockUserId, 50)
-    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalled()
+    expect(data.snapshot.userId).toBe(mockUserId)
+    expect(data.snapshot.gamesAnalyzed).toBe(50)
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalledTimes(1)
   })
   
   it('forces recompute when force=1 query param is present', async () => {
@@ -131,8 +179,9 @@ describe('GET /api/blunder-dna', () => {
     expect(response.status).toBe(200)
     expect(data.ok).toBe(true)
     // Should recompute even though snapshot is valid
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).toHaveBeenCalledWith(mockUserId, 50)
-    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalled()
+    expect(data.snapshot.userId).toBe(mockUserId)
+    expect(data.snapshot.gamesAnalyzed).toBe(50)
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).toHaveBeenCalledTimes(1)
   })
   
   it('does not force recompute when force=0 or missing', async () => {
@@ -148,7 +197,7 @@ describe('GET /api/blunder-dna', () => {
     })
     const response1 = await GET(request1)
     expect(response1.status).toBe(200)
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).not.toHaveBeenCalled()
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).not.toHaveBeenCalled()
     
     vi.clearAllMocks()
     
@@ -157,7 +206,26 @@ describe('GET /api/blunder-dna', () => {
     })
     const response2 = await GET(request2)
     expect(response2.status).toBe(200)
-    expect(blunderDnaStorage.getUserAnalyzedGamesWithBlunders).not.toHaveBeenCalled()
+    expect(blunderDnaStorage.storeBlunderDnaSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('returns 503 with quotaExceeded when database quota is exceeded', async () => {
+    vi.mocked(featureGate.requireFeatureForUser).mockResolvedValue({
+      userId: mockUserId,
+      tier: 'PRO',
+    })
+    vi.mocked(blunderDnaStorage.getLatestBlunderDnaSnapshot).mockResolvedValue(null)
+    sqlMock.mockRejectedValueOnce(new Error('Server error (HTTP status 402): Your project has exceeded the data transfer quota.'))
+
+    const request = new NextRequest('http://localhost/api/blunder-dna', {
+      headers: { Cookie: `lichess_user_id=${mockUserId}` },
+    })
+    const response = await GET(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(503)
+    expect(data.ok).toBe(false)
+    expect(data.quotaExceeded).toBe(true)
   })
   
   it('returns 403 for non-Pro users', async () => {

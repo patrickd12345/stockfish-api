@@ -45,6 +45,8 @@ interface DailyDrillsResponse {
   date: string
   drills: Drill[]
   patterns: PatternSummary[]
+  quotaExceeded?: boolean
+  error?: string
 }
 
 /**
@@ -118,8 +120,13 @@ export default function BlunderDnaTab() {
     setError(null)
     try {
       const res = await fetch('/api/blunder-dna/daily')
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to load drills')
+      const json = (await res.json().catch(() => ({}))) as DailyDrillsResponse
+      if (!res.ok) throw new Error((json as any)?.error || 'Failed to load drills')
+
+      if (json?.quotaExceeded) {
+        setError(json.error || 'Database quota exceeded. Upgrade your database plan or try again later.')
+      }
+
       setData(json)
       setActiveIdx(0)
       setLastAttemptResult(null)
@@ -143,6 +150,10 @@ export default function BlunderDnaTab() {
         const res = await fetch('/api/dna/share', { method: 'GET' })
         const json = await res.json().catch(() => ({} as any))
         if (!res.ok) throw new Error(json?.error || 'Failed to load share link')
+        if (json?.quotaExceeded) {
+          if (!cancelled) setShareError('Database quota exceeded. Share links are temporarily unavailable.')
+          return
+        }
         const url = typeof json?.share?.url === 'string' ? json.share.url : null
         if (!cancelled) setShareUrl(url)
       } catch (e: any) {

@@ -27,7 +27,6 @@ describe('dev entitlement override', () => {
 
   it('overrides to PRO for allowlisted user in production', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    vi.stubEnv('DEV_ENTITLEMENT', 'PRO')
     vi.stubEnv('DEV_ENTITLEMENT_USER_IDS', 'dev-user, lichess-123 ')
 
     const entitlement = await getEntitlementForUser('dev-user')

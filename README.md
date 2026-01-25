@@ -106,7 +106,7 @@ Violating these rules breaks the business model.
 2. **Set Environment Variables**
    Create a `.env.local` file with all the variables mentioned above.
    - Optional: Set `DEV_ENTITLEMENT=PRO` to grant Pro access in local development (requires local DB).
-   - Optional: Set `DEV_ENTITLEMENT_USER_IDS=user1,user2` (with `DEV_ENTITLEMENT=PRO`) to force Pro for specific internal/dev accounts in any environment.
+   - Optional: Set `DEV_ENTITLEMENT_USER_IDS=user1,user2` to force Pro for specific internal/dev accounts in any environment.
 
 3. **Local DB (Docker, pgvector)**
    - **Port 5433 rationale:** Port 5432 is commonly occupied by Supabase/local Postgres. Binding Docker on 5433 avoids collisions and guarantees the app is talking to the container.

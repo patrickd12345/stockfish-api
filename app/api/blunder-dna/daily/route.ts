@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured } from '@/lib/database'
+import { isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { buildAndStoreTodayQueue, getDrillsByIds, getPatternSummaries, getTodayQueue } from '@/lib/blunderDna'
 import { getRuntimeCapabilitiesSync } from '@/lib/runtimeCapabilities'
 
@@ -30,6 +30,17 @@ export async function GET(request: NextRequest) {
     const patterns = await getPatternSummaries(lichessUserId)
     return NextResponse.json({ date: today, drills, patterns })
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      console.warn('[Blunder DNA] daily: Neon quota exceeded. Returning empty drills.')
+      const today = new Date().toISOString().slice(0, 10)
+      return NextResponse.json({
+        date: today,
+        drills: [],
+        patterns: [],
+        quotaExceeded: true,
+        error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+      })
+    }
     // Handle hosted DB guard error gracefully
     if (error.message?.includes('Hosted database access blocked')) {
       console.warn('[Blunder DNA] daily: Hosted DB blocked. Returning empty drills.')

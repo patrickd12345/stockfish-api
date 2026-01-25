@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured } from '@/lib/database'
+import { isDbConfigured, isNeonQuotaError } from '@/lib/database'
 import { recordAttempt } from '@/lib/blunderDna'
 
 export const runtime = 'nodejs'
@@ -20,6 +20,15 @@ export async function POST(request: NextRequest) {
     await recordAttempt({ lichessUserId, drillId, userMove, ok })
     return NextResponse.json({ ok: true })
   } catch (error: any) {
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+          quotaExceeded: true,
+        },
+        { status: 503 }
+      )
+    }
     console.error('[Blunder DNA] attempt failed:', error)
     return NextResponse.json({ error: error.message || 'Failed to record attempt' }, { status: 500 })
   }

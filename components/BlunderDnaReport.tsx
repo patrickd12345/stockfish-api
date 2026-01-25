@@ -11,6 +11,7 @@ interface BlunderDnaApiResponse {
   snapshot: BlunderDnaSnapshot
   error?: string
   code?: string
+  quotaExceeded?: boolean
 }
 
 interface BlunderDnaReportProps {
@@ -88,6 +89,10 @@ export default function BlunderDnaReport({ onTrainPattern }: BlunderDnaReportPro
         if (cancelled) return
         
         if (!res.ok) {
+          if (data.quotaExceeded) {
+            setError('Database quota exceeded. Upgrade your database plan or try again later.')
+            return
+          }
           if (data.code === 'PRO_REQUIRED') {
             setError('Pro subscription required')
           } else {

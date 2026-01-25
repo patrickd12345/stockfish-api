@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isDbConfigured, connectToDb, getSql } from '@/lib/database'
+import { isDbConfigured, connectToDb, getSql, isNeonQuotaError } from '@/lib/database'
 import { FeatureAccessError, requireFeatureForUser } from '@/lib/featureGate/server'
 import { Chess } from 'chess.js'
 import { StockfishEngine, resolveStockfishPath } from '@/lib/stockfish'
@@ -202,6 +202,15 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     if (error instanceof FeatureAccessError) {
       return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+    if (isNeonQuotaError(error)) {
+      return NextResponse.json(
+        {
+          error: 'Database data transfer quota exceeded. Upgrade your database plan or try again later.',
+          quotaExceeded: true,
+        },
+        { status: 503 }
+      )
     }
     console.error('[Create Drill] Failed:', error)
     return NextResponse.json(
