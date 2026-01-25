@@ -21,7 +21,7 @@ function inferGameOriginFromPgn(pgnText?: string): GameOrigin {
   if (!pgnText) return 'unknown'
   const pgn = pgnText.toLowerCase()
   if (pgn.includes('lichess.org')) return 'lichess'
-  if (pgn.includes('chess.com') || pgn.includes('www.chess.com')) return 'chess.com'
+  if (pgn.includes('chess.com') || pgn.includes('www.chess.com') || pgn.includes('[site "chess.com"]') || pgn.includes('[link "https://www.chess.com')) return 'chess.com'
   if (pgn.includes('[event') || pgn.includes('[site')) return 'pgn'
   return 'unknown'
 }

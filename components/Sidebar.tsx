@@ -20,9 +20,10 @@ function inferGameOriginFromPgn(pgnText?: string): GameOrigin {
 
   // Common PGN site tags:
   // - [Site "https://lichess.org/<id>"]
-  // - [Site "https://www.chess.com/game/live/<id>"]
+  // - [Site "Chess.com"] or [Site "https://www.chess.com/game/live/<id>"]
+  // - [Link "https://www.chess.com/game/live/<id>"]
   if (pgn.includes('lichess.org')) return 'lichess'
-  if (pgn.includes('chess.com') || pgn.includes('www.chess.com')) return 'chess.com'
+  if (pgn.includes('chess.com') || pgn.includes('www.chess.com') || pgn.includes('[site "chess.com"]') || pgn.includes('[link "https://www.chess.com')) return 'chess.com'
 
   // If it's a PGN but no known site.
   if (pgn.includes('[event') || pgn.includes('[site')) return 'pgn'
