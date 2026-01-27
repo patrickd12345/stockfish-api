@@ -24,6 +24,9 @@ type ApiResponse = {
   ok: boolean
   ready: boolean
   reason?: string
+  errorCode?: 'db_quota' | 'db_error' | string
+  retryable?: boolean
+  nextPollMs?: number
   minAnalyzedGames?: number
   analysisDepth?: number
   coverage?: { totalGames: number; analyzedGames: number; failedGames: number; pendingGames: number }
@@ -84,7 +87,15 @@ function ServerFirstInsightsPanel() {
 
         // If not ready yet, keep polling gently (backoff) so the panel "pops" when done.
         if (!json.ready) {
-          await sleep(delay)
+          // Stop polling on non-retryable states (e.g., DB quota exceeded).
+          if (json.retryable === false) return
+
+          // Only poll when analysis is actively pending; otherwise wait for a manual refresh.
+          const pending = (json.coverage?.pendingGames ?? 0) > 0
+          if (!pending) return
+
+          const nextMs = typeof json.nextPollMs === 'number' && Number.isFinite(json.nextPollMs) && json.nextPollMs > 0 ? json.nextPollMs : delay
+          await sleep(nextMs)
           delay = Math.min(12_000, Math.round(delay * 1.75))
           continue
         }
@@ -147,6 +158,22 @@ function ServerFirstInsightsPanel() {
       {error ? (
         <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '10px', background: '#fff1f2', border: '1px solid #fecaca', color: '#9f1239', fontSize: '13px' }}>
           {error}
+        </div>
+      ) : null}
+
+      {!error && !loading && data?.reason && !data?.ready ? (
+        <div
+          style={{
+            marginTop: '10px',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            background: data?.errorCode === 'db_quota' ? '#fffbeb' : '#f3f4f6',
+            border: data?.errorCode === 'db_quota' ? '1px solid #fcd34d' : '1px solid #e5e7eb',
+            color: '#374151',
+            fontSize: '13px',
+          }}
+        >
+          {data.reason}
         </div>
       ) : null}
 
