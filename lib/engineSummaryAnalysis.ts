@@ -39,121 +39,119 @@ export async function computeEngineSummary(): Promise<EngineSummary> {
   `) as Array<{ count: number }>
   const totalGames = Number(totalGamesResult[0]?.count || 0)
   
-  // Get all successful engine analyses
-  const analyses = (await sql`
+  // 1. Get Aggregates using SQL
+  const aggregatesResult = (await sql`
     SELECT 
-      id,
-      game_id,
-      avg_centipawn_loss,
-      blunders,
-      mistakes,
-      inaccuracies,
-      eval_swing_max,
-      opening_cpl,
-      middlegame_cpl,
-      endgame_cpl,
-      game_length,
-      engine_name,
-      engine_version,
-      analysis_depth,
-      analyzed_at
+      COUNT(*) as games_with_analysis,
+
+      -- Overall Metrics
+      AVG(avg_centipawn_loss) as avg_centipawn_loss,
+      SUM(blunders) as total_blunders,
+      SUM(mistakes) as total_mistakes,
+      SUM(inaccuracies) as total_inaccuracies,
+      AVG(eval_swing_max) as avg_eval_swing_max,
+
+      -- Phase Averages (AVG ignores NULLs)
+      AVG(opening_cpl) as opening_avg_cpl,
+      AVG(middlegame_cpl) as middlegame_avg_cpl,
+      AVG(endgame_cpl) as endgame_avg_cpl,
+
+      -- Phase Counts (COUNT(col) ignores NULLs)
+      COUNT(opening_cpl) as opening_count,
+      COUNT(middlegame_cpl) as middlegame_count,
+      COUNT(endgame_cpl) as endgame_count,
+
+      -- Phase Blunders (Sum blunders only where phase CPL exists)
+      SUM(CASE WHEN opening_cpl IS NOT NULL THEN blunders ELSE 0 END) as opening_blunders,
+      SUM(CASE WHEN middlegame_cpl IS NOT NULL THEN blunders ELSE 0 END) as middlegame_blunders,
+      SUM(CASE WHEN endgame_cpl IS NOT NULL THEN blunders ELSE 0 END) as endgame_blunders
+
     FROM engine_analysis
     WHERE analysis_failed = false
-    ORDER BY analyzed_at ASC
   `) as DbRow[]
   
-  const gamesWithEngineAnalysis = analyses.length
-  const coveragePercent = totalGames > 0 ? (gamesWithEngineAnalysis / totalGames) * 100 : 0
+  const aggs = aggregatesResult[0]
+  const gamesWithEngineAnalysis = Number(aggs.games_with_analysis || 0)
   
-  if (analyses.length === 0) {
+  if (gamesWithEngineAnalysis === 0) {
     return createEmptyEngineSummary(summaryId, totalGames)
   }
   
-  // Convert to typed rows
-  const typedAnalyses: EngineAnalysisRow[] = analyses.map(row => ({
-    id: String(row.id),
-    game_id: String(row.game_id),
-    avg_centipawn_loss: row.avg_centipawn_loss ? Number(row.avg_centipawn_loss) : null,
-    blunders: Number(row.blunders || 0),
-    mistakes: Number(row.mistakes || 0),
-    inaccuracies: Number(row.inaccuracies || 0),
-    eval_swing_max: row.eval_swing_max ? Number(row.eval_swing_max) : null,
-    opening_cpl: row.opening_cpl ? Number(row.opening_cpl) : null,
-    middlegame_cpl: row.middlegame_cpl ? Number(row.middlegame_cpl) : null,
-    endgame_cpl: row.endgame_cpl ? Number(row.endgame_cpl) : null,
-    game_length: Number(row.game_length || 0),
-    engine_name: String(row.engine_name || 'stockfish'),
-    engine_version: row.engine_version ? String(row.engine_version) : null,
-    analysis_depth: Number(row.analysis_depth || 15),
-    analyzed_at: row.analyzed_at as Date
-  }))
+  // 2. Get Trend Data (Last 100 rows)
+  // We need recent vs previous, max 50 each.
+  const trendRows = (await sql`
+    SELECT
+      avg_centipawn_loss,
+      blunders
+    FROM engine_analysis
+    WHERE analysis_failed = false
+    ORDER BY analyzed_at DESC
+    LIMIT 100
+  `) as DbRow[]
   
-  // Get engine info from first analysis
-  const firstAnalysis = typedAnalyses[0]
-  const engineInfo = {
-    engineName: firstAnalysis.engine_name,
-    engineVersion: firstAnalysis.engine_version,
-    analysisDepth: firstAnalysis.analysis_depth
-  }
+  // Reverse to get ASC order (oldest to newest) for slice logic
+  trendRows.reverse()
   
-  // Overall metrics
-  const analysesWithCpl = typedAnalyses.filter(a => a.avg_centipawn_loss !== null)
-  const avgCentipawnLoss = analysesWithCpl.length > 0
-    ? analysesWithCpl.reduce((sum, a) => sum + (a.avg_centipawn_loss || 0), 0) / analysesWithCpl.length
-    : null
+  // 3. Get Engine Info (First analyzed)
+  const engineInfoResult = (await sql`
+    SELECT engine_name, engine_version, analysis_depth
+    FROM engine_analysis
+    WHERE analysis_failed = false
+    ORDER BY analyzed_at ASC
+    LIMIT 1
+  `) as DbRow[]
+
+  // --- Construct Summary ---
+
+  const coveragePercent = totalGames > 0 ? (gamesWithEngineAnalysis / totalGames) * 100 : 0
   
-  const totalBlunders = typedAnalyses.reduce((sum, a) => sum + a.blunders, 0)
-  const totalMistakes = typedAnalyses.reduce((sum, a) => sum + a.mistakes, 0)
-  const totalInaccuracies = typedAnalyses.reduce((sum, a) => sum + a.inaccuracies, 0)
+  // Overall
+  const avgCentipawnLoss = aggs.avg_centipawn_loss ? Number(aggs.avg_centipawn_loss) : null
+  const totalBlunders = Number(aggs.total_blunders || 0)
+  const totalMistakes = Number(aggs.total_mistakes || 0)
+  const totalInaccuracies = Number(aggs.total_inaccuracies || 0)
+  const avgEvalSwingMax = aggs.avg_eval_swing_max ? Number(aggs.avg_eval_swing_max) : null
   
   const blunderRate = gamesWithEngineAnalysis > 0 ? totalBlunders / gamesWithEngineAnalysis : 0
   const mistakeRate = gamesWithEngineAnalysis > 0 ? totalMistakes / gamesWithEngineAnalysis : 0
   const inaccuracyRate = gamesWithEngineAnalysis > 0 ? totalInaccuracies / gamesWithEngineAnalysis : 0
   
-  const analysesWithEvalSwing = typedAnalyses.filter(a => a.eval_swing_max !== null)
-  const avgEvalSwingMax = analysesWithEvalSwing.length > 0
-    ? analysesWithEvalSwing.reduce((sum, a) => sum + (a.eval_swing_max || 0), 0) / analysesWithEvalSwing.length
-    : null
+  // By Phase
+  const openingCount = Number(aggs.opening_count || 0)
+  const openingAvgCpl = aggs.opening_avg_cpl ? Number(aggs.opening_avg_cpl) : null
+  const openingBlundersTotal = Number(aggs.opening_blunders || 0)
+  const openingBlunderRate = openingCount > 0 ? openingBlundersTotal / openingCount : 0
   
-  // Phase-specific metrics
-  const openingAnalyses = typedAnalyses.filter(a => a.opening_cpl !== null)
-  const openingAvgCpl = openingAnalyses.length > 0
-    ? openingAnalyses.reduce((sum, a) => sum + (a.opening_cpl || 0), 0) / openingAnalyses.length
-    : null
-  const openingBlunders = openingAnalyses.reduce((sum, a) => sum + a.blunders, 0)
-  const openingBlunderRate = openingAnalyses.length > 0 ? openingBlunders / openingAnalyses.length : 0
+  const middlegameCount = Number(aggs.middlegame_count || 0)
+  const middlegameAvgCpl = aggs.middlegame_avg_cpl ? Number(aggs.middlegame_avg_cpl) : null
+  const middlegameBlundersTotal = Number(aggs.middlegame_blunders || 0)
+  const middlegameBlunderRate = middlegameCount > 0 ? middlegameBlundersTotal / middlegameCount : 0
   
-  const middlegameAnalyses = typedAnalyses.filter(a => a.middlegame_cpl !== null)
-  const middlegameAvgCpl = middlegameAnalyses.length > 0
-    ? middlegameAnalyses.reduce((sum, a) => sum + (a.middlegame_cpl || 0), 0) / middlegameAnalyses.length
-    : null
-  const middlegameBlunders = middlegameAnalyses.reduce((sum, a) => sum + a.blunders, 0)
-  const middlegameBlunderRate = middlegameAnalyses.length > 0 ? middlegameBlunders / middlegameAnalyses.length : 0
+  const endgameCount = Number(aggs.endgame_count || 0)
+  const endgameAvgCpl = aggs.endgame_avg_cpl ? Number(aggs.endgame_avg_cpl) : null
+  const endgameBlundersTotal = Number(aggs.endgame_blunders || 0)
+  const endgameBlunderRate = endgameCount > 0 ? endgameBlundersTotal / endgameCount : 0
   
-  const endgameAnalyses = typedAnalyses.filter(a => a.endgame_cpl !== null)
-  const endgameAvgCpl = endgameAnalyses.length > 0
-    ? endgameAnalyses.reduce((sum, a) => sum + (a.endgame_cpl || 0), 0) / endgameAnalyses.length
-    : null
-  const endgameBlunders = endgameAnalyses.reduce((sum, a) => sum + a.blunders, 0)
-  const endgameBlunderRate = endgameAnalyses.length > 0 ? endgameBlunders / endgameAnalyses.length : 0
-  
-  // Trends over time (recent 50 vs previous 50)
-  const recentCount = Math.min(50, Math.floor(typedAnalyses.length / 2))
-  const recentAnalyses = typedAnalyses.slice(-recentCount)
-  const previousAnalyses = typedAnalyses.slice(-recentCount * 2, -recentCount)
+  // Trends
+  // Re-implement logic on the subset of rows
+  const recentCount = Math.min(50, Math.floor(trendRows.length / 2))
+  const recentAnalyses = trendRows.slice(-recentCount)
+  const previousAnalyses = trendRows.slice(-recentCount * 2, -recentCount)
   
   const recentWithCpl = recentAnalyses.filter(a => a.avg_centipawn_loss !== null)
   const recentAvgCpl = recentWithCpl.length > 0
-    ? recentWithCpl.reduce((sum, a) => sum + (a.avg_centipawn_loss || 0), 0) / recentWithCpl.length
+    ? recentWithCpl.reduce((sum, a) => sum + Number(a.avg_centipawn_loss || 0), 0) / recentWithCpl.length
     : null
-  const recentBlunders = recentAnalyses.reduce((sum, a) => sum + a.blunders, 0)
+
+  const recentBlunders = recentAnalyses.reduce((sum, a) => sum + Number(a.blunders || 0), 0)
   const recentBlunderRate = recentAnalyses.length > 0 ? recentBlunders / recentAnalyses.length : 0
   
   const previousWithCpl = previousAnalyses.filter(a => a.avg_centipawn_loss !== null)
   const previousAvgCpl = previousWithCpl.length > 0
-    ? previousWithCpl.reduce((sum, a) => sum + (a.avg_centipawn_loss || 0), 0) / previousWithCpl.length
+    ? previousWithCpl.reduce((sum, a) => sum + Number(a.avg_centipawn_loss || 0), 0) / previousWithCpl.length
     : null
-  const previousBlunders = previousAnalyses.reduce((sum, a) => sum + a.blunders, 0)
+
+  const previousBlunders = previousAnalyses.reduce((sum, a) => sum + Number(a.blunders || 0), 0)
   const previousBlunderRate = previousAnalyses.length > 0 ? previousBlunders / previousAnalyses.length : 0
   
   const cplDelta = (recentAvgCpl !== null && previousAvgCpl !== null)
@@ -161,6 +159,14 @@ export async function computeEngineSummary(): Promise<EngineSummary> {
     : null
   const blunderRateDelta = recentBlunderRate - previousBlunderRate
   
+  // Engine Info
+  const engineRow = engineInfoResult[0] || {}
+  const engineInfo = {
+    engineName: String(engineRow.engine_name || 'stockfish'),
+    engineVersion: engineRow.engine_version ? String(engineRow.engine_version) : null,
+    analysisDepth: Number(engineRow.analysis_depth || 15)
+  }
+
   return {
     id: summaryId,
     computedAt: now.toISOString(),
@@ -179,17 +185,17 @@ export async function computeEngineSummary(): Promise<EngineSummary> {
       opening: {
         avgCpl: openingAvgCpl,
         blunderRate: openingBlunderRate,
-        gamesInPhase: openingAnalyses.length
+        gamesInPhase: openingCount
       },
       middlegame: {
         avgCpl: middlegameAvgCpl,
         blunderRate: middlegameBlunderRate,
-        gamesInPhase: middlegameAnalyses.length
+        gamesInPhase: middlegameCount
       },
       endgame: {
         avgCpl: endgameAvgCpl,
         blunderRate: endgameBlunderRate,
-        gamesInPhase: endgameAnalyses.length
+        gamesInPhase: endgameCount
       }
     },
     trends: {
