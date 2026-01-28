@@ -84,10 +84,12 @@ describe('lib/models', () => {
     )
   })
 
-  it('searchGames uses ILIKE search term', async () => {
+  it('searchGames uses ILIKE search term and date cast', async () => {
     sql.mockResolvedValueOnce([])
     await searchGames('ruy', 50)
-    expect(lastSqlText()).toContain('ILIKE')
+    const text = lastSqlText()
+    expect(text).toContain('ILIKE')
+    expect(text).toContain('date::text ILIKE')
     expect(lastSqlValues()).toContain('%ruy%')
   })
 

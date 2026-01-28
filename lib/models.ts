@@ -463,7 +463,7 @@ export async function searchGames(query: string, limit = 50) {
       white ILIKE ${searchTerm} OR 
       black ILIKE ${searchTerm} OR 
       opening_name ILIKE ${searchTerm} OR
-      date ILIKE ${searchTerm}
+      date::text ILIKE ${searchTerm}
     ORDER BY date DESC, time DESC, created_at DESC
     LIMIT ${limit}
   `) as DbRow[]
