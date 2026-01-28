@@ -137,16 +137,14 @@ export async function runBatchAnalysis(): Promise<ProgressionSummary> {
 /**
  * Process a single game to extract metrics
  */
-function processGame(game: GameData): ProcessedGame {
+export function processGame(game: GameData): ProcessedGame {
   // Determine game date
   const gameDate = game.date ? new Date(game.date) : game.created_at
   
   // CRITICAL: Fix result parsing - must be mutually exclusive
   const result = (game.result || '').trim()
-  let isWin = false
-  let isDraw = false
-  let isLoss = false
-  let isUnknown = false
+  type GameStatus = 'WIN' | 'LOSS' | 'DRAW' | 'UNKNOWN'
+  let status: GameStatus = 'UNKNOWN'
   
   // Player identification - check environment variables for known player names
   const playerNames = [
@@ -164,41 +162,46 @@ function processGame(game: GameData): ProcessedGame {
   if (result === '1-0') {
     // White wins
     if (playerIsWhite) {
-      isWin = true
+      status = 'WIN'
     } else if (playerIsBlack) {
-      isLoss = true
+      status = 'LOSS'
     } else {
       // Can't determine player color - mark as unknown
       console.warn(`Cannot determine player color for game ${game.id}: white="${white}", black="${black}"`)
-      isUnknown = true
+      status = 'UNKNOWN'
     }
   } else if (result === '0-1') {
     // Black wins
     if (playerIsBlack) {
-      isWin = true
+      status = 'WIN'
     } else if (playerIsWhite) {
-      isLoss = true
+      status = 'LOSS'
     } else {
       // Can't determine player color - mark as unknown
       console.warn(`Cannot determine player color for game ${game.id}: white="${white}", black="${black}"`)
-      isUnknown = true
+      status = 'UNKNOWN'
     }
   } else if (result === '1/2-1/2') {
     // Draw - only count if we can identify the player
     if (playerIsWhite || playerIsBlack) {
-      isDraw = true
+      status = 'DRAW'
     } else {
       console.warn(`Cannot determine player color for draw in game ${game.id}: white="${white}", black="${black}"`)
-      isUnknown = true
+      status = 'UNKNOWN'
     }
   } else if (result === '*' || result === '' || !result) {
     // Unfinished, abandoned, or missing result
-    isUnknown = true
+    status = 'UNKNOWN'
   } else {
     // Any other unexpected result format
     console.warn(`Unexpected result format: "${result}" for game ${game.id}`)
-    isUnknown = true
+    status = 'UNKNOWN'
   }
+
+  const isWin = status === 'WIN'
+  const isLoss = status === 'LOSS'
+  const isDraw = status === 'DRAW'
+  const isUnknown = status === 'UNKNOWN'
   
   // Count moves by parsing PGN
   let moveCount = 0
