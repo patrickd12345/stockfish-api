@@ -379,57 +379,32 @@ export async function getGameSummariesByDateRange(startDate: string, endDate: st
   
   console.log(`📅 Querying games from ${start} to ${end}`)
   
-  // Query with date range filter at database level
-  // Handle both date formats: YYYY-MM-DD and YYYY.MM.DD (Chess.com format)
-  // We'll fetch all games and filter in code to handle date format variations
-  // This is more reliable than complex SQL CASE statements
-  const allRows = (await sql`
+  // Optimized: Query with date range filter at database level
+  // We use REPLACE(date, '.', '-') to normalize the date format in SQL
+  // and handle the fallback to created_at logic.
+  const rows = (await sql`
     SELECT id, date, time, white, black, white_elo, black_elo, result, opening_name, my_accuracy, blunders, created_at
     FROM games
-    WHERE date IS NOT NULL OR created_at IS NOT NULL
+    WHERE
+      (
+        date IS NOT NULL
+        AND (REPLACE(date, '.', '-')::date) >= ${start}::date
+        AND (REPLACE(date, '.', '-')::date) <= ${end}::date
+      )
+      OR
+      (
+        date IS NULL
+        AND created_at IS NOT NULL
+        AND created_at::date >= ${start}::date
+        AND created_at::date <= ${end}::date
+      )
     ORDER BY date DESC, time DESC, created_at DESC
-    LIMIT 10000
+    LIMIT ${limit}
   `) as DbRow[]
   
-  console.log(`📊 Fetched ${allRows.length} total games from database`)
+  console.log(`📊 Fetched ${rows.length} games from database (optimized)`)
   
-  // Filter in code to handle date format variations
-  const startDateObj = new Date(start + 'T00:00:00Z')
-  const endDateObj = new Date(end + 'T23:59:59Z')
-  
-  console.log(`🔍 Date range: ${startDateObj.toISOString()} to ${endDateObj.toISOString()}`)
-  
-  // Debug: show sample dates
-  if (allRows.length > 0) {
-    console.log(`📋 Sample dates from first 10 games:`)
-    allRows.slice(0, 10).forEach((r, i) => {
-      console.log(`  ${i + 1}. date="${r.date}" created_at="${r.created_at}"`)
-    })
-  }
-  
-  const filteredRows = allRows.filter((r: DbRow) => {
-    if (r.date) {
-      // Normalize date format
-      const dateStr = String(r.date).replace(/\./g, '-').split('T')[0].split(' ')[0]
-      const gameDate = new Date(dateStr + 'T00:00:00Z')
-      if (!isNaN(gameDate.getTime())) {
-        return gameDate >= startDateObj && gameDate <= endDateObj
-      }
-    }
-    // Fallback to created_at if date is null
-    if (r.created_at) {
-      const createdDate = new Date(r.created_at as Date)
-      const createdDateOnly = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
-      const startDateOnly = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate())
-      const endDateOnly = new Date(endDateObj.getFullYear(), endDateObj.getMonth(), endDateObj.getDate())
-      return createdDateOnly >= startDateOnly && createdDateOnly <= endDateOnly
-    }
-    return false
-  }).slice(0, limit)
-  
-  console.log(`✅ Filtered to ${filteredRows.length} games in date range`)
-  
-  return filteredRows.map((r: DbRow) => ({
+  return rows.map((r: DbRow) => ({
     id: String(r.id),
     date: r.date ? String(r.date) : undefined,
     white: r.white ? String(r.white) : undefined,
